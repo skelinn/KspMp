@@ -273,3 +273,234 @@ Verification of the API names the plan relies on. Regenerate with `scripts/decom
 - `GamePersistence.cs:38` public static string SaveGame(Game game, string saveFileName, string saveFolder, SaveMode saveMode)
 - `GamePersistence.cs:256` public static string SaveGame(GameBackup game, string saveFileName, string saveFolder, SaveMode saveMode)
 
+
+# M2 vessel replication API (generated 2026-09-02)
+
+## ProtoVessel ctor/Load/Save/vesselRef/vesselID
+- `ProtoVessel.cs:9` public List<ProtoPartSnapshot> protoPartSnapshots;
+- `ProtoVessel.cs:15` public OrbitSnapshot orbitSnapShot;
+- `ProtoVessel.cs:17` public Guid vesselID = Guid.Empty;
+- `ProtoVessel.cs:19` public uint persistentId;
+- `ProtoVessel.cs:29` public bool landed;
+- `ProtoVessel.cs:35` public bool splashed;
+- `ProtoVessel.cs:49` public double altitude;
+- `ProtoVessel.cs:51` public double latitude;
+- `ProtoVessel.cs:53` public double longitude;
+- `ProtoVessel.cs:59` public Quaternion rotation;
+- `ProtoVessel.cs:63` public Vessel vesselRef;
+- `ProtoVessel.cs:65` public Vessel.Situations situation;
+- `ProtoVessel.cs:153` public ProtoVessel(Vessel VesselRef)
+- `ProtoVessel.cs:158` public ProtoVessel(Vessel VesselRef, bool preCreate)
+- `ProtoVessel.cs:326` public ProtoVessel(ConfigNode node, Game st)
+- `ProtoVessel.cs:2199` public void Save(ConfigNode node)
+- `ProtoVessel.cs:2440` public void Load(FlightState st)
+
+## Vessel: BackupVessel/SetPosition/SetWorldVelocity/SetRotation/GoOnRails/GoOffRails/Load/Unload/state fields
+- `Vessel.cs:98` public Guid id;
+- `Vessel.cs:100` public uint persistentId;
+- `Vessel.cs:102` public string vesselName;
+- `Vessel.cs:106` public Part rootPart;
+- `Vessel.cs:120` public OrbitDriver orbitDriver;
+- `Vessel.cs:144` public Quaternion srfRelRotation;
+- `Vessel.cs:146` public double longitude;
+- `Vessel.cs:148` public double latitude;
+- `Vessel.cs:150` public double altitude;
+- `Vessel.cs:156` public bool loaded;
+- `Vessel.cs:168` public bool packed;
+- `Vessel.cs:170` public bool Landed;
+- `Vessel.cs:172` public bool Splashed;
+- `Vessel.cs:221` public Situations situation;
+- `Vessel.cs:227` public Vector3d obt_velocity;
+- `Vessel.cs:229` public Vector3d srf_velocity;
+- `Vessel.cs:265` public Vector3d CoMD;
+- `Vessel.cs:267` public Vector3 angularVelocity;
+- `Vessel.cs:347` public VesselType vesselType;
+- `Vessel.cs:349` public KerbalEVA evaController;
+- `Vessel.cs:421` public VesselRanges vesselRanges;
+- `Vessel.cs:451` public Transform vesselTransform;
+- `Vessel.cs:675` public Orbit orbit => orbitDriver.orbit;
+- `Vessel.cs:677` public CelestialBody mainBody => orbit.referenceBody;
+- `Vessel.cs:681` public bool LandedOrSplashed
+- `Vessel.cs:708` public bool LandedInKSC
+- `Vessel.cs:764` public bool LandedInStockLaunchSite
+- `Vessel.cs:1044` public bool isEVA => vesselType == VesselType.EVA;
+- `Vessel.cs:1587` public Vector3d GetWorldPos3D()
+- `Vessel.cs:3993` public void Load()
+- `Vessel.cs:4133` public void Unload()
+- `Vessel.cs:4398` public ProtoVessel BackupVessel()
+- `Vessel.cs:5527` public void GoOnRails()
+- `Vessel.cs:5624` public void GoOffRails()
+- `Vessel.cs:8607` public void SetWorldVelocity(Vector3d vel)
+- `Vessel.cs:10095` public void SetPosition(Vector3d position)
+- `Vessel.cs:10100` public void SetPosition(Vector3d position, bool usePristineCoords)
+- `Vessel.cs:10188` public void SetRotation(Quaternion rotation)
+- `Vessel.cs:10193` public void SetRotation(Quaternion rotation, bool setPos)
+
+## Vessel.Situations
+- `Vessel.cs:29` LANDED = 1,
+- `Vessel.cs:31` SPLASHED = 2,
+- `Vessel.cs:33` PRELAUNCH = 4,
+- `Vessel.cs:35` FLYING = 8,
+- `Vessel.cs:37` SUB_ORBITAL = 0x10,
+- `Vessel.cs:39` ORBITING = 0x20,
+- `Vessel.cs:41` ESCAPING = 0x40,
+- `Vessel.cs:43` DOCKED = 0x80
+
+## FlightGlobals vessels/RemoveVessel/ActiveVessel/ship_* 
+- `FlightGlobals.cs:22` public static bool ready;
+- `FlightGlobals.cs:132` public static List<CelestialBody> Bodies => fetch.bodies;
+- `FlightGlobals.cs:167` public static Vessel ActiveVessel => fetch.activeVessel;
+- `FlightGlobals.cs:243` public static List<Vessel> Vessels => fetch.vessels;
+- `FlightGlobals.cs:245` public static List<Vessel> VesselsLoaded => fetch.vesselsLoaded;
+- `FlightGlobals.cs:247` public static List<Vessel> VesselsUnloaded => fetch.vesselsUnloaded;
+- `FlightGlobals.cs:261` public static Vector3d ship_velocity => ActiveVessel.rb_velocity;
+- `FlightGlobals.cs:485` public static void RemoveVessel(Vessel vessel)
+- `FlightGlobals.cs:671` public static Vessel FindVessel(Guid id)
+- `FlightGlobals.cs:3305` public static CelestialBody getMainBody(Vector3d refPos)
+- `FlightGlobals.cs:3358` public static CelestialBody getMainBody()
+
+## FlightState.protoVessels
+- `FlightState.cs:17` public List<ProtoVessel> protoVessels;
+- `FlightState.cs:27` public double universalTime;
+
+## OrbitDriver updateMode/UpdateMode/updateFromParameters/pos/vel
+- `OrbitDriver.cs:6` public enum UpdateMode
+- `OrbitDriver.cs:8` TRACK_Phys,
+- `OrbitDriver.cs:9` UPDATE,
+- `OrbitDriver.cs:10` IDLE
+- `OrbitDriver.cs:15` public Vector3d pos;
+- `OrbitDriver.cs:17` public Vector3d vel;
+- `OrbitDriver.cs:21` public Orbit orbit = new Orbit();
+- `OrbitDriver.cs:33` public UpdateMode updateMode;
+- `OrbitDriver.cs:39` public Vessel vessel;
+- `OrbitDriver.cs:63` public CelestialBody referenceBody
+- `OrbitDriver.cs:124` case UpdateMode.TRACK_Phys:
+- `OrbitDriver.cs:125` case UpdateMode.IDLE:
+- `OrbitDriver.cs:145` case UpdateMode.UPDATE:
+- `OrbitDriver.cs:262` case UpdateMode.TRACK_Phys:
+- `OrbitDriver.cs:263` case UpdateMode.IDLE:
+- `OrbitDriver.cs:331` case UpdateMode.UPDATE:
+
+## Orbit UpdateFromStateVectors/getPositionAtUT/getOrbitalVelocityAtUT/elements
+- `Orbit.cs:108` public CelestialBody referenceBody;
+- `Orbit.cs:110` public double inclination;
+- `Orbit.cs:112` public double eccentricity;
+- `Orbit.cs:114` public double semiMajorAxis;
+- `Orbit.cs:116` public double LAN;
+- `Orbit.cs:118` public double argumentOfPeriapsis;
+- `Orbit.cs:120` public double epoch;
+- `Orbit.cs:165` public double meanAnomalyAtEpoch;
+- `Orbit.cs:306` public Orbit()
+- `Orbit.cs:310` public Orbit(double inc, double e, double sma, double lan, double argPe, double mEp, double t, CelestialBody body)
+- `Orbit.cs:315` public Orbit(Orbit orbit)
+- `Orbit.cs:526` public void UpdateFromStateVectors(Vector3d pos, Vector3d vel, CelestialBody refBody, double UT)
+- `Orbit.cs:965` public Vector3d getPositionAtUT(double UT)
+- `Orbit.cs:970` public Vector3d getTruePositionAtUT(double UT)
+- `Orbit.cs:975` public Vector3d getRelativePositionAtUT(double UT)
+- `Orbit.cs:980` public Vector3d getOrbitalVelocityAtUT(double UT)
+
+## CelestialBody GetWorldSurfacePosition/position/rotation/bodyTransform/flightGlobalsIndex
+- `CelestialBody.cs:22` public double Radius;
+- `CelestialBody.cs:265` public Transform bodyTransform;
+- `CelestialBody.cs:330` public int flightGlobalsIndex { get; set; }
+- `CelestialBody.cs:332` public Vector3d position
+- `CelestialBody.cs:1342` public Vector3d GetSurfaceNVector(double lat, double lon)
+- `CelestialBody.cs:1350` public Vector3d GetRelSurfacePosition(double lat, double lon, double alt)
+- `CelestialBody.cs:1355` public Vector3d GetRelSurfacePosition(double lat, double lon, double alt, out Vector3d normal)
+- `CelestialBody.cs:1361` public Vector3d GetRelSurfacePosition(Vector3d worldPosition)
+- `CelestialBody.cs:1371` public Vector3d GetWorldSurfacePosition(double lat, double lon, double alt)
+- `CelestialBody.cs:1376` public double GetLatitude(Vector3d pos, bool isRadial = false)
+- `CelestialBody.cs:1419` public double GetLongitude(Vector3d pos, bool isRadial = false)
+- `CelestialBody.cs:1554` public double GetAltitude(Vector3d worldPos)
+- `CelestialBody.cs:1559` public void GetLatLonAlt(Vector3d worldPos, out double lat, out double lon, out double alt)
+
+## Part: rb/partTransform/ResumeVelocity/vel/flightID/crashTolerance/vessel/parent/children/Modules
+- `Part.cs:139` public Vessel vessel;
+- `Part.cs:180` public uint flightID;
+- `Part.cs:186` public Part parent;
+- `Part.cs:190` public List<Part> children = new List<Part>();
+- `Part.cs:192` public Transform partTransform;
+- `Part.cs:263` public List<ProtoCrewMember> protoModuleCrew = new List<ProtoCrewMember>();
+- `Part.cs:293` public Vector3 orgPos;
+- `Part.cs:295` public Quaternion orgRot;
+- `Part.cs:313` public float crashTolerance = 9f;
+- `Part.cs:457` public Rigidbody rb;
+- `Part.cs:461` public bool packed;
+- `Part.cs:615` public Vector3 vel;
+- `Part.cs:1399` public PartModuleList Modules => modules;
+- `Part.cs:9085` public void Pack()
+- `Part.cs:9202` public void Unpack()
+- `Part.cs:9331` public void ResumeVelocity()
+
+## FlightIntegrator / CollisionEnhancer / PartBuoyancy classes
+- `FlightIntegrator.cs:5` public class FlightIntegrator : VesselModule
+
+## CollisionEnhancer
+- `CollisionEnhancer.cs:4` public class CollisionEnhancer : MonoBehaviour
+
+## PartBuoyancy
+- `PartBuoyancy.cs:6` public class PartBuoyancy : MonoBehaviour
+
+## KSCVesselMarkers.RefreshMarkers
+- `KSP/UI/Screens/KSCVesselMarkers.cs:10` public static KSCVesselMarkers fetch;
+- `KSP/UI/Screens/KSCVesselMarkers.cs:173` RefreshMarkers();
+- `KSP/UI/Screens/KSCVesselMarkers.cs:176` public void RefreshMarkers()
+
+## FloatingOrigin / Krakensbane
+- `FloatingOrigin.cs:32` public static FloatingOrigin fetch;
+- `FloatingOrigin.cs:46` public static Vector3d Offset
+- `FloatingOrigin.cs:96` public static Vector3d OffsetNonKrakensbane
+- `FloatingOrigin.cs:829` public static bool RegisterParticleSystem(ParticleSystem sys)
+- `FloatingOrigin.cs:865` public static bool UnregisterParticleSystem(ParticleSystem sys)
+
+## Krakensbane.GetFrameVelocity
+- `Krakensbane.cs:572` public static Vector3d GetFrameVelocity()
+- `Krakensbane.cs:582` public static Vector3d GetLastCorrection()
+
+## VesselRanges / PhysicsGlobals
+- `VesselRanges.cs:9` public float load;
+- `VesselRanges.cs:11` public float unload;
+- `VesselRanges.cs:13` public float pack;
+- `VesselRanges.cs:15` public float unpack;
+- `VesselRanges.cs:130` public Situation prelaunch = new Situation(2250f, 2500f, 350f, 200f);
+- `VesselRanges.cs:132` public Situation landed = new Situation(2250f, 2500f, 350f, 200f);
+- `VesselRanges.cs:134` public Situation splashed = new Situation(2250f, 2500f, 350f, 200f);
+- `VesselRanges.cs:136` public Situation flying = new Situation(2250f, 22500f, 25000f, 2000f);
+- `VesselRanges.cs:138` public Situation subOrbital = new Situation(2250f, 15000f, 10000f, 200f);
+- `VesselRanges.cs:140` public Situation orbit = new Situation(2250f, 2500f, 350f, 200f);
+- `VesselRanges.cs:142` public Situation escaping = new Situation(2250f, 2500f, 350f, 200f);
+
+## GameEvents vessel lifecycle
+- `GameEvents.cs:286` public static EventData<Vessel> onNewVesselCreated = new EventData<Vessel>("onNewVesselCreated");
+- `GameEvents.cs:298` public static EventData<Vessel> onVesselWillDestroy = new EventData<Vessel>("onVesselWillDestroy");
+- `GameEvents.cs:300` public static EventData<Vessel> onVesselCreate = new EventData<Vessel>("onVesselCreate");
+- `GameEvents.cs:302` public static EventData<Vessel> onVesselDestroy = new EventData<Vessel>("onVesselDestroy");
+- `GameEvents.cs:306` public static EventData<Vessel> onVesselChange = new EventData<Vessel>("onVesselChange");
+- `GameEvents.cs:308` public static EventData<Vessel, Vessel> onVesselSwitching = new EventData<Vessel, Vessel>("onVesselSwitching");
+- `GameEvents.cs:322` public static EventData<Vessel> onVesselGoOnRails = new EventData<Vessel>("onVesselGoOnRails");
+- `GameEvents.cs:324` public static EventData<Vessel> onVesselGoOffRails = new EventData<Vessel>("onVesselGoOffRails");
+- `GameEvents.cs:330` public static EventData<Vessel> onVesselLoaded = new EventData<Vessel>("onVesselLoaded");
+- `GameEvents.cs:332` public static EventData<Vessel> onVesselUnloaded = new EventData<Vessel>("onVesselUnloaded");
+- `GameEvents.cs:336` public static EventData<Vessel> onVesselWasModified = new EventData<Vessel>("onVesselWasModified");
+- `GameEvents.cs:338` public static EventData<Vessel> onVesselPartCountChanged = new EventData<Vessel>("onVesselPartCountChanged");
+- `GameEvents.cs:352` public static EventData<ProtoVessel, bool> onVesselRecovered = new EventData<ProtoVessel, bool>("onVesselRecovered");
+- `GameEvents.cs:354` public static EventData<ProtoVessel> onVesselTerminated = new EventData<ProtoVessel>("onVesselTerminated");
+- `GameEvents.cs:877` public static EventData<ProtoVessel, MissionRecoveryDialog, float> onVesselRecoveryProcessing = new EventData<ProtoVessel, MissionRecoveryDialog, float>("onVesselRecovery
+
+## Vessel.protoVessel / vesselModules
+- `Vessel.cs:154` public ProtoVessel protoVessel;
+- `Vessel.cs:387` public List<VesselModule> vesselModules;
+- `Vessel.cs:882` public bool isActiveVessel => FlightGlobals.ActiveVessel == this;
+- `Vessel.cs:1111` public bool IsControllable => isControllable;
+- `Vessel.cs:4637` public void MakeActive()
+- `Vessel.cs:4702` public void MakeInactive()
+
+## ProtoPartSnapshot: flightID/persistentId/protoCrewNames/partName/craftID
+- `ProtoPartSnapshot.cs:18` public string partName;
+- `ProtoPartSnapshot.cs:20` public uint craftID;
+- `ProtoPartSnapshot.cs:22` public uint flightID;
+- `ProtoPartSnapshot.cs:28` public uint persistentId;
+- `ProtoPartSnapshot.cs:74` public List<ProtoCrewMember> protoModuleCrew;
+- `ProtoPartSnapshot.cs:78` public List<string> protoCrewNames;
+- `ProtoPartSnapshot.cs:104` public List<ProtoPartModuleSnapshot> modules;
+

@@ -25,6 +25,9 @@ namespace KspMp.Shared.Protocol
 
         void Disconnect(PeerId peer, string reason);
 
+        /// <summary>Round-trip time to a peer in milliseconds (server: any client; client: pass <see cref="PeerId.Server"/>).</summary>
+        int GetPeerPingMs(PeerId peer);
+
         event Action<PeerId> PeerConnected;
         event Action<PeerId, string> PeerDisconnected;
         event ReceivedHandler Received;

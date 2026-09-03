@@ -17,14 +17,14 @@ Deflate running inside KSP's Mono runtime). See `docs/PLAN.md` for the architect
 
 Windows (PowerShell):
 
-    git clone --recurse-submodules <repo-url> kspmp
+    git clone --recurse-submodules https://github.com/skelinn/KspMp.git kspmp
     cd kspmp
     $env:KSP_ROOT = 'C:\Program Files (x86)\Steam\steamapps\common\Kerbal Space Program'   # only if not the Steam default
     dotnet build -c Debug -p:KspMpDeploy=true
 
 macOS:
 
-    git clone --recurse-submodules <repo-url> kspmp && cd kspmp
+    git clone --recurse-submodules https://github.com/skelinn/KspMp.git kspmp && cd kspmp
     export KSP_ROOT="$HOME/Library/Application Support/Steam/steamapps/common/Kerbal Space Program"   # only if not the Steam default
     dotnet build -c Debug -p:KspMpDeploy=true
 
@@ -44,7 +44,21 @@ if no Harmony is installed. Without the flag the build only refreshes `GameData/
 
 macOS: the same scripts with a `.sh` extension (copies go to `~/ksp-test`).
 
-In game, Alt+F10 toggles the KspMp debug window. Logs go to `<install>/KSP.log`; grep for `[KspMp]`.
+In game: the main menu shows the KspMp window (connect, lobby, chat, Enter game); Alt+M toggles the in-game
+players/chat window; Alt+F10 toggles the debug window. Logs go to `<install>/KSP.log`; grep for `[KspMp]`.
+
+Launch options (handy for testing and for jumping straight into your usual server):
+
+    -kspmp-connect host[:port]   connect as soon as the main menu is ready
+    -kspmp-name Name             player name for this run (not saved)
+    -kspmp-enter                 enter the game right after the server accepts you
+    -kspmp-say "text"            send one chat message after joining
+    -kspmp-debug                 show the debug window
+
+`scripts/run-clients.ps1 -kspmp-connect 127.0.0.1:7777 -kspmp-enter` launches both test copies straight into the game.
+
+Server files live in the universe folder: `server.cfg` (name, port, max players, MOTD), `time.cfg` (shared UT,
+saved every minute and on shutdown), `players.cfg` (known players).
 
 ## Repository layout
 

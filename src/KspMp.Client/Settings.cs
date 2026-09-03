@@ -15,7 +15,8 @@ namespace KspMp
         public string AvatarKerbalName = "";
         public float UiScale = 1f;
         public int LogLevel = 1;
-        public bool ShowDebugWindow = true;
+        public bool ShowDebugWindow = false;
+        public bool ShowHud = true;
 
         public static string FilePath => Path.Combine(KSPUtil.ApplicationRootPath, "GameData", "KspMp", "PluginData", "settings.cfg");
 
@@ -38,6 +39,7 @@ namespace KspMp
                         node.TryGetValue("uiScale", ref settings.UiScale);
                         node.TryGetValue("logLevel", ref settings.LogLevel);
                         node.TryGetValue("showDebugWindow", ref settings.ShowDebugWindow);
+                        node.TryGetValue("showHud", ref settings.ShowHud);
                     }
                 }
             }
@@ -67,6 +69,7 @@ namespace KspMp
                 node.AddValue("uiScale", UiScale);
                 node.AddValue("logLevel", LogLevel);
                 node.AddValue("showDebugWindow", ShowDebugWindow);
+                node.AddValue("showHud", ShowHud);
                 Directory.CreateDirectory(Path.GetDirectoryName(FilePath));
                 node.Save(FilePath);
             }

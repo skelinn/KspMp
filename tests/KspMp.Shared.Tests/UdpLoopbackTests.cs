@@ -1,17 +1,18 @@
 using KspMp.Server;
+using KspMp.Server.Universe;
 using KspMp.Shared.Protocol;
 using LiteNetLib.Utils;
 using Xunit;
 
 namespace KspMp.Shared.Tests;
 
-public class LoopbackTests
+public class UdpLoopbackTests
 {
     [Fact]
     public async Task ClientHandshakesAndPingsOverUdpLoopback()
     {
         var serverTransport = new LiteNetLibTransport(new TransportOptions { IsServer = true, Port = 0 });
-        using var server = new ServerCore(serverTransport, _ => { });
+        using var server = new ServerCore(serverTransport, new ServerConfig(), new UniverseStore(null), _ => { });
         server.Start();
 
         var client = new LiteNetLibTransport(new TransportOptions { IsServer = false, Address = "127.0.0.1", Port = serverTransport.LocalPort });
@@ -55,14 +56,14 @@ public class LoopbackTests
         client.Stop();
         Assert.Equal(1, clientId);
         Assert.True(ponged, "no pong within 5 s");
-        Assert.Single(server.Clients);
+        Assert.Equal(1, server.OnlineCount);
     }
 
     [Fact]
     public async Task ProtocolMismatchIsRejected()
     {
         var serverTransport = new LiteNetLibTransport(new TransportOptions { IsServer = true, Port = 0 });
-        using var server = new ServerCore(serverTransport, _ => { });
+        using var server = new ServerCore(serverTransport, new ServerConfig(), new UniverseStore(null), _ => { });
         server.Start();
 
         var client = new LiteNetLibTransport(new TransportOptions { Address = "127.0.0.1", Port = serverTransport.LocalPort });

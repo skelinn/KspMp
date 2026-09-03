@@ -18,5 +18,25 @@ namespace KspMp.Shared.Protocol
         // players
         Ping = 10,
         Pong = 11,
+        PlayerList = 12,
+        PlayerJoined = 13,
+        PlayerLeft = 14,
+
+        // chat
+        Chat = 20,
+
+        // time
+        TimeSyncReq = 100,
+        TimeSync = 101,
+
+        // vessels
+        VesselProto = 400,
+        VesselRemove = 401,
+        VesselState = 402,
+
+        // physics authority
+        AuthorityAssign = 500,
+        AuthorityRequest = 501,
+        AuthorityRelease = 502,
     }
 }

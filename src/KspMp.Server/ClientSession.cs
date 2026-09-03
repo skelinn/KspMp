@@ -14,6 +14,7 @@ namespace KspMp.Server
         public bool Rejected;
         public DateTime ConnectedAtUtc = DateTime.UtcNow;
 
+        public bool IsOnline => Handshaken && !Rejected;
         public string DisplayName => Handshaken ? PlayerName + "#" + ClientId : Peer.ToString();
     }
 }

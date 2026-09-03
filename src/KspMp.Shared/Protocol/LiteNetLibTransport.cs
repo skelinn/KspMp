@@ -91,6 +91,12 @@ namespace KspMp.Shared.Protocol
             _manager.DisconnectPeer(peer, writer);
         }
 
+        public int GetPeerPingMs(PeerId peerId)
+        {
+            var peer = ResolvePeer(peerId);
+            return peer != null ? peer.Ping : 0;
+        }
+
         public void Dispose()
         {
             Stop();
