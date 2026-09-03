@@ -1,0 +1,22 @@
+namespace KspMp.Shared.Protocol
+{
+    /// <summary>
+    /// Stable wire ids. Never renumber; append within the domain's block.
+    /// Blocks: handshake 1-9, players 10-19, chat 20-29, time 100+, warp 120+, roster 200+, presence 300+,
+    /// vessel 400+, authority 500+, control 600+, discrete actions 620+, crew 700+, docking 800+, editor 900+,
+    /// scenario 1000+, mod channel 1100+.
+    /// </summary>
+    public enum MessageId : ushort
+    {
+        None = 0,
+
+        // handshake
+        Hello = 1,
+        Welcome = 2,
+        Reject = 3,
+
+        // players
+        Ping = 10,
+        Pong = 11,
+    }
+}

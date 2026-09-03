@@ -1,0 +1,3 @@
+[submodule "third_party/LiteNetLib"]
+	path = third_party/LiteNetLib
+	url = https://github.com/RevenantX/LiteNetLib.git

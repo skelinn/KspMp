@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    LiteNetLib 1.3.5 compiled from the git submodule for the frameworks KSP (Mono, .NET 4.7.2) and the
+    server host need. The official NuGet package no longer ships a .NET Framework build, and KSP cannot
+    load netstandard assemblies (no netstandard.dll facade in its Managed folder), so we build it ourselves.
+    Upstream: https://github.com/RevenantX/LiteNetLib (MIT, Copyright (c) 2016 Ruslan Pyrch).
+  -->
+  <PropertyGroup>
+    <TargetFrameworks>net472;netstandard2.0</TargetFrameworks>
+    <LangVersion>7.3</LangVersion>
+    <AssemblyName>KspMp.Net.LiteNetLib</AssemblyName>
+    <RootNamespace>LiteNetLib</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);1591;1701;1702;1705;CS0618</NoWarn>
+    <DebugType>portable</DebugType>
+    <IsTrimmable>false</IsTrimmable>
+    <EnableTrimAnalyzer>false</EnableTrimAnalyzer>
+    <LiteNetLibSource>$(MSBuildThisFileDirectory)../../third_party/LiteNetLib/LiteNetLib/</LiteNetLibSource>
+  </PropertyGroup>
+
+  <!-- The upstream csproj defines LITENETLIB_UNSAFE; we keep the safe code paths for the Mono build. -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+    <DefineConstants>$(DefineConstants);TRACE;DEBUG</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <DefineConstants>$(DefineConstants);TRACE</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="$(LiteNetLibSource)**/*.cs" Exclude="$(LiteNetLibSource)obj/**;$(LiteNetLibSource)bin/**" />
+    <Compile Include="Compat/**/*.cs" />
+  </ItemGroup>
+
+  <!-- net472: reference only the BCL assemblies KSP ships (System.Runtime.Serialization is missing there; see Compat/). -->
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net472'">
+    <DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net472'">
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+  </ItemGroup>
+
+  <Target Name="CheckLiteNetLibSubmodule" BeforeTargets="CoreCompile">
+    <Error Condition="!Exists('$(LiteNetLibSource)NetManager.cs')" Text="LiteNetLib submodule is missing. Run: git submodule update --init" />
+  </Target>
+</Project>

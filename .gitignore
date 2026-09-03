@@ -1,0 +1,23 @@
+# build output
+bin/
+obj/
+artifacts/
+TestResults/
+GameData/KspMp/Plugins/
+GameData/KspMp/PluginData/
+
+# per-machine
+*.user
+KspRoot.user.props
+.vs/
+.idea/
+.DS_Store
+
+# never commit game assemblies or decompiled code
+decompiled/
+test-installs/
+*.dll
+*.pdb
+
+# server runtime data
+universe/

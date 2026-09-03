@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/KspMp.Client/KspMp.Client.csproj" />
+    <Project Path="src/KspMp.Net.LiteNetLib/KspMp.Net.LiteNetLib.csproj" />
+    <Project Path="src/KspMp.Server.Host/KspMp.Server.Host.csproj" />
+    <Project Path="src/KspMp.Server/KspMp.Server.csproj" />
+    <Project Path="src/KspMp.Shared/KspMp.Shared.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/KspMp.Shared.Tests/KspMp.Shared.Tests.csproj" />
+  </Folder>
+</Solution>

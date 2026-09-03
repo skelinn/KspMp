@@ -1,0 +1,29 @@
+<Project>
+  <PropertyGroup>
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <RepoRoot>$(MSBuildThisFileDirectory)</RepoRoot>
+    <Nullable>disable</Nullable>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <Version>0.1.0</Version>
+    <Authors>Campbell Scott</Authors>
+    <Product>KspMp</Product>
+  </PropertyGroup>
+
+  <!-- Per-machine override (gitignored): <Project><PropertyGroup><KspRoot>...</KspRoot></PropertyGroup></Project> -->
+  <Import Project="$(MSBuildThisFileDirectory)KspRoot.user.props" Condition="Exists('$(MSBuildThisFileDirectory)KspRoot.user.props')" />
+
+  <!-- KSP install discovery: KspRoot.user.props -> KSP_ROOT env var -> Steam default for the OS -->
+  <PropertyGroup>
+    <KspRoot Condition="'$(KspRoot)' == ''">$(KSP_ROOT)</KspRoot>
+    <KspRoot Condition="'$(KspRoot)' == '' and $([MSBuild]::IsOSPlatform('Windows'))">C:\Program Files (x86)\Steam\steamapps\common\Kerbal Space Program</KspRoot>
+    <KspRoot Condition="'$(KspRoot)' == '' and $([MSBuild]::IsOSPlatform('OSX'))">$(HOME)/Library/Application Support/Steam/steamapps/common/Kerbal Space Program</KspRoot>
+    <KspRoot Condition="'$(KspRoot)' == '' and $([MSBuild]::IsOSPlatform('Linux'))">$(HOME)/.local/share/Steam/steamapps/common/Kerbal Space Program</KspRoot>
+    <KspManagedDir Condition="$([MSBuild]::IsOSPlatform('Windows'))">$(KspRoot)\KSP_x64_Data\Managed</KspManagedDir>
+    <KspManagedDir Condition="$([MSBuild]::IsOSPlatform('OSX'))">$(KspRoot)/KSP.app/Contents/Resources/Data/Managed</KspManagedDir>
+    <KspManagedDir Condition="$([MSBuild]::IsOSPlatform('Linux'))">$(KspRoot)/KSP_Data/Managed</KspManagedDir>
+    <KspGameData>$(KspRoot)/GameData</KspGameData>
+  </PropertyGroup>
+</Project>

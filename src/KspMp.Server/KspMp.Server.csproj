@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>net472;netstandard2.0</TargetFrameworks>
+    <LangVersion>12</LangVersion>
+    <AssemblyName>KspMp.Server</AssemblyName>
+    <RootNamespace>KspMp.Server</RootNamespace>
+    <DebugType>portable</DebugType>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../KspMp.Shared/KspMp.Shared.csproj" />
+  </ItemGroup>
+</Project>

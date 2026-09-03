@@ -1,0 +1,61 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <LangVersion>12</LangVersion>
+    <AssemblyName>KspMp</AssemblyName>
+    <RootNamespace>KspMp</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <DebugType>portable</DebugType>
+    <NoWarn>$(NoWarn);CS0649;CS0169;CS0414</NoWarn>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <GameDataDir>$(RepoRoot)GameData/KspMp</GameDataDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Harmony is compile-time only: the runtime 0Harmony.dll lives in GameData/000_Harmony (HarmonyKSP-compatible). -->
+    <PackageReference Include="Lib.Harmony" ExcludeAssets="runtime" GeneratePathProperty="true" />
+    <PackageReference Include="Krafs.Publicizer" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../KspMp.Shared/KspMp.Shared.csproj" />
+    <ProjectReference Include="../KspMp.Server/KspMp.Server.csproj" />
+  </ItemGroup>
+
+  <!-- KSP / Unity assemblies from the local install (never copied to output, never committed). -->
+  <ItemGroup>
+    <KspReference Include="Assembly-CSharp;Assembly-CSharp-firstpass;UnityEngine;UnityEngine.CoreModule;UnityEngine.PhysicsModule;UnityEngine.IMGUIModule;UnityEngine.InputLegacyModule;UnityEngine.UI;UnityEngine.UIModule;UnityEngine.TextRenderingModule;UnityEngine.AnimationModule" />
+    <Reference Include="@(KspReference)">
+      <HintPath>$(KspManagedDir)/%(Identity).dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- Krafs.Publicizer: private KSP members become directly callable (no reflection). -->
+  <ItemGroup>
+    <Publicize Include="Assembly-CSharp" />
+  </ItemGroup>
+
+  <Target Name="CheckKsp" BeforeTargets="ResolveAssemblyReferences" Condition="'$(DesignTimeBuild)' != 'true'">
+    <Error Condition="!Exists('$(KspManagedDir)/Assembly-CSharp.dll')"
+           Text="KSP not found: Assembly-CSharp.dll is not in '$(KspManagedDir)'. Set the KSP_ROOT environment variable or create KspRoot.user.props next to the solution with a &lt;KspRoot&gt; property." />
+  </Target>
+
+  <!-- Always refresh the repo's GameData/KspMp/Plugins so the folder is a ready-to-zip mod. -->
+  <Target Name="PackageGameData" AfterTargets="Build">
+    <ItemGroup>
+      <PluginFiles Include="$(OutDir)KspMp*.dll;$(OutDir)KspMp*.pdb" />
+    </ItemGroup>
+    <Copy SourceFiles="@(PluginFiles)" DestinationFolder="$(GameDataDir)/Plugins" SkipUnchangedFiles="true" />
+  </Target>
+
+  <!-- dotnet build -p:KspMpDeploy=true : install into the KSP at $(KspRoot). -->
+  <Target Name="Deploy" AfterTargets="PackageGameData" Condition="'$(KspMpDeploy)' == 'true'">
+    <ItemGroup>
+      <GameDataFiles Include="$(GameDataDir)/**/*" Exclude="$(GameDataDir)/PluginData/**" />
+    </ItemGroup>
+    <Copy SourceFiles="@(GameDataFiles)" DestinationFiles="@(GameDataFiles->'$(KspGameData)/KspMp/%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(PkgLib_Harmony)/lib/net472/0Harmony.dll" DestinationFolder="$(KspGameData)/000_Harmony" Condition="!Exists('$(KspGameData)/000_Harmony')" />
+    <Message Importance="high" Text="KspMp deployed to $(KspGameData)/KspMp" />
+  </Target>
+</Project>
