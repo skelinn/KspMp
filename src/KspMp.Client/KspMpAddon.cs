@@ -24,6 +24,7 @@ namespace KspMp
         public PlayersSystem Players { get; private set; }
         public ChatSystem Chat { get; private set; }
         public TimeSyncSystem TimeSync { get; private set; }
+        public WarpSystem Warp { get; private set; }
         public VesselRegistry Vessels { get; private set; }
         public VesselProtoSystem VesselProto { get; private set; }
         public VesselStateSystem VesselState { get; private set; }
@@ -34,6 +35,8 @@ namespace KspMp
         private bool _autoConnectDone;
         private bool _autoLaunchDone;
         private float _flyAt = -1f;
+        private float _warpAt = -1f;
+        private float _warpCancelAt = -1f;
         private HudWindow _hud;
         private DebugWindow _debug;
 
@@ -73,6 +76,7 @@ namespace KspMp
             Systems.Add(Players = new PlayersSystem(this));
             Systems.Add(Chat = new ChatSystem(this));
             Systems.Add(TimeSync = new TimeSyncSystem(this));
+            Systems.Add(Warp = new WarpSystem(this));
             Systems.Add(Authority = new AuthoritySystem(this));
             Systems.Add(VesselProto = new VesselProtoSystem(this));
             Systems.Add(VesselState = new VesselStateSystem(this));
@@ -100,6 +104,11 @@ namespace KspMp
             }
             if (scene == GameScenes.FLIGHT && Launch.FlyAfterSeconds >= 0 && _autoLaunchDone && _flyAt < 0)
                 _flyAt = Time.realtimeSinceStartup + Launch.FlyAfterSeconds;
+            if (scene == GameScenes.FLIGHT && Launch.WarpIndex >= 0 && _autoLaunchDone && _warpAt < 0)
+            {
+                _warpAt = Time.realtimeSinceStartup + Launch.WarpAfterSeconds;
+                _warpCancelAt = _warpAt + Launch.WarpDurationSeconds;
+            }
         }
 
         private System.Collections.IEnumerator AutoLaunchAfterDelay(float seconds)
@@ -171,6 +180,18 @@ namespace KspMp
             Systems.Update();
 
             if (_flyAt >= 0 && Time.realtimeSinceStartup >= _flyAt && HighLogic.LoadedSceneIsFlight) AutoFly();
+            if (_warpAt >= 0 && Time.realtimeSinceStartup >= _warpAt && HighLogic.LoadedSceneIsFlight)
+            {
+                _warpAt = -1f;
+                Log.Info("Auto-warp: requesting warp index " + Launch.WarpIndex);
+                Warp.RequestFromUser(Shared.Protocol.WarpMode.Rails, Launch.WarpIndex);
+            }
+            if (_warpCancelAt >= 0 && Time.realtimeSinceStartup >= _warpCancelAt && HighLogic.LoadedSceneIsFlight)
+            {
+                _warpCancelAt = -1f;
+                Log.Info("Auto-warp: cancelling warp");
+                Warp.RequestFromUser(Shared.Protocol.WarpMode.Rails, 0);
+            }
 
             var alt = Input.GetKey(KeyCode.LeftAlt) || Input.GetKey(KeyCode.RightAlt);
             if (alt && Input.GetKeyDown(KeyCode.F10)) _debug.Visible = !_debug.Visible;

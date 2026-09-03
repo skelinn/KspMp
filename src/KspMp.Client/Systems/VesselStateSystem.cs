@@ -20,8 +20,6 @@ namespace KspMp.Systems
         public int Sent { get; private set; }
         public int Received { get; private set; }
 
-        public override bool ShouldRun(GameScenes scene, bool connected) => connected && scene == GameScenes.FLIGHT;
-
         protected override void OnActivate()
         {
             Net.RegisterHandler(MessageId.VesselState, OnVesselState);
@@ -38,7 +36,7 @@ namespace KspMp.Systems
 
         public override void LateUpdate()
         {
-            if (!FlightGlobals.ready || !Net.IsConnected) return;
+            if (!HighLogic.LoadedSceneIsFlight || !FlightGlobals.ready || !Net.IsConnected) return;
             var now = Time.realtimeSinceStartup;
             var ut = Planetarium.GetUniversalTime();
             if (now >= _nextStatsAt)
@@ -68,7 +66,7 @@ namespace KspMp.Systems
 
         private void LogStats(double ut)
         {
-            var line = "Vessel sync: " + Registry.Count + " known, " + Registry.CountOwnedByMe + " ours, " + Registry.CountReplicas + " replicas; states sent " + Sent + " recv " + Received;
+            var line = "Vessel sync (warp " + TimeWarp.CurrentRate + "x): " + Registry.Count + " known, " + Registry.CountOwnedByMe + " ours, " + Registry.CountReplicas + " replicas; states sent " + Sent + " recv " + Received;
             foreach (var remote in Registry.All)
             {
                 if (remote.Replica == null) continue;
@@ -94,7 +92,7 @@ namespace KspMp.Systems
 
         private void ApplyReplicas()
         {
-            if (!FlightGlobals.ready) return;
+            if (!HighLogic.LoadedSceneIsFlight || !FlightGlobals.ready) return;
             var ut = Planetarium.GetUniversalTime();
             foreach (var remote in Registry.All)
             {

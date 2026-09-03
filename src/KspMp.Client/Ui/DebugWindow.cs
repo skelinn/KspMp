@@ -32,7 +32,7 @@ namespace KspMp.Ui
             GUILayout.Label("Network: " + net.State + "  " + net.Status);
             GUILayout.Label("Ping: " + net.PingMs + " ms   rtt sample: " + time.RttMs.ToString("F0") + " ms");
             GUILayout.Label("Server UT: " + (time.HasSync ? time.ServerUt.ToString("F2") : "-") + "   local UT: " + (Planetarium.fetch != null ? Planetarium.GetUniversalTime().ToString("F2") : "-"));
-            GUILayout.Label("UT drift: " + (time.DriftSeconds * 1000).ToString("F0") + " ms   corrections: " + time.Corrections + "   rate: " + time.Rate + "x");
+            GUILayout.Label("UT drift: " + (time.DriftSeconds * 1000).ToString("F0") + " ms   corrections: " + time.Corrections + "   rate: " + time.Rate + "x   warp: " + _addon.Warp.StatusText + "   timeScale " + Time.timeScale.ToString("F2"));
             GUILayout.Label("Players: " + _addon.Players.Count + "   chat lines: " + _addon.Chat.Lines.Count);
             GUILayout.Label("Vessels: " + _addon.Vessels.Count + " known, " + _addon.Vessels.CountOwnedByMe + " ours, " + _addon.Vessels.CountReplicas + " replicas"
                             + "   protos sent/applied " + _addon.VesselProto.Sent + "/" + _addon.VesselProto.Applied + "   states sent/recv " + _addon.VesselState.Sent + "/" + _addon.VesselState.Received);

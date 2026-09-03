@@ -3,8 +3,8 @@
 Play KSP with your friends on one shared timeline: everyone is their own Kerbal, you can sit in the same
 rocket, share the controls, build together in the VAB/SPH, and dock.
 
-Status: **M0** — solution skeleton, build/deploy pipeline, and an in-game network spike (LiteNetLib +
-Deflate running inside KSP's Mono runtime). See `docs/PLAN.md` for the architecture and milestones.
+Status: **M0-M2 done** (connect, lobby, chat, shared clock, vessel replication with physics authority, all verified
+with two clients), **M3 in progress** (shared warp). See `docs/PLAN.md` for the architecture and milestones.
 
 ## Requirements
 

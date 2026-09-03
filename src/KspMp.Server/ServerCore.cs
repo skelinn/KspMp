@@ -61,6 +61,7 @@ namespace KspMp.Server
             Chat = new ChatService(this);
             Vessels = new VesselStore(Universe, _log);
             Authority = new AuthorityService(this);
+            Warp = new WarpService(this);
 
             Transport.PeerConnected += OnPeerConnected;
             Transport.PeerDisconnected += OnPeerDisconnected;
@@ -75,6 +76,7 @@ namespace KspMp.Server
         public ChatService Chat { get; }
         public VesselStore Vessels { get; }
         public AuthorityService Authority { get; }
+        public WarpService Warp { get; }
 
         public IEnumerable<ClientSession> Clients => _clients.Values;
         public IEnumerable<ClientSession> HandshakenClients => _clients.Values.Where(c => c.IsOnline);
@@ -157,6 +159,7 @@ namespace KspMp.Server
             if (!client.IsOnline) return;
             Touch(client);
             Authority.ReleaseAll(client);
+            Warp.OnClientLeft(client);
             Players.OnLeft(client, reason);
             Chat.ServerNotice(client.PlayerName + " left");
         }
@@ -232,6 +235,9 @@ namespace KspMp.Server
                     Broadcast(MessageId.VesselRemove, remove, Channel.Bulk, Delivery.ReliableOrdered, client.Peer);
                     break;
                 }
+                case MessageId.WarpRequest:
+                    Warp.OnRequest(client, Envelope.Read<WarpRequestMsg>(body));
+                    break;
                 case MessageId.AuthorityRequest:
                     Authority.Request(client, Envelope.Read<AuthorityRequestMsg>(body).VesselId);
                     break;
@@ -280,6 +286,7 @@ namespace KspMp.Server
                 NeedsAvatar = false,
             }, Channel.Control, Delivery.ReliableOrdered);
             Send(client.Peer, MessageId.TimeSync, Time.Snapshot(0), Channel.Control, Delivery.ReliableOrdered);
+            Send(client.Peer, MessageId.WarpState, Warp.Snapshot(), Channel.Control, Delivery.ReliableOrdered);
             Players.OnJoined(client);
             SyncVessels(client);
             if (!string.IsNullOrEmpty(Config.MessageOfTheDay))

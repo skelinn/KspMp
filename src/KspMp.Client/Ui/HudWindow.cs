@@ -36,7 +36,7 @@ namespace KspMp.Ui
         private void DrawContents(int id)
         {
             var net = _addon.Network;
-            GUILayout.Label("<b>" + net.ServerName + "</b>  " + net.PingMs + " ms  UT drift " + (_addon.TimeSync.DriftSeconds * 1000).ToString("F0") + " ms");
+            GUILayout.Label("<b>" + net.ServerName + "</b>  " + net.PingMs + " ms  UT drift " + (_addon.TimeSync.DriftSeconds * 1000).ToString("F0") + " ms  warp " + _addon.Warp.StatusText);
             foreach (var p in _addon.Players.Players)
                 GUILayout.Label("  " + p.Name + (p.ClientId == net.ClientId ? "  (you)" : "  " + p.PingMs + " ms"));
             if (_addon.Authority.Spectating) GUILayout.Label("<color=#ffd966>Spectating " + _addon.Authority.SpectatingOwnerName + "'s vessel</color>");

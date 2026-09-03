@@ -23,6 +23,9 @@ namespace KspMp.Systems
         private const int MaxSamples = 8;
         /// <summary>Outside flight, a drift bigger than this snaps the local UT to the server's.</summary>
         public const double HardCorrectionThresholdSeconds = 1.0;
+        /// <summary>In flight, drift beyond this snaps UT; below it (and above the dead band) Time.timeScale is skewed at 1x.</summary>
+        public const double FlightHardCorrectionSeconds = 3.5;
+        public const double SkewDeadBandSeconds = 0.025;
 
         private readonly List<Sample> _samples = new List<Sample>();
         private Sample _best;
@@ -57,6 +60,16 @@ namespace KspMp.Systems
             Net.UnregisterHandler(MessageId.TimeSync, OnTimeSync);
             HasSync = false;
             _samples.Clear();
+            ResetSkew();
+        }
+
+        private bool _skewing;
+
+        private void ResetSkew()
+        {
+            if (!_skewing) return;
+            _skewing = false;
+            if (TimeWarp.fetch == null || TimeWarp.CurrentRate == 1f) Time.timeScale = 1f;
         }
 
         public override void Update()
@@ -68,18 +81,35 @@ namespace KspMp.Systems
                 Net.Send(MessageId.TimeSyncReq, new TimeSyncReqMsg { ClientTicks = DateTime.UtcNow.Ticks }, Channel.State, Delivery.Unreliable);
             }
 
-            if (!HasSync || Planetarium.fetch == null || !HighLogic.LoadedSceneIsGame) return;
+            if (!HasSync || Planetarium.fetch == null || !HighLogic.LoadedSceneIsGame)
+            {
+                ResetSkew();
+                return;
+            }
             var drift = DriftSeconds;
-            if (!HighLogic.LoadedSceneIsFlight && Math.Abs(drift) > HardCorrectionThresholdSeconds)
+            var threshold = HighLogic.LoadedSceneIsFlight ? FlightHardCorrectionSeconds : HardCorrectionThresholdSeconds;
+            if (Math.Abs(drift) > threshold)
             {
                 Planetarium.SetUniversalTime(ServerUt);
                 Corrections++;
+                ResetSkew();
                 Log.Info("UT snapped to server time (drift was " + drift.ToString("F3") + " s)");
+            }
+            else if (HighLogic.LoadedSceneIsFlight)
+            {
+                // Gentle catch-up at 1x: run a little faster or slower until the drift is inside the dead band.
+                var warping = TimeWarp.fetch != null && TimeWarp.CurrentRate != 1f;
+                if (!warping && Math.Abs(drift) > SkewDeadBandSeconds)
+                {
+                    Time.timeScale = Mathf.Clamp(Mathf.Pow(2f, -(float)drift), 0.85f, 1.2f);
+                    _skewing = true;
+                }
+                else ResetSkew();
             }
             if (now >= _nextLogAt)
             {
                 _nextLogAt = now + 10f;
-                Log.Info("UT drift " + (drift * 1000).ToString("F0") + " ms (rtt " + RttMs.ToString("F0") + " ms, rate " + Rate + "x, server UT " + ServerUt.ToString("F1") + ")");
+                Log.Info("UT drift " + (drift * 1000).ToString("F0") + " ms (rtt " + RttMs.ToString("F0") + " ms, server rate " + Rate + "x, KSP warp " + (TimeWarp.fetch != null ? TimeWarp.CurrentRate : 1f) + "x, timeScale " + Time.timeScale.ToString("F2") + ", server UT " + ServerUt.ToString("F1") + ")");
             }
         }
 

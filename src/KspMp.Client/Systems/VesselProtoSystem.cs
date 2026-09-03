@@ -176,13 +176,13 @@ namespace KspMp.Systems
                     PersistentId = vessel.persistentId,
                     OwnerClientId = Net.ClientId,
                     Reason = reason,
-                    Name = vessel.vesselName,
+                    Name = vessel.GetDisplayName(),
                     VesselType = vessel.vesselType.ToString(),
                     ProtoDeflated = bytes,
                 }, Channel.Bulk, Delivery.ReliableOrdered);
                 Sent++;
                 var remote = Registry.GetOrAdd(vessel.id);
-                remote.Name = vessel.vesselName;
+                remote.Name = vessel.GetDisplayName();
                 remote.PersistentId = vessel.persistentId;
                 remote.LastProtoSentAt = Time.realtimeSinceStartup;
                 if (remote.OwnerClientId == 0) remote.OwnerClientId = Net.ClientId; // the server confirms with AuthorityAssign
@@ -190,7 +190,7 @@ namespace KspMp.Systems
             }
             catch (Exception e)
             {
-                Log.Exception("Sending snapshot of " + vessel.vesselName, e);
+                Log.Exception("Sending snapshot of " + vessel.GetDisplayName(), e);
             }
         }
 
@@ -214,7 +214,7 @@ namespace KspMp.Systems
                 foreach (var vessel in _newVessels)
                 {
                     if (vessel == null || vessel.id == Guid.Empty || Registry.IsKnown(vessel.id) || Registry.IsTombstoned(vessel.id) || !vessel.loaded) continue;
-                    Log.Info("New local vessel " + vessel.vesselName + ": claiming it");
+                    Log.Info("New local vessel " + vessel.GetDisplayName() + ": claiming it");
                     Addon.Authority.Request(vessel.id);
                     SendProto(vessel, ProtoReason.Created);
                 }

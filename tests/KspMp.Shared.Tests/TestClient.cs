@@ -65,6 +65,7 @@ internal sealed class TestClient
             MessageId.VesselRemove => Envelope.Read<VesselRemoveMsg>(body),
             MessageId.VesselState => Envelope.Read<VesselStateMsg>(body),
             MessageId.AuthorityAssign => Envelope.Read<AuthorityAssignMsg>(body),
+            MessageId.WarpState => Envelope.Read<WarpStateMsg>(body),
             _ => throw new Xunit.Sdk.XunitException("unexpected message " + id),
         };
         if (message is WelcomeMsg welcome) ClientId = welcome.ClientId;

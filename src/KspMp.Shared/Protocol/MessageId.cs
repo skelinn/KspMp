@@ -29,6 +29,10 @@ namespace KspMp.Shared.Protocol
         TimeSyncReq = 100,
         TimeSync = 101,
 
+        // warp
+        WarpRequest = 120,
+        WarpState = 121,
+
         // vessels
         VesselProto = 400,
         VesselRemove = 401,

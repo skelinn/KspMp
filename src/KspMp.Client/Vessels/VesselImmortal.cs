@@ -32,7 +32,7 @@ namespace KspMp.Vessels
             if (integrator) integrator.enabled = !immortal;
 
             if (!vessel.loaded || vessel.parts == null) return;
-            Log.Info("Vessel " + vessel.vesselName + " is now " + (immortal ? "immortal (replica)" : "mortal (ours)"));
+            Log.Info("Vessel " + vessel.GetDisplayName() + " is now " + (immortal ? "immortal (replica)" : "mortal (ours)"));
             foreach (var part in vessel.parts)
             {
                 if (part == null) continue;

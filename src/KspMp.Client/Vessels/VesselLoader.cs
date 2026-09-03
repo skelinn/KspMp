@@ -44,7 +44,7 @@ namespace KspMp.Vessels
 
         private static Outcome LoadIntoGame(ProtoVessel proto, bool force)
         {
-            var label = proto.vesselName + " " + proto.vesselID.ToString().Substring(0, 8);
+            var label = KSP.Localization.Localizer.Format(proto.vesselName) + " " + proto.vesselID.ToString().Substring(0, 8);
             var existing = FlightGlobals.FindVessel(proto.vesselID);
             var hadExisting = existing != null;
             if (existing != null)
@@ -103,7 +103,7 @@ namespace KspMp.Vessels
                         Log.Warn("Server removed our active vessel (" + why + "); keeping it loaded");
                         return;
                     }
-                    Log.Info("Removing vessel " + vessel.vesselName + " (" + why + ")");
+                    Log.Info("Removing vessel " + vessel.GetDisplayName() + " (" + why + ")");
                     if (vessel.loaded) vessel.Unload();
                     FlightGlobals.RemoveVessel(vessel);
                     UnityEngine.Object.Destroy(vessel.gameObject);
