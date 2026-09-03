@@ -24,6 +24,8 @@ namespace KspMp.Systems
         private float _nextCapCheckAt;
         private float _sceneLoadedAt;
         private float _reapplyAt = -1f;
+        private bool _kspRefused;
+        private float _nextRefusedRetryAt;
 
         public WarpSystem(KspMpAddon addon) : base(addon) { }
 
@@ -83,6 +85,8 @@ namespace KspMp.Systems
         private int CurrentCap()
         {
             if (!HighLogic.LoadedSceneIsFlight || TimeWarp.fetch == null) return -1;
+            // KSP declined the shared rate (e.g. "cannot warp while moving over the surface"): what it accepted is our cap.
+            if (_kspRefused) return TimeWarp.CurrentRateIndex;
             var vessel = FlightGlobals.ActiveVessel;
             if (vessel == null || vessel.mainBody == null || vessel.LandedOrSplashed) return -1;
             return TimeWarp.fetch.GetMaxRateForAltitude(vessel.altitude, vessel.mainBody);
@@ -94,6 +98,12 @@ namespace KspMp.Systems
             if (_reapplyAt >= 0 && now >= _reapplyAt)
             {
                 _reapplyAt = -1f;
+                Apply();
+            }
+            if (_kspRefused && now >= _nextRefusedRetryAt)
+            {
+                // Try the shared rate again; if KSP takes it now, the cap report below lifts the limit.
+                _kspRefused = false;
                 Apply();
             }
             if (now < _nextCapCheckAt) return;
@@ -130,6 +140,23 @@ namespace KspMp.Systems
             {
                 ApplyingServerState = false;
             }
+
+            var refused = HighLogic.LoadedSceneIsFlight && _state.Mode == WarpMode.Rails && TimeWarp.CurrentRateIndex < _state.RateIndex;
+            if (refused && !_kspRefused)
+            {
+                _kspRefused = true;
+                _nextRefusedRetryAt = Time.realtimeSinceStartup + 5f;
+                Log.Info("KSP declined warp index " + _state.RateIndex + " (stayed at " + TimeWarp.CurrentRateIndex + "); reporting that as our limit");
+                SendRequest();
+            }
+            else if (!refused && _kspRefused)
+            {
+                _kspRefused = false;
+                SendRequest();
+            }
         }
+
+        /// <summary>True when our KSP will not run the shared rate right now (surface movement, atmosphere, ...).</summary>
+        public bool KspRefused => _kspRefused;
     }
 }

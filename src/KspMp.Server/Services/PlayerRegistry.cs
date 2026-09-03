@@ -19,6 +19,7 @@ namespace KspMp.Server.Services
             PlayerId = client.PlayerId,
             Name = client.PlayerName,
             PingMs = _server.Transport.GetPeerPingMs(client.Peer),
+            AvatarKerbalName = client.AvatarKerbalName,
         };
 
         public PlayerListMsg BuildList() => new PlayerListMsg { Players = _server.HandshakenClients.Select(ToInfo).ToArray() };

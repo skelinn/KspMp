@@ -38,7 +38,10 @@ namespace KspMp.Shared.Protocol
         public string ServerName;
         public double UniversalTime;
         public float TimeRate;
+        /// <summary>True when this player has no Kerbal avatar yet and must claim one before entering the game.</summary>
         public bool NeedsAvatar;
+        /// <summary>The player's avatar kerbal (empty when NeedsAvatar).</summary>
+        public string AvatarKerbalName;
 
         public void Serialize(NetDataWriter w)
         {
@@ -47,6 +50,7 @@ namespace KspMp.Shared.Protocol
             w.Put(UniversalTime);
             w.Put(TimeRate);
             w.Put(NeedsAvatar);
+            w.Put(AvatarKerbalName ?? string.Empty);
         }
 
         public void Deserialize(NetDataReader r)
@@ -56,6 +60,25 @@ namespace KspMp.Shared.Protocol
             UniversalTime = r.GetDouble();
             TimeRate = r.GetFloat();
             NeedsAvatar = r.GetBool();
+            AvatarKerbalName = r.GetString();
+        }
+    }
+
+    public struct SyncCompleteMsg : INetSerializable
+    {
+        public int Kerbals;
+        public int Vessels;
+
+        public void Serialize(NetDataWriter w)
+        {
+            w.Put(Kerbals);
+            w.Put(Vessels);
+        }
+
+        public void Deserialize(NetDataReader r)
+        {
+            Kerbals = r.GetInt();
+            Vessels = r.GetInt();
         }
     }
 
@@ -101,6 +124,7 @@ namespace KspMp.Shared.Protocol
         public Guid PlayerId;
         public string Name;
         public int PingMs;
+        public string AvatarKerbalName;
 
         public void Serialize(NetDataWriter w)
         {
@@ -108,6 +132,7 @@ namespace KspMp.Shared.Protocol
             w.PutGuidRaw(PlayerId);
             w.Put(Name ?? string.Empty);
             w.Put(PingMs);
+            w.Put(AvatarKerbalName ?? string.Empty);
         }
 
         public void Deserialize(NetDataReader r)
@@ -116,6 +141,7 @@ namespace KspMp.Shared.Protocol
             PlayerId = r.GetGuidRaw();
             Name = r.GetString();
             PingMs = r.GetInt();
+            AvatarKerbalName = r.GetString();
         }
     }
 

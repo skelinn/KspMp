@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using KspMp.Server.Services;
+using KspMp.Server.Roster;
 using KspMp.Server.Universe;
 using KspMp.Server.Vessels;
 using KspMp.Shared.Protocol;
@@ -62,6 +63,7 @@ namespace KspMp.Server
             Vessels = new VesselStore(Universe, _log);
             Authority = new AuthorityService(this);
             Warp = new WarpService(this);
+            Roster = new RosterService(this, new RosterStore(Universe, _log));
 
             Transport.PeerConnected += OnPeerConnected;
             Transport.PeerDisconnected += OnPeerDisconnected;
@@ -77,6 +79,7 @@ namespace KspMp.Server
         public VesselStore Vessels { get; }
         public AuthorityService Authority { get; }
         public WarpService Warp { get; }
+        public RosterService Roster { get; }
 
         public IEnumerable<ClientSession> Clients => _clients.Values;
         public IEnumerable<ClientSession> HandshakenClients => _clients.Values.Where(c => c.IsOnline);
@@ -90,7 +93,7 @@ namespace KspMp.Server
         public void Start()
         {
             Transport.Start();
-            _log(Config.ServerName + ": UT " + Time.UniversalTime.ToString("F1") + " at " + Time.Rate + "x, " + _knownPlayers.Count + " known player(s), " + Vessels.Count + " vessel(s)"
+            _log(Config.ServerName + ": UT " + Time.UniversalTime.ToString("F1") + " at " + Time.Rate + "x, " + _knownPlayers.Count + " known player(s), " + Vessels.Count + " vessel(s), " + Roster.Store.Count + " kerbal(s)"
                  + (Universe.IsPersistent ? ", universe " + Universe.Dir : ", in-memory universe"));
         }
 
@@ -136,6 +139,7 @@ namespace KspMp.Server
                 Universe.SaveTime(Time.UniversalTime, Time.Rate);
                 Universe.SavePlayers(_knownPlayers.Values);
                 Vessels.SaveDirty();
+                Roster.Store.SaveDirty();
             }
             catch (Exception e)
             {
@@ -161,6 +165,7 @@ namespace KspMp.Server
             Authority.ReleaseAll(client);
             Warp.OnClientLeft(client);
             Players.OnLeft(client, reason);
+            Broadcast(MessageId.Presence, new PresenceMsg { ClientId = client.ClientId, State = PresenceState.MissionControl, VesselId = Guid.Empty, VesselName = string.Empty, Scene = 0 }, Channel.Control, Delivery.ReliableOrdered);
             Chat.ServerNotice(client.PlayerName + " left");
         }
 
@@ -235,6 +240,26 @@ namespace KspMp.Server
                     Broadcast(MessageId.VesselRemove, remove, Channel.Bulk, Delivery.ReliableOrdered, client.Peer);
                     break;
                 }
+                case MessageId.KerbalProto:
+                    Roster.HandleKerbalProto(client, Envelope.Read<KerbalProtoMsg>(body));
+                    break;
+                case MessageId.KerbalStatus:
+                    Roster.HandleKerbalStatus(client, Envelope.Read<KerbalStatusMsg>(body));
+                    break;
+                case MessageId.KerbalRemoved:
+                    Roster.HandleKerbalRemoved(client, Envelope.Read<KerbalRemovedMsg>(body));
+                    break;
+                case MessageId.AvatarClaim:
+                    Roster.HandleAvatarClaim(client, Envelope.Read<AvatarClaimMsg>(body));
+                    break;
+                case MessageId.Presence:
+                {
+                    var presence = Envelope.Read<PresenceMsg>(body);
+                    presence.ClientId = client.ClientId;
+                    client.Presence = presence;
+                    Broadcast(MessageId.Presence, presence, Channel.Control, Delivery.ReliableOrdered);
+                    break;
+                }
                 case MessageId.WarpRequest:
                     Warp.OnRequest(client, Envelope.Read<WarpRequestMsg>(body));
                     break;
@@ -275,6 +300,8 @@ namespace KspMp.Server
             client.PlayerName = name;
             client.Handshaken = true;
             Touch(client);
+            if (_knownPlayers.TryGetValue(client.PlayerId, out var known) && !string.IsNullOrEmpty(known.AvatarKerbalName))
+                client.AvatarKerbalName = known.AvatarKerbalName;
             _log(client.DisplayName + " joined (KSP " + hello.KspVersion + ", mod " + hello.ModVersion + ")");
 
             Send(client.Peer, MessageId.Welcome, new WelcomeMsg
@@ -283,12 +310,18 @@ namespace KspMp.Server
                 ServerName = Config.ServerName,
                 UniversalTime = Time.UniversalTime,
                 TimeRate = Time.Rate,
-                NeedsAvatar = false,
+                NeedsAvatar = !client.HasAvatar,
+                AvatarKerbalName = client.AvatarKerbalName,
             }, Channel.Control, Delivery.ReliableOrdered);
             Send(client.Peer, MessageId.TimeSync, Time.Snapshot(0), Channel.Control, Delivery.ReliableOrdered);
             Send(client.Peer, MessageId.WarpState, Warp.Snapshot(), Channel.Control, Delivery.ReliableOrdered);
             Players.OnJoined(client);
+            Roster.Sync(client);
             SyncVessels(client);
+            foreach (var other in HandshakenClients)
+                if (other != client && other.Presence.ClientId != 0)
+                    Send(client.Peer, MessageId.Presence, other.Presence, Channel.Control, Delivery.ReliableOrdered);
+            Send(client.Peer, MessageId.SyncComplete, new SyncCompleteMsg { Kerbals = Roster.Store.Count, Vessels = Vessels.Count }, Channel.Bulk, Delivery.ReliableOrdered);
             if (!string.IsNullOrEmpty(Config.MessageOfTheDay))
                 Send(client.Peer, MessageId.Chat, new ChatMsg { FromClientId = 0, FromName = "Server", Text = Config.MessageOfTheDay }, Channel.ChatMod, Delivery.ReliableOrdered);
             Chat.ServerNotice(name + " joined");
@@ -337,6 +370,15 @@ namespace KspMp.Server
                 _knownPlayers[client.PlayerId] = known = new KnownPlayer { PlayerId = client.PlayerId };
             known.Name = client.PlayerName;
             known.LastSeenUtc = DateTime.UtcNow;
+        }
+
+        /// <summary>Records a player's avatar kerbal (persisted in players.cfg).</summary>
+        public void SetAvatar(ClientSession client, string kerbalName)
+        {
+            client.AvatarKerbalName = kerbalName;
+            Touch(client);
+            if (client.PlayerId != Guid.Empty && _knownPlayers.TryGetValue(client.PlayerId, out var known)) known.AvatarKerbalName = kerbalName;
+            Save();
         }
 
         /// <summary>Sends a Reject, then disconnects after <see cref="RejectGraceMs"/> (the reason also rides in the disconnect payload).</summary>

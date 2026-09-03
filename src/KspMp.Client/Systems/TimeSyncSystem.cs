@@ -64,6 +64,7 @@ namespace KspMp.Systems
         }
 
         private bool _skewing;
+        private float _nextSnapAllowedAt;
 
         private void ResetSkew()
         {
@@ -88,12 +89,17 @@ namespace KspMp.Systems
             }
             var drift = DriftSeconds;
             var threshold = HighLogic.LoadedSceneIsFlight ? FlightHardCorrectionSeconds : HardCorrectionThresholdSeconds;
+            var localRate = TimeWarp.fetch != null ? TimeWarp.CurrentRate : 1f;
+            var rateMismatch = Math.Abs(localRate - Rate) > 0.01f;
             if (Math.Abs(drift) > threshold)
             {
+                // With a rate mismatch snapping cannot help (the drift comes right back); do it rarely and say why.
+                if (now < _nextSnapAllowedAt) return;
+                _nextSnapAllowedAt = now + (rateMismatch ? 5f : 1f);
                 Planetarium.SetUniversalTime(ServerUt);
                 Corrections++;
                 ResetSkew();
-                Log.Info("UT snapped to server time (drift was " + drift.ToString("F3") + " s)");
+                Log.Info("UT snapped to server time (drift was " + drift.ToString("F3") + " s" + (rateMismatch ? ", local warp " + localRate + "x vs server " + Rate + "x" : "") + ")");
             }
             else if (HighLogic.LoadedSceneIsFlight)
             {

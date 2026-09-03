@@ -6,14 +6,14 @@ using Xunit;
 namespace KspMp.Shared.Tests;
 
 /// <summary>A scripted client on a loopback transport that records every decoded message it receives.</summary>
-internal sealed class TestClient
+internal class TestClient
 {
     private readonly NetDataWriter _writer = new();
 
-    public TestClient(LoopbackHub hub, string name, ushort protocolVersion = ProtocolVersion.Current)
+    public TestClient(LoopbackHub hub, string name, ushort protocolVersion = ProtocolVersion.Current, Guid? playerId = null)
     {
         Name = name;
-        PlayerId = Guid.NewGuid();
+        PlayerId = playerId ?? Guid.NewGuid();
         Transport = hub.CreateClient();
         Transport.PeerConnected += _ =>
         {
@@ -66,6 +66,12 @@ internal sealed class TestClient
             MessageId.VesselState => Envelope.Read<VesselStateMsg>(body),
             MessageId.AuthorityAssign => Envelope.Read<AuthorityAssignMsg>(body),
             MessageId.WarpState => Envelope.Read<WarpStateMsg>(body),
+            MessageId.SyncComplete => Envelope.Read<SyncCompleteMsg>(body),
+            MessageId.KerbalProto => Envelope.Read<KerbalProtoMsg>(body),
+            MessageId.KerbalStatus => Envelope.Read<KerbalStatusMsg>(body),
+            MessageId.KerbalRemoved => Envelope.Read<KerbalRemovedMsg>(body),
+            MessageId.AvatarClaimResult => Envelope.Read<AvatarClaimResultMsg>(body),
+            MessageId.Presence => Envelope.Read<PresenceMsg>(body),
             _ => throw new Xunit.Sdk.XunitException("unexpected message " + id),
         };
         if (message is WelcomeMsg welcome) ClientId = welcome.ClientId;

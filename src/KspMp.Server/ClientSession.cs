@@ -13,6 +13,10 @@ namespace KspMp.Server
         /// <summary>Hello was refused; a disconnect is pending and further messages are ignored.</summary>
         public bool Rejected;
         public DateTime ConnectedAtUtc = DateTime.UtcNow;
+        public string AvatarKerbalName = "";
+        public PresenceMsg Presence;
+
+        public bool HasAvatar => !string.IsNullOrEmpty(AvatarKerbalName);
 
         public bool IsOnline => Handshaken && !Rejected;
         public string DisplayName => Handshaken ? PlayerName + "#" + ClientId : Peer.ToString();

@@ -14,6 +14,8 @@ namespace KspMp.Shared.Protocol
         Hello = 1,
         Welcome = 2,
         Reject = 3,
+        /// <summary>Server -> client: the initial roster, vessel and presence sync is complete.</summary>
+        SyncComplete = 4,
 
         // players
         Ping = 10,
@@ -32,6 +34,16 @@ namespace KspMp.Shared.Protocol
         // warp
         WarpRequest = 120,
         WarpState = 121,
+
+        // roster and avatars
+        KerbalProto = 200,
+        KerbalStatus = 201,
+        KerbalRemoved = 202,
+        AvatarClaim = 210,
+        AvatarClaimResult = 211,
+
+        // presence
+        Presence = 300,
 
         // vessels
         VesselProto = 400,
