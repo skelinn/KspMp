@@ -139,14 +139,24 @@ namespace KspMp.Testing
         public static Vessel FindDockingTarget(Vessel ours, Func<Guid, bool> ownedByOther)
         {
             if (ours == null || FlightGlobals.fetch == null) return null;
+            Log.Info("Test: looking for a docking target among " + FlightGlobals.Vessels.Count + " vessel(s); ours is " + ours.GetDisplayName() + " " + ours.id.ToString().Substring(0, 8));
             Vessel best = null;
             var bestDistance = double.MaxValue;
             var all = FlightGlobals.Vessels;
             for (var i = 0; i < all.Count; i++)
             {
                 var candidate = all[i];
-                if (candidate == null || candidate == ours || !ownedByOther(candidate.id)) continue;
-                if (candidate.loaded && FindFreePort(candidate) == null) continue;
+                if (candidate == null || candidate.id == ours.id) continue;
+                if (!ownedByOther(candidate.id))
+                {
+                    Log.Info("Test:   skipping " + candidate.GetDisplayName() + " " + candidate.id.ToString().Substring(0, 8) + " (not another player's)");
+                    continue;
+                }
+                if (candidate.loaded && FindFreePort(candidate) == null)
+                {
+                    Log.Info("Test:   skipping " + candidate.GetDisplayName() + " (loaded, no free docking port)");
+                    continue;
+                }
                 var distance = (candidate.GetWorldPos3D() - ours.GetWorldPos3D()).magnitude;
                 if (distance >= bestDistance) continue;
                 bestDistance = distance;
