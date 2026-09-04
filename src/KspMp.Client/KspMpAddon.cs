@@ -46,6 +46,8 @@ namespace KspMp
         private float _stageAt = -1f;
         private float _toggleAt = -1f;
         private float _partEventAt = -1f;
+        private float _orbitAt = -1f;
+        private bool _dockSequenceStarted;
         private float _inputAt = -1f;
         private float _inputUntil = -1f;
         private HudWindow _hud;
@@ -128,6 +130,13 @@ namespace KspMp
                 _toggleAt = Time.realtimeSinceStartup + Launch.ToggleAfterSeconds;
             if (scene == GameScenes.FLIGHT && Launch.PartEventAfterSeconds >= 0 && _partEventAt < 0)
                 _partEventAt = Time.realtimeSinceStartup + Launch.PartEventAfterSeconds;
+            if (scene == GameScenes.FLIGHT && Launch.OrbitAfterSeconds >= 0 && _orbitAt < 0)
+                _orbitAt = Time.realtimeSinceStartup + Launch.OrbitAfterSeconds;
+            if (scene == GameScenes.FLIGHT && Launch.DockAfterSeconds >= 0 && !_dockSequenceStarted)
+            {
+                _dockSequenceStarted = true;
+                StartCoroutine(AutoDockSequence(Launch.DockAfterSeconds));
+            }
             if (scene == GameScenes.FLIGHT && Launch.InputAfterSeconds >= 0 && _inputAt < 0)
             {
                 _inputAt = Time.realtimeSinceStartup + Launch.InputAfterSeconds;
@@ -218,6 +227,47 @@ namespace KspMp
             Log.Warn("Auto-partevent: no active event named '" + Launch.PartEventName + "' on " + vessel.GetDisplayName() + ". Available: " + string.Join(", ", available.ToArray()));
         }
 
+        /// <summary>
+        /// Test harness: rendezvous with another player's ship and let the docking magnets take over. Runs in
+        /// stages because each one needs the game a few seconds to catch up (load the target, unpack physics).
+        /// </summary>
+        private System.Collections.IEnumerator AutoDockSequence(float delaySeconds)
+        {
+            yield return new WaitForSeconds(delaySeconds);
+            var ours = FlightGlobals.ActiveVessel;
+            if (ours == null) { Log.Warn("Auto-dock: no active vessel"); yield break; }
+
+            var target = Testing.TestRendezvous.FindDockingTarget(ours, id => Vessels.IsOwnedByOther(id));
+            if (target == null) { Log.Warn("Auto-dock: found no other player's ship with a docking port"); yield break; }
+            Log.Info("Auto-dock: target is " + target.GetDisplayName() + " at " + (target.GetWorldPos3D() - ours.GetWorldPos3D()).magnitude.ToString("F0") + " m");
+
+            if (!Testing.TestRendezvous.MoveNear(ours, target, 300f)) yield break;
+            yield return new WaitForSeconds(8f);
+
+            for (var attempt = 1; attempt <= 6; attempt++)
+            {
+                ours = FlightGlobals.ActiveVessel;
+                target = FlightGlobals.FindVessel(target.id);
+                if (ours == null || target == null) { Log.Warn("Auto-dock: lost a vessel"); yield break; }
+                if (ours.id == target.id) { Log.Info("Auto-dock: already one vessel, docking is done"); yield break; }
+                if (!target.loaded)
+                {
+                    Log.Info("Auto-dock: waiting for " + target.GetDisplayName() + " to load (attempt " + attempt + ")");
+                    yield return new WaitForSeconds(4f);
+                    continue;
+                }
+                Log.Info("Auto-dock: alignment attempt " + attempt + "; owner of target is " + (Vessels.IsMine(target.id) ? "us" : "#" + Vessels.OwnerOf(target.id)));
+                Testing.TestRendezvous.AlignPorts(ours, target, 0.3f);
+                yield return new WaitForSeconds(6f);
+                if (FlightGlobals.ActiveVessel != null && FlightGlobals.FindVessel(target.id) == null)
+                {
+                    Log.Info("Auto-dock: the two ships are now one vessel");
+                    yield break;
+                }
+            }
+            Log.Warn("Auto-dock: gave up after 6 alignment attempts");
+        }
+
         private void AutoFly()
         {
             var vessel = FlightGlobals.ActiveVessel;
@@ -280,6 +330,11 @@ namespace KspMp
                 _stageAt = -1f;
                 Log.Info("Auto-stage: pressing space");
                 KSP.UI.Screens.StageManager.ActivateNextStage();
+            }
+            if (_orbitAt >= 0 && Time.realtimeSinceStartup >= _orbitAt && HighLogic.LoadedSceneIsFlight && FlightGlobals.ready)
+            {
+                _orbitAt = -1f;
+                Testing.TestRendezvous.PlaceInCircularOrbit(FlightGlobals.ActiveVessel, Launch.OrbitAltitudeKm * 1000);
             }
             if (_toggleAt >= 0 && Time.realtimeSinceStartup >= _toggleAt && HighLogic.LoadedSceneIsFlight && FlightGlobals.ready)
             {

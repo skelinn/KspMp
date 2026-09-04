@@ -19,6 +19,8 @@ namespace KspMp
     ///   -kspmp-input D:S             D seconds after entering flight: hold pitch 0.3 and throttle 0.8 for S seconds
     ///   -kspmp-toggle Group:D        D seconds after entering flight: toggle an action group (Light, Gear, RCS, Brakes, ...)
     ///   -kspmp-partevent Name:D      D seconds after entering flight: fire a part-menu action by name on the active vessel
+    ///   -kspmp-orbit ALT:D           D seconds after entering flight: place us in a circular orbit ALT km up (test harness)
+    ///   -kspmp-dock D                D seconds after entering flight: rendezvous with another player's ship and dock (test harness)
     /// </summary>
     public sealed class LaunchOptions
     {
@@ -41,6 +43,9 @@ namespace KspMp
         public float ToggleAfterSeconds = -1f;
         public string PartEventName;
         public float PartEventAfterSeconds = -1f;
+        public double OrbitAltitudeKm = -1;
+        public float OrbitAfterSeconds = -1f;
+        public float DockAfterSeconds = -1f;
         public int WarpIndex = -1;
         public float WarpAfterSeconds = 30f;
         public float WarpDurationSeconds = 30f;
@@ -122,6 +127,16 @@ namespace KspMp
                         if (colon > 0 && float.TryParse(spec.Substring(colon + 1), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var eventAfter)) options.PartEventAfterSeconds = eventAfter;
                         break;
                     }
+                    case "-kspmp-orbit" when i + 1 < args.Length:
+                    {
+                        var parts = args[++i].Split(':');
+                        if (parts.Length > 0 && double.TryParse(parts[0], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var km)) options.OrbitAltitudeKm = km;
+                        if (parts.Length > 1 && float.TryParse(parts[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var afterOrbit)) options.OrbitAfterSeconds = afterOrbit;
+                        break;
+                    }
+                    case "-kspmp-dock" when i + 1 < args.Length:
+                        if (float.TryParse(args[++i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var afterDock)) options.DockAfterSeconds = afterDock;
+                        break;
                     case "-kspmp-warp" when i + 1 < args.Length:
                     {
                         var parts = args[++i].Split(':');

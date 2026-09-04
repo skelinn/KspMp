@@ -1,0 +1,158 @@
+using System;
+using UnityEngine;
+
+namespace KspMp.Testing
+{
+    /// <summary>
+    /// Test-harness only. Flying an orbital rendezvous by hand cannot be scripted, so these helpers put a vessel
+    /// where a test needs it: a circular orbit, then alongside another vessel, then port-to-port at magnet range.
+    /// Only reachable through -kspmp- launch options; nothing here runs during normal play.
+    /// </summary>
+    public static class TestRendezvous
+    {
+        /// <summary>Places a vessel in a circular equatorial orbit at the given altitude above its current body.</summary>
+        public static bool PlaceInCircularOrbit(Vessel vessel, double altitudeMetres)
+        {
+            if (vessel == null || vessel.mainBody == null) return false;
+            var body = vessel.mainBody;
+            var ut = Planetarium.GetUniversalTime();
+            try
+            {
+                if (!vessel.packed) vessel.GoOnRails();
+                vessel.Landed = false;
+                vessel.Splashed = false;
+                vessel.landedAt = string.Empty;
+                vessel.displaylandedAt = string.Empty;
+                vessel.orbitDriver.orbit.SetOrbit(0, 0, body.Radius + altitudeMetres, 0, 0, 0, ut, body);
+                vessel.orbitDriver.UpdateOrbit();
+                vessel.orbitDriver.updateFromParameters();
+                OrbitPhysicsManager.CheckReferenceFrame();
+                OrbitPhysicsManager.HoldVesselUnpack(10);
+                vessel.IgnoreGForces(20);
+                Log.Info("Test: placed " + vessel.GetDisplayName() + " in a " + (altitudeMetres / 1000).ToString("F0") + " km circular orbit of " + body.bodyName);
+                return true;
+            }
+            catch (Exception e)
+            {
+                Log.Exception("Test: placing " + vessel.GetDisplayName() + " in orbit", e);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Coarse step: copies the target's orbit and offsets us by a few hundred metres, so the target comes
+        /// inside physics range and both vessels become real on this client.
+        /// </summary>
+        public static bool MoveNear(Vessel ours, Vessel target, float metres)
+        {
+            if (ours == null || target == null || target.orbit == null) return false;
+            var ut = Planetarium.GetUniversalTime();
+            var body = target.mainBody;
+            try
+            {
+                var pos = target.orbit.getRelativePositionAtUT(ut);
+                var vel = target.orbit.getOrbitalVelocityAtUT(ut);
+                // Offset sideways (normal to the orbit plane) so we do not sit in the target's path.
+                var sideways = Vector3d.Cross(pos, vel).normalized * metres;
+                if (!ours.packed) ours.GoOnRails();
+                ours.Landed = false;
+                ours.Splashed = false;
+                ours.landedAt = string.Empty;
+                ours.orbit.UpdateFromStateVectors(pos + sideways, vel, body, ut);
+                ours.orbitDriver.UpdateOrbit();
+                ours.orbitDriver.updateFromParameters();
+                OrbitPhysicsManager.CheckReferenceFrame();
+                OrbitPhysicsManager.HoldVesselUnpack(10);
+                ours.IgnoreGForces(20);
+                Log.Info("Test: moved " + ours.GetDisplayName() + " to " + metres.ToString("F0") + " m from " + target.GetDisplayName());
+                return true;
+            }
+            catch (Exception e)
+            {
+                Log.Exception("Test: moving next to " + target.GetDisplayName(), e);
+                return false;
+            }
+        }
+
+        public static ModuleDockingNode FindFreePort(Vessel vessel)
+        {
+            if (vessel == null || vessel.parts == null) return null;
+            for (var i = 0; i < vessel.parts.Count; i++)
+            {
+                var modules = vessel.parts[i].Modules;
+                for (var m = 0; m < modules.Count; m++)
+                {
+                    if (!(modules[m] is ModuleDockingNode node)) continue;
+                    if (node.nodeTransform == null) continue;
+                    if (node.state != null && node.state.StartsWith("Docked", StringComparison.Ordinal)) continue;
+                    if (node.otherNode != null) continue;
+                    return node;
+                }
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// Fine step: rigidly moves our loaded vessel so its docking port sits just in front of the target's port,
+        /// facing it, with matching velocity. KSP's magnets then pull the two together on their own.
+        /// </summary>
+        public static bool AlignPorts(Vessel ours, Vessel target, float gapMetres)
+        {
+            if (ours == null || target == null || !ours.loaded || !target.loaded) return false;
+            var ourNode = FindFreePort(ours);
+            var theirNode = FindFreePort(target);
+            if (ourNode == null || theirNode == null)
+            {
+                Log.Warn("Test: no free docking port on " + (ourNode == null ? ours.GetDisplayName() : target.GetDisplayName()));
+                return false;
+            }
+            try
+            {
+                if (ours.packed) ours.GoOffRails();
+                var theirPort = theirNode.nodeTransform;
+                var ourPort = ourNode.nodeTransform;
+
+                // Where our port must end up: in front of theirs, pointing back at it.
+                var wantedPos = theirPort.position + theirPort.forward * gapMetres;
+                var wantedRot = Quaternion.LookRotation(-theirPort.forward, theirPort.up);
+
+                // Move the whole vessel by the rigid transform that takes our port to that pose.
+                var delta = wantedRot * Quaternion.Inverse(ourPort.rotation);
+                ours.SetRotation(delta * ours.transform.rotation, true);
+                var offset = wantedPos - ourPort.position;
+                ours.SetPosition(ours.transform.position + offset);
+                ours.SetWorldVelocity(target.GetObtVelocity() - Krakensbane.GetFrameVelocity());
+                ours.IgnoreGForces(20);
+
+                var achieved = (ourPort.position - theirPort.position).magnitude;
+                Log.Info("Test: aligned " + ours.GetDisplayName() + " port to " + target.GetDisplayName() + " port, gap now " + achieved.ToString("F2") + " m (acquire range " + theirNode.acquireRange.ToString("F2") + " m)");
+                return true;
+            }
+            catch (Exception e)
+            {
+                Log.Exception("Test: aligning docking ports", e);
+                return false;
+            }
+        }
+
+        /// <summary>The nearest vessel with a free docking port that this client does not simulate.</summary>
+        public static Vessel FindDockingTarget(Vessel ours, Func<Guid, bool> ownedByOther)
+        {
+            if (ours == null || FlightGlobals.fetch == null) return null;
+            Vessel best = null;
+            var bestDistance = double.MaxValue;
+            var all = FlightGlobals.Vessels;
+            for (var i = 0; i < all.Count; i++)
+            {
+                var candidate = all[i];
+                if (candidate == null || candidate == ours || !ownedByOther(candidate.id)) continue;
+                if (candidate.loaded && FindFreePort(candidate) == null) continue;
+                var distance = (candidate.GetWorldPos3D() - ours.GetWorldPos3D()).magnitude;
+                if (distance >= bestDistance) continue;
+                bestDistance = distance;
+                best = candidate;
+            }
+            return best;
+        }
+    }
+}
