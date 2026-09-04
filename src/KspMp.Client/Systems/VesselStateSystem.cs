@@ -66,7 +66,9 @@ namespace KspMp.Systems
 
         private void LogStats(double ut)
         {
-            var line = "Vessel sync (warp " + TimeWarp.CurrentRate + "x): " + Registry.Count + " known, " + Registry.CountOwnedByMe + " ours, " + Registry.CountReplicas + " replicas; states sent " + Sent + " recv " + Received;
+            var active = FlightGlobals.ActiveVessel;
+            var line = "Vessel sync (warp " + TimeWarp.CurrentRate + "x): " + Registry.Count + " known, " + Registry.CountOwnedByMe + " ours, " + Registry.CountReplicas + " replicas; states sent " + Sent + " recv " + Received
+                       + (active != null ? "; ours " + active.GetDisplayName() + " alt " + active.altitude.ToString("F0") + " " + active.situation : "");
             foreach (var remote in Registry.All)
             {
                 if (remote.Replica == null) continue;

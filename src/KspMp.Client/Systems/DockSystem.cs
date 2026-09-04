@@ -63,7 +63,10 @@ namespace KspMp.Systems
                 for (var j = 0; j < loaded.Count; j++)
                 {
                     var other = loaded[j];
-                    if (other == null || other == mine || !Registry.IsOwnedByOther(other.id) || !CanDock(other)) continue;
+                    if (other == null || other == mine || !CanDock(other)) continue;
+                    // Report the approach whether or not we already own the other ship: while we own both, the
+                    // report is what keeps the docking hold alive, so the seat rule cannot pull one back mid-dock.
+                    if (Registry.IsMine(other.id) && !Registry.IsMine(mine.id)) continue;
                     if (!HasMatingHardware(mine, other)) continue;
                     var distance = (float)(mine.GetWorldPos3D() - other.GetWorldPos3D()).magnitude;
                     if (distance < ApproachMeters) SendIntent(mine.id, other.id, distance);
@@ -115,7 +118,11 @@ namespace KspMp.Systems
             if (_intentSentAt.TryGetValue(other, out var at) && now - at < IntentIntervalSeconds) return;
             _intentSentAt[other] = now;
             Net.Send(MessageId.DockIntent, new DockIntentMsg { MyVesselId = mine, OtherVesselId = other, DistanceMeters = distance }, Channel.Control, Delivery.ReliableOrdered);
-            Log.Info("Docking approach: asked the server to put " + (Registry.TryGet(other, out var rv) ? rv.Label : other.ToString()) + " under one physics owner (" + distance.ToString("F0") + " m)");
+            var label = Registry.TryGet(other, out var rv) ? rv.Label : other.ToString().Substring(0, 8);
+            if (Registry.IsMine(other))
+                Log.Info("Docking approach: still closing on " + label + " (" + distance.ToString("F0") + " m), we simulate both");
+            else
+                Log.Info("Docking approach: asked the server to put " + label + " under one physics owner (" + distance.ToString("F0") + " m)");
         }
 
         private void OnPartCouple(GameEvents.FromToAction<Part, Part> action)

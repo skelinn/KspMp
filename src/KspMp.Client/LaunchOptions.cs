@@ -21,6 +21,8 @@ namespace KspMp
     ///   -kspmp-partevent Name:D      D seconds after entering flight: fire a part-menu action by name on the active vessel
     ///   -kspmp-orbit ALT:D           D seconds after entering flight: place us in a circular orbit ALT km up (test harness)
     ///   -kspmp-dock D                D seconds after entering flight: rendezvous with another player's ship and dock (test harness)
+    ///   -kspmp-dockassist D          like -kspmp-dock but never moves our ship across the sky; helps finish a dock
+    ///                                the other player started, since only the client simulating both can align them
     /// </summary>
     public sealed class LaunchOptions
     {
@@ -46,6 +48,7 @@ namespace KspMp
         public double OrbitAltitudeKm = -1;
         public float OrbitAfterSeconds = -1f;
         public float DockAfterSeconds = -1f;
+        public bool DockRendezvous = true;
         public int WarpIndex = -1;
         public float WarpAfterSeconds = 30f;
         public float WarpDurationSeconds = 30f;
@@ -136,6 +139,9 @@ namespace KspMp
                     }
                     case "-kspmp-dock" when i + 1 < args.Length:
                         if (float.TryParse(args[++i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var afterDock)) options.DockAfterSeconds = afterDock;
+                        break;
+                    case "-kspmp-dockassist" when i + 1 < args.Length:
+                        if (float.TryParse(args[++i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var afterAssist)) { options.DockAfterSeconds = afterAssist; options.DockRendezvous = false; }
                         break;
                     case "-kspmp-warp" when i + 1 < args.Length:
                     {

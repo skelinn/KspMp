@@ -237,36 +237,62 @@ namespace KspMp
             var ours = FlightGlobals.ActiveVessel;
             if (ours == null) { Log.Warn("Auto-dock: no active vessel"); yield break; }
 
-            var target = Testing.TestRendezvous.FindDockingTarget(ours, id => Vessels.IsOwnedByOther(id));
+            // The other ship may already be under our control, so look for anyone else's ship, ours or not.
+            var target = Testing.TestRendezvous.FindDockingTarget(ours, id => id != ours.id && Vessels.IsKnown(id) && Vessels.OwnerOf(id) != 0);
             if (target == null) { Log.Warn("Auto-dock: found no other player's ship with a docking port"); yield break; }
-            Log.Info("Auto-dock: target is " + target.GetDisplayName() + " at " + (target.GetWorldPos3D() - ours.GetWorldPos3D()).magnitude.ToString("F0") + " m");
+            Log.Info("Auto-dock: target is " + target.GetDisplayName() + " at " + (target.GetWorldPos3D() - ours.GetWorldPos3D()).magnitude.ToString("F0") + " m"
+                     + (Launch.DockRendezvous ? "" : "; assist mode, we will not move our ship"));
 
-            if (!Testing.TestRendezvous.MoveNear(ours, target, 80f)) yield break;
-            yield return new WaitForSeconds(10f);
-
-            for (var attempt = 1; attempt <= 6; attempt++)
+            var ourVesselId = ours.id;
+            var ourPartCount = ours.parts != null ? ours.parts.Count : 0;
+            if (Launch.DockRendezvous)
             {
-                ours = FlightGlobals.ActiveVessel;
-                target = FlightGlobals.FindVessel(target.id);
+                if (!Testing.TestRendezvous.MoveNear(ours, target, 80f)) yield break;
+                yield return new WaitForSeconds(10f);
+            }
+
+            for (var attempt = 1; attempt <= 12; attempt++)
+            {
+                var stillOurs = FlightGlobals.FindVessel(ourVesselId);
+                var stillTheirs = FlightGlobals.FindVessel(target.id);
+                if (stillOurs == null && stillTheirs != null)
+                {
+                    // Our ship is gone. That is a merge only if theirs grew; otherwise we were destroyed.
+                    var grew = stillTheirs.parts != null && stillTheirs.parts.Count > ourPartCount;
+                    Log.Info(grew
+                        ? "Auto-dock: our ship merged into " + stillTheirs.GetDisplayName() + " (" + stillTheirs.parts.Count + " parts), docking succeeded"
+                        : "Auto-dock: our ship was destroyed, not docked (" + stillTheirs.GetDisplayName() + " still has " + (stillTheirs.parts != null ? stillTheirs.parts.Count : 0) + " parts)");
+                    yield break;
+                }
+                ours = stillOurs;
+                target = stillTheirs;
                 if (ours == null || target == null) { Log.Warn("Auto-dock: lost a vessel"); yield break; }
-                if (ours.id == target.id) { Log.Info("Auto-dock: already one vessel, docking is done"); yield break; }
+                if (ours.parts != null && ours.parts.Count > ourPartCount)
+                {
+                    Log.Info("Auto-dock: our ship absorbed theirs (" + ourPartCount + " -> " + ours.parts.Count + " parts), docking succeeded");
+                    yield break;
+                }
                 if (!target.loaded)
                 {
                     Log.Info("Auto-dock: waiting for " + target.GetDisplayName() + " to load (attempt " + attempt + ")");
                     yield return new WaitForSeconds(4f);
                     continue;
                 }
-                Log.Info("Auto-dock: alignment attempt " + attempt + "; owner of target is " + (Vessels.IsMine(target.id) ? "us" : "#" + Vessels.OwnerOf(target.id))
+                var weOwnBoth = Vessels.IsMine(ours.id) && Vessels.IsMine(target.id);
+                Log.Info("Auto-dock: attempt " + attempt + "; we simulate ours=" + Vessels.IsMine(ours.id) + " theirs=" + Vessels.IsMine(target.id)
                          + "; distance " + (ours.GetWorldPos3D() - target.GetWorldPos3D()).magnitude.ToString("F1") + " m; target packed=" + target.packed);
-                Testing.TestRendezvous.AlignPorts(ours, target, 0.3f);
-                yield return new WaitForSeconds(6f);
-                if (FlightGlobals.ActiveVessel != null && FlightGlobals.FindVessel(target.id) == null)
+                if (!weOwnBoth)
                 {
-                    Log.Info("Auto-dock: the two ships are now one vessel");
-                    yield break;
+                    // Only the client simulating both ships can put them together; the other one waits for the
+                    // server to hand the pair over, which the approach reports keep requesting.
+                    yield return new WaitForSeconds(5f);
+                    continue;
                 }
+                // 0.45 m is inside the 0.5 m magnet range but far enough not to intersect the other hull.
+                Testing.TestRendezvous.AlignPorts(ours, target, 0.45f);
+                yield return new WaitForSeconds(6f);
             }
-            Log.Warn("Auto-dock: gave up after 6 alignment attempts");
+            Log.Warn("Auto-dock: gave up after 12 attempts");
         }
 
         private void AutoFly()

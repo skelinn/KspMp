@@ -18,18 +18,22 @@ namespace KspMp.Testing
             var ut = Planetarium.GetUniversalTime();
             try
             {
-                if (!vessel.packed) vessel.GoOnRails();
+                // Clear the landed state first: GoOnRails on a landed vessel pins it to the surface, and then
+                // setting an orbit does nothing because KSP keeps recomputing the position from the ground.
                 vessel.Landed = false;
                 vessel.Splashed = false;
                 vessel.landedAt = string.Empty;
                 vessel.displaylandedAt = string.Empty;
+                vessel.situation = Vessel.Situations.ORBITING;
+                if (!vessel.packed) vessel.GoOnRails();
                 vessel.orbitDriver.orbit.SetOrbit(0, 0, body.Radius + altitudeMetres, 0, 0, 0, ut, body);
                 vessel.orbitDriver.UpdateOrbit();
                 vessel.orbitDriver.updateFromParameters();
                 OrbitPhysicsManager.CheckReferenceFrame();
                 OrbitPhysicsManager.HoldVesselUnpack(10);
                 vessel.IgnoreGForces(20);
-                Log.Info("Test: placed " + vessel.GetDisplayName() + " in a " + (altitudeMetres / 1000).ToString("F0") + " km circular orbit of " + body.bodyName);
+                Log.Info("Test: placed " + vessel.GetDisplayName() + " in a " + (altitudeMetres / 1000).ToString("F0") + " km circular orbit of " + body.bodyName
+                         + "; altitude now " + (vessel.altitude / 1000).ToString("F1") + " km, situation " + vessel.situation);
                 return true;
             }
             catch (Exception e)
@@ -54,10 +58,11 @@ namespace KspMp.Testing
                 var vel = target.orbit.getOrbitalVelocityAtUT(ut);
                 // Offset sideways (normal to the orbit plane) so we do not sit in the target's path.
                 var sideways = Vector3d.Cross(pos, vel).normalized * metres;
-                if (!ours.packed) ours.GoOnRails();
                 ours.Landed = false;
                 ours.Splashed = false;
                 ours.landedAt = string.Empty;
+                ours.situation = Vessel.Situations.ORBITING;
+                if (!ours.packed) ours.GoOnRails();
                 ours.orbit.UpdateFromStateVectors(pos + sideways, vel, body, ut);
                 ours.orbitDriver.UpdateOrbit();
                 ours.orbitDriver.updateFromParameters();
@@ -141,7 +146,7 @@ namespace KspMp.Testing
                 ours.SetRotation(delta * ours.transform.rotation, true);
                 var offset = wantedPos - ourPort.position;
                 ours.SetPosition(ours.transform.position + offset);
-                ours.SetWorldVelocity(target.GetObtVelocity() - Krakensbane.GetFrameVelocity());
+                ours.SetWorldVelocity(WorldVelocityOf(target));
                 ours.IgnoreGForces(20);
 
                 var achieved = (ourPort.position - theirPort.position).magnitude;
@@ -153,6 +158,17 @@ namespace KspMp.Testing
                 Log.Exception("Test: aligning docking ports", e);
                 return false;
             }
+        }
+
+        /// <summary>
+        /// The velocity to copy so we drift alongside a vessel rather than into it. A landed vessel's orbital
+        /// velocity still carries the planet's rotation (~175 m/s at the equator), so using it would fling us.
+        /// </summary>
+        private static Vector3d WorldVelocityOf(Vessel vessel)
+        {
+            if (vessel.loaded && vessel.rootPart != null && vessel.rootPart.rb != null) return vessel.rootPart.rb.velocity;
+            if (vessel.LandedOrSplashed) return Vector3d.zero;
+            return vessel.GetObtVelocity() - Krakensbane.GetFrameVelocity();
         }
 
         /// <summary>The nearest vessel with a free docking port that this client does not simulate.</summary>

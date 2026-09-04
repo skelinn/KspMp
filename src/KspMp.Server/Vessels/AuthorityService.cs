@@ -16,7 +16,7 @@ namespace KspMp.Server.Vessels
         private readonly Dictionary<Guid, DateTime> _dockingHolds = new Dictionary<Guid, DateTime>();
 
         /// <summary>How long after the last DockIntent the pilot rule stays suspended for the vessel that yielded.</summary>
-        public int DockingHoldSeconds = 20;
+        public int DockingHoldSeconds = 60;
 
         public AuthorityService(ServerCore server)
         {
