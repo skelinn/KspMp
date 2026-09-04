@@ -133,3 +133,37 @@ public class ServerRosterTests
         public TestClientWithId(LoopbackHub hub, string name, Guid playerId) : base(hub, name, playerId: playerId) { }
     }
 }
+
+public class AvatarClaimGuardTests
+{
+    private static string Kerbal(string name, string state) =>
+        $"KERBAL\n{{\n\tname = {name}\n\tgender = Male\n\ttype = Crew\n\ttrait = Pilot\n\tbrave = 0.5\n\tdumb = 0.5\n\tbadS = False\n\tveteran = False\n\tstate = {state}\n\tinactive = False\n\tinactiveTimeEnd = 0\n}}\n";
+
+    [Fact]
+    public void AKerbalAlreadyFlyingCannotBeClaimed()
+    {
+        var hub = new LoopbackHub();
+        using var server = new ServerCore(hub.CreateServer(), new ServerConfig(), new UniverseStore(null), _ => { });
+        server.Start();
+        var a = new TestClient(hub, "Alice");
+        a.Start();
+        TestClient.Pump(server, a);
+        // Alice's rocket already has Jeb aboard.
+        a.Send(MessageId.KerbalProto, new KerbalProtoMsg { Name = "Jebediah Kerman", Reason = KerbalReason.Bootstrap, NodeText = Kerbal("Jebediah Kerman", "Assigned") }, Channel.Bulk);
+        a.Send(MessageId.KerbalProto, new KerbalProtoMsg { Name = "Bill Kerman", Reason = KerbalReason.Bootstrap, NodeText = Kerbal("Bill Kerman", "Available") }, Channel.Bulk);
+        TestClient.Pump(server, a);
+
+        var b = new TestClient(hub, "Bob");
+        b.Start();
+        TestClient.Pump(server, a, b);
+        b.Send(MessageId.AvatarClaim, new AvatarClaimMsg { KerbalName = "Jebediah Kerman", Trait = "Pilot" });
+        TestClient.Pump(server, a, b);
+        var refused = b.Last<AvatarClaimResultMsg>()!.Value;
+        Assert.False(refused.Ok);
+        Assert.Contains("already assigned", refused.Reason);
+
+        b.Send(MessageId.AvatarClaim, new AvatarClaimMsg { KerbalName = "Bill Kerman", Trait = "Engineer" });
+        TestClient.Pump(server, a, b);
+        Assert.True(b.Messages<AvatarClaimResultMsg>().Last().Ok);
+    }
+}

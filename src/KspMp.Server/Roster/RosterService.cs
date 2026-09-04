@@ -104,6 +104,10 @@ namespace KspMp.Server.Roster
             {
                 var owner = AvatarOwner(name);
                 if (owner != null && owner.PlayerId != client.PlayerId) reason = name + " is already another player's avatar.";
+                // A Kerbal already crewing a vessel belongs to that mission; becoming them mid-flight would drop
+                // this player straight into someone else's rocket.
+                else if (Store.TryGet(name, out var record) && record.Status == 1)
+                    reason = name + " is already assigned to a vessel. Pick a Kerbal who is at the space center.";
             }
             if (reason != null)
             {
