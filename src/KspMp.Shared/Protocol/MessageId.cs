@@ -54,5 +54,18 @@ namespace KspMp.Shared.Protocol
         AuthorityAssign = 500,
         AuthorityRequest = 501,
         AuthorityRelease = 502,
+        VesselRoles = 510,
+
+        // docking
+        DockIntent = 800,
+        DockCommit = 801,
+
+        // shared control
+        CtrlInput = 600,
+        CtrlState = 601,
+        Stage = 620,
+        ActionGroup = 621,
+        SasMode = 622,
+        PartEvent = 623,
     }
 }

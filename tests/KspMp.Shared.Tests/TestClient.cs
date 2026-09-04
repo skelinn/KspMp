@@ -72,6 +72,14 @@ internal class TestClient
             MessageId.KerbalRemoved => Envelope.Read<KerbalRemovedMsg>(body),
             MessageId.AvatarClaimResult => Envelope.Read<AvatarClaimResultMsg>(body),
             MessageId.Presence => Envelope.Read<PresenceMsg>(body),
+            MessageId.VesselRoles => Envelope.Read<VesselRolesMsg>(body),
+            MessageId.CtrlInput => Envelope.Read<CtrlInputMsg>(body),
+            MessageId.CtrlState => Envelope.Read<CtrlInputMsg>(body),
+            MessageId.Stage => Envelope.Read<StageMsg>(body),
+            MessageId.ActionGroup => Envelope.Read<ActionGroupMsg>(body),
+            MessageId.SasMode => Envelope.Read<SasModeMsg>(body),
+            MessageId.PartEvent => Envelope.Read<PartEventMsg>(body),
+            MessageId.DockCommit => Envelope.Read<DockCommitMsg>(body),
             _ => throw new Xunit.Sdk.XunitException("unexpected message " + id),
         };
         if (message is WelcomeMsg welcome) ClientId = welcome.ClientId;

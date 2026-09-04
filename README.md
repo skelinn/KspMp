@@ -51,14 +51,33 @@ Launch options (handy for testing and for jumping straight into your usual serve
 
     -kspmp-connect host[:port]   connect as soon as the main menu is ready
     -kspmp-name Name             player name for this run (not saved)
-    -kspmp-enter                 enter the game right after the server accepts you
+    -kspmp-avatar "Name:Trait"   claim this Kerbal on first join (Pilot, Engineer or Scientist)
+    -kspmp-enter                 enter the game once the world has synced and you have a Kerbal
     -kspmp-say "text"            send one chat message after joining
     -kspmp-debug                 show the debug window
+    -kspmp-launch "Ships/VAB/Kerbal X.craft"   launch a craft from the space center with your Kerbal in the first seat
+    -kspmp-site LaunchPad|Runway  launch site (default from the craft folder)
+    -kspmp-crew "Name,Name"      seat these Kerbals too (a friend's Kerbal can be seated before they join)
+    -kspmp-fly N                 N seconds after launch: SAS on, full throttle, stage once
+    -kspmp-stage N               N seconds after entering flight: press space once
+    -kspmp-input D:S             D seconds after entering flight: hold pitch/throttle input for S seconds
+    -kspmp-warp I:D:S            D seconds after entering flight request warp index I, cancel S seconds later
 
 `scripts/run-clients.ps1 -kspmp-connect 127.0.0.1:7777 -kspmp-enter` launches both test copies straight into the game.
 
-Server files live in the universe folder: `server.cfg` (name, port, max players, MOTD), `time.cfg` (shared UT,
-saved every minute and on shutdown), `players.cfg` (known players).
+Server files live in the universe folder: `server.cfg` (name, port, max players, MOTD, `sharedStickDefault`,
+`hostControlsWarp`), `time.cfg` (shared UT, saved every minute and on shutdown), `players.cfg` (known players and
+their Kerbal avatars), `vessels/<id>.cfg` and `roster/<name>.cfg` (the shared world, readable KSP ConfigNode text).
+
+## How playing together works
+
+- Everyone shares one timeline. Warp is negotiated: the slowest request wins, anyone can drop back to 1x, and a
+  player who cannot warp (in the atmosphere, moving on the ground) limits everyone.
+- You are your Kerbal. Sit in a rocket with a friend and the player in the command seat is the pilot (and runs the
+  physics); everyone else aboard can stage, use action groups, SAS and part buttons. With `sharedStickDefault = True`
+  co-pilots can also steer when the pilot's hands are off the stick.
+- A vessel with nobody's Kerbal aboard is simulated by whoever is nearest; uncrewed probes can be flown by anyone.
+- Pause only pauses your menu; quickload and revert are disabled.
 
 ## Repository layout
 

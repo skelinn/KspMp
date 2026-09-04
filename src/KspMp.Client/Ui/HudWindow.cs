@@ -38,8 +38,8 @@ namespace KspMp.Ui
             var net = _addon.Network;
             GUILayout.Label("<b>" + net.ServerName + "</b>  " + net.PingMs + " ms  UT drift " + (_addon.TimeSync.DriftSeconds * 1000).ToString("F0") + " ms  warp " + _addon.Warp.StatusText);
             foreach (var p in _addon.Players.Players)
-                GUILayout.Label("  " + p.Name + (p.ClientId == net.ClientId ? "  (you)" : "  " + p.PingMs + " ms"));
-            if (_addon.Authority.Spectating) GUILayout.Label("<color=#ffd966>Spectating " + _addon.Authority.SpectatingOwnerName + "'s vessel</color>");
+                GUILayout.Label("  " + p.Name + (string.IsNullOrEmpty(p.AvatarKerbalName) ? "" : " (" + p.AvatarKerbalName + ")") + (p.ClientId == net.ClientId ? "  you, " : "  " + p.PingMs + " ms, ") + _addon.Presence.Describe(p.ClientId));
+            if (HighLogic.LoadedSceneIsFlight && !string.IsNullOrEmpty(_addon.Control.RoleText)) GUILayout.Label("<color=#ffd966>" + _addon.Control.RoleText + "</color>");
             GUILayout.Space(4);
             _chat.Draw(140);
             GUI.DragWindow();

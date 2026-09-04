@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using KSP.UI.Screens;
 
 namespace KspMp.Vessels
@@ -19,17 +20,22 @@ namespace KspMp.Vessels
         /// <summary>True while a remote snapshot is being instantiated, so vessel-create events are not mistaken for local launches.</summary>
         public static bool IsLoadingRemote { get; private set; }
 
+        /// <summary>Vessels we already reported as "skipped because active", so periodic snapshots stay quiet.</summary>
+        private static readonly HashSet<Guid> SkipReported = new HashSet<Guid>();
+
         public static bool GameReady =>
             HighLogic.LoadedSceneIsGame && HighLogic.CurrentGame != null && HighLogic.CurrentGame.flightState != null
             && FlightGlobals.fetch != null && (!HighLogic.LoadedSceneIsFlight || FlightGlobals.ready);
 
-        public static Outcome Load(ProtoVessel proto, bool force)
+        public static Outcome Load(ProtoVessel proto, bool force) => Load(proto, force, false);
+
+        public static Outcome Load(ProtoVessel proto, bool force, bool allowActiveReload)
         {
             if (!GameReady) return Outcome.Deferred;
             try
             {
                 IsLoadingRemote = true;
-                return LoadIntoGame(proto, force);
+                return LoadIntoGame(proto, force, allowActiveReload);
             }
             catch (Exception e)
             {
@@ -42,24 +48,39 @@ namespace KspMp.Vessels
             }
         }
 
-        private static Outcome LoadIntoGame(ProtoVessel proto, bool force)
+        private static Outcome LoadIntoGame(ProtoVessel proto, bool force, bool allowActiveReload)
         {
             var label = KSP.Localization.Localizer.Format(proto.vesselName) + " " + proto.vesselID.ToString().Substring(0, 8);
             var existing = FlightGlobals.FindVessel(proto.vesselID);
             var hadExisting = existing != null;
+            var reloadingActive = false;
             if (existing != null)
             {
                 if (existing.isActiveVessel)
                 {
-                    Log.Warn("Not reloading the active vessel " + label + " from a snapshot");
-                    return Outcome.Skipped;
+                    if (!allowActiveReload)
+                    {
+                        if (SkipReported.Add(proto.vesselID))
+                            Log.Info("Keeping the active vessel " + label + " as it is; snapshots of it are ignored while we fly it");
+                        return Outcome.Skipped;
+                    }
+                    reloadingActive = true;
+                    force = true;
+                    SkipReported.Remove(proto.vesselID);
                 }
                 var existingParts = existing.loaded ? existing.parts.Count : existing.protoVessel != null ? existing.protoVessel.protoPartSnapshots.Count : -1;
                 var existingCrew = existing.loaded ? existing.GetCrewCount() : existing.protoVessel != null ? existing.protoVessel.GetVesselCrew().Count : -1;
                 if (!force && existingParts == proto.protoPartSnapshots.Count && existingCrew == proto.GetVesselCrew().Count)
                     return Outcome.Unchanged;
 
-                Log.Info("Reloading vessel " + label + " (" + existingParts + " -> " + proto.protoPartSnapshots.Count + " parts)");
+                Log.Info("Reloading vessel " + label + " (" + existingParts + " -> " + proto.protoPartSnapshots.Count + " parts" + (reloadingActive ? ", active vessel" : "") + ")");
+                if (reloadingActive && existing.loaded)
+                {
+                    foreach (var part in existing.parts)
+                        foreach (var crew in part.protoModuleCrew.ToArray())
+                            existing.RemoveCrew(crew);
+                    existing.DespawnCrew();
+                }
                 FlightGlobals.RemoveVessel(existing);
                 HighLogic.CurrentGame.flightState.protoVessels.RemoveAll(p => p == null || p.vesselID == existing.id);
                 existing.gameObject.SetActive(false);
@@ -70,7 +91,9 @@ namespace KspMp.Vessels
             }
             else
             {
-                Log.Info("Loading vessel " + label + " (" + proto.protoPartSnapshots.Count + " parts, " + proto.situation + ")");
+                var crew = proto.GetVesselCrew();
+                var crewNames = crew != null && crew.Count > 0 ? string.Join(", ", crew.ConvertAll(c => c != null ? c.name : "?").ToArray()) : "no crew";
+                Log.Info("Loading vessel " + label + " (" + proto.protoPartSnapshots.Count + " parts, " + proto.situation + ", " + crewNames + ")");
             }
 
             proto.Load(HighLogic.CurrentGame.flightState);
@@ -85,6 +108,13 @@ namespace KspMp.Vessels
             {
                 Log.Warn("Snapshot of " + label + " has an invalid orbit");
                 return Outcome.Failed;
+            }
+            if (reloadingActive)
+            {
+                proto.vesselRef.Load();
+                proto.vesselRef.RebuildCrewList();
+                FlightGlobals.ForceSetActiveVessel(proto.vesselRef);
+                proto.vesselRef.SpawnCrew();
             }
             RefreshMarkers();
             return hadExisting ? Outcome.Reloaded : Outcome.Loaded;

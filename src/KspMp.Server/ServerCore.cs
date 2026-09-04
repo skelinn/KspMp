@@ -64,6 +64,7 @@ namespace KspMp.Server
             Authority = new AuthorityService(this);
             Warp = new WarpService(this);
             Roster = new RosterService(this, new RosterStore(Universe, _log));
+            Control = new ControlService(this);
 
             Transport.PeerConnected += OnPeerConnected;
             Transport.PeerDisconnected += OnPeerDisconnected;
@@ -80,6 +81,7 @@ namespace KspMp.Server
         public AuthorityService Authority { get; }
         public WarpService Warp { get; }
         public RosterService Roster { get; }
+        public ControlService Control { get; }
 
         public IEnumerable<ClientSession> Clients => _clients.Values;
         public IEnumerable<ClientSession> HandshakenClients => _clients.Values.Where(c => c.IsOnline);
@@ -165,6 +167,7 @@ namespace KspMp.Server
             Authority.ReleaseAll(client);
             Warp.OnClientLeft(client);
             Players.OnLeft(client, reason);
+            Control.OnClientsChanged();
             Broadcast(MessageId.Presence, new PresenceMsg { ClientId = client.ClientId, State = PresenceState.MissionControl, VesselId = Guid.Empty, VesselName = string.Empty, Scene = 0 }, Channel.Control, Delivery.ReliableOrdered);
             Chat.ServerNotice(client.PlayerName + " left");
         }
@@ -237,6 +240,7 @@ namespace KspMp.Server
                     }
                     if (Vessels.Remove(remove.VesselId)) _log(client.DisplayName + " removed vessel " + remove.VesselId + " (" + remove.Reason + ")");
                     Authority.Forget(remove.VesselId);
+                    Control.OnVesselRemoved(remove.VesselId);
                     Broadcast(MessageId.VesselRemove, remove, Channel.Bulk, Delivery.ReliableOrdered, client.Peer);
                     break;
                 }
@@ -262,6 +266,54 @@ namespace KspMp.Server
                 }
                 case MessageId.WarpRequest:
                     Warp.OnRequest(client, Envelope.Read<WarpRequestMsg>(body));
+                    break;
+                case MessageId.CtrlInput:
+                {
+                    var input = Envelope.Read<CtrlInputMsg>(body);
+                    input.FromClientId = client.ClientId;
+                    Control.ForwardToOwner(client, input.VesselId, MessageId.CtrlInput, input, Channel.State, Delivery.Sequenced);
+                    break;
+                }
+                case MessageId.CtrlState:
+                {
+                    var state = Envelope.Read<CtrlInputMsg>(body);
+                    state.FromClientId = client.ClientId;
+                    Control.RelayStateToAboard(client, state.VesselId, state);
+                    break;
+                }
+                case MessageId.Stage:
+                {
+                    var stage = Envelope.Read<StageMsg>(body);
+                    stage.FromClientId = client.ClientId;
+                    if (Control.ForwardToOwner(client, stage.VesselId, MessageId.Stage, stage, Channel.Control, Delivery.ReliableOrdered)) _log(client.DisplayName + " staged vessel " + stage.VesselId.ToString().Substring(0, 8));
+                    break;
+                }
+                case MessageId.ActionGroup:
+                {
+                    var ag = Envelope.Read<ActionGroupMsg>(body);
+                    ag.FromClientId = client.ClientId;
+                    Control.ForwardToOwner(client, ag.VesselId, MessageId.ActionGroup, ag, Channel.Control, Delivery.ReliableOrdered);
+                    break;
+                }
+                case MessageId.SasMode:
+                {
+                    var sas = Envelope.Read<SasModeMsg>(body);
+                    sas.FromClientId = client.ClientId;
+                    Control.ForwardToOwner(client, sas.VesselId, MessageId.SasMode, sas, Channel.Control, Delivery.ReliableOrdered);
+                    break;
+                }
+                case MessageId.PartEvent:
+                {
+                    var ev = Envelope.Read<PartEventMsg>(body);
+                    ev.FromClientId = client.ClientId;
+                    if (Control.ForwardToOwner(client, ev.VesselId, MessageId.PartEvent, ev, Channel.Control, Delivery.ReliableOrdered)) _log(client.DisplayName + " pressed " + ev.EventName + " on vessel " + ev.VesselId.ToString().Substring(0, 8));
+                    break;
+                }
+                case MessageId.DockIntent:
+                    Authority.HandleDockIntent(client, Envelope.Read<DockIntentMsg>(body));
+                    break;
+                case MessageId.DockCommit:
+                    HandleDockCommit(client, Envelope.Read<DockCommitMsg>(body));
                     break;
                 case MessageId.AuthorityRequest:
                     Authority.Request(client, Envelope.Read<AuthorityRequestMsg>(body).VesselId);
@@ -321,6 +373,8 @@ namespace KspMp.Server
             foreach (var other in HandshakenClients)
                 if (other != client && other.Presence.ClientId != 0)
                     Send(client.Peer, MessageId.Presence, other.Presence, Channel.Control, Delivery.ReliableOrdered);
+            Control.OnClientsChanged();
+            Control.SendRolesTo(client);
             Send(client.Peer, MessageId.SyncComplete, new SyncCompleteMsg { Kerbals = Roster.Store.Count, Vessels = Vessels.Count }, Channel.Bulk, Delivery.ReliableOrdered);
             if (!string.IsNullOrEmpty(Config.MessageOfTheDay))
                 Send(client.Peer, MessageId.Chat, new ChatMsg { FromClientId = 0, FromName = "Server", Text = Config.MessageOfTheDay }, Channel.ChatMod, Delivery.ReliableOrdered);
@@ -342,9 +396,43 @@ namespace KspMp.Server
                 Authority.Assign(proto.VesselId, client.ClientId, AuthorityReason.Created);
                 owner = client.ClientId;
             }
+            Control.OnVesselSnapshot(record);
+            owner = Authority.OwnerOf(proto.VesselId);
             if (proto.Reason != ProtoReason.Periodic)
                 _log(client.DisplayName + " snapshot of '" + record.Name + "' " + proto.VesselId.ToString().Substring(0, 8) + " (" + proto.Reason + ", " + record.ProtoDeflated.Length + " bytes)");
             Broadcast(MessageId.VesselProto, record.ToProtoMessage(owner, proto.Reason), Channel.Bulk, Delivery.ReliableOrdered, client.Peer);
+        }
+
+        /// <summary>Docking finished on the owner: one vessel absorbed the other.</summary>
+        private void HandleDockCommit(ClientSession client, DockCommitMsg commit)
+        {
+            if (!Authority.IsOwnedBy(commit.SurvivorVesselId, client.ClientId))
+            {
+                _log(client.DisplayName + " reported a docking of vessel " + commit.SurvivorVesselId + " it does not own; ignored");
+                return;
+            }
+            var removedOwner = Authority.OwnerOf(commit.RemovedVesselId);
+            if (removedOwner != 0 && removedOwner != client.ClientId)
+            {
+                _log(client.DisplayName + " reported docking with vessel " + commit.RemovedVesselId + " owned by #" + removedOwner + "; ignored");
+                return;
+            }
+            var record = Vessels.Upsert(new VesselProtoMsg
+            {
+                VesselId = commit.SurvivorVesselId,
+                PersistentId = Vessels.TryGet(commit.SurvivorVesselId, out var existing) ? existing.PersistentId : 0,
+                Name = commit.Name,
+                VesselType = existing != null ? existing.VesselType : "Ship",
+                Reason = ProtoReason.Modified,
+                ProtoDeflated = commit.ProtoDeflated,
+            }, Time.UniversalTime);
+            Vessels.Remove(commit.RemovedVesselId);
+            Authority.Forget(commit.RemovedVesselId);
+            Control.OnVesselRemoved(commit.RemovedVesselId);
+            _log(client.DisplayName + ": vessel " + commit.RemovedVesselId.ToString().Substring(0, 8) + " docked into '" + record.Name + "' " + commit.SurvivorVesselId.ToString().Substring(0, 8));
+            commit.OwnerClientId = client.ClientId;
+            Broadcast(MessageId.DockCommit, commit, Channel.Bulk, Delivery.ReliableOrdered, client.Peer);
+            Control.OnVesselSnapshot(record);
         }
 
         /// <summary>Sends every known vessel (with its current owner) to one client.</summary>

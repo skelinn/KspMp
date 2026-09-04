@@ -25,6 +25,10 @@ namespace KspMp
         public ChatSystem Chat { get; private set; }
         public TimeSyncSystem TimeSync { get; private set; }
         public WarpSystem Warp { get; private set; }
+        public RosterSystem Roster { get; private set; }
+        public PresenceSystem Presence { get; private set; }
+        public ControlSystem Control { get; private set; }
+        public DockSystem Dock { get; private set; }
         public VesselRegistry Vessels { get; private set; }
         public VesselProtoSystem VesselProto { get; private set; }
         public VesselStateSystem VesselState { get; private set; }
@@ -37,6 +41,9 @@ namespace KspMp
         private float _flyAt = -1f;
         private float _warpAt = -1f;
         private float _warpCancelAt = -1f;
+        private float _stageAt = -1f;
+        private float _inputAt = -1f;
+        private float _inputUntil = -1f;
         private HudWindow _hud;
         private DebugWindow _debug;
 
@@ -77,7 +84,13 @@ namespace KspMp
             Systems.Add(Chat = new ChatSystem(this));
             Systems.Add(TimeSync = new TimeSyncSystem(this));
             Systems.Add(Warp = new WarpSystem(this));
+            Systems.Add(Roster = new RosterSystem(this));
+            Systems.Add(Presence = new PresenceSystem(this));
             Systems.Add(Authority = new AuthoritySystem(this));
+            Systems.Add(Control = new ControlSystem(this));
+            Systems.Add(Dock = new DockSystem(this));
+            Roster.SyncCompleted += TryAutoEnter;
+            Roster.AvatarChanged += TryAutoEnter;
             Systems.Add(VesselProto = new VesselProtoSystem(this));
             Systems.Add(VesselState = new VesselStateSystem(this));
 
@@ -104,6 +117,13 @@ namespace KspMp
             }
             if (scene == GameScenes.FLIGHT && Launch.FlyAfterSeconds >= 0 && _autoLaunchDone && _flyAt < 0)
                 _flyAt = Time.realtimeSinceStartup + Launch.FlyAfterSeconds;
+            if (scene == GameScenes.FLIGHT && Launch.StageAfterSeconds >= 0 && _stageAt < 0)
+                _stageAt = Time.realtimeSinceStartup + Launch.StageAfterSeconds;
+            if (scene == GameScenes.FLIGHT && Launch.InputAfterSeconds >= 0 && _inputAt < 0)
+            {
+                _inputAt = Time.realtimeSinceStartup + Launch.InputAfterSeconds;
+                _inputUntil = _inputAt + Launch.InputDurationSeconds;
+            }
             if (scene == GameScenes.FLIGHT && Launch.WarpIndex >= 0 && _autoLaunchDone && _warpAt < 0)
             {
                 _warpAt = Time.realtimeSinceStartup + Launch.WarpAfterSeconds;
@@ -126,7 +146,9 @@ namespace KspMp
                 var site = !string.IsNullOrEmpty(Launch.LaunchSite) ? Launch.LaunchSite : craft.IndexOf("/SPH/", StringComparison.OrdinalIgnoreCase) >= 0 ? "Runway" : "LaunchPad";
                 var craftNode = ConfigNode.Load(path);
                 var manifest = HighLogic.CurrentGame.CrewRoster.DefaultCrewForVessel(craftNode);
-                Log.Info("Auto-launch: " + craft + " from " + site + " with default crew");
+                var seated = Game.SessionStarter.SeatAvatar(manifest);
+                var extra = Game.SessionStarter.SeatCrew(manifest, Launch.ExtraCrew);
+                Log.Info("Auto-launch: " + craft + " from " + site + (seated ? " with " + Roster.AvatarName + " in the first seat" : " with default crew") + (extra > 0 ? " and " + extra + " extra crew" : ""));
                 FlightDriver.StartWithNewLaunch(path, "Squad/Flags/default", site, manifest);
             }
             catch (Exception e)
@@ -153,19 +175,31 @@ namespace KspMp
             }
         }
 
+        private bool _autoEntered;
+
         private void OnWelcomedForLaunchOptions(Shared.Protocol.WelcomeMsg welcome)
         {
             if (!string.IsNullOrEmpty(Launch.Say)) Chat.Send(Launch.Say);
-            if (Launch.EnterGame && HighLogic.LoadedScene == GameScenes.MAINMENU)
+            if (welcome.NeedsAvatar && !string.IsNullOrEmpty(Launch.AvatarName))
             {
-                try
-                {
-                    Game.SessionStarter.EnterGame(welcome.UniversalTime);
-                }
-                catch (Exception e)
-                {
-                    Log.Exception("Auto enter game", e);
-                }
+                Log.Info("Auto-claiming avatar " + Launch.AvatarName + " (" + Launch.AvatarTrait + ")");
+                Roster.Claim(Launch.AvatarName, Launch.AvatarTrait);
+            }
+        }
+
+        /// <summary>-kspmp-enter: enter the game once the roster/vessel sync is complete and we have a Kerbal.</summary>
+        private void TryAutoEnter()
+        {
+            if (!Launch.EnterGame || _autoEntered || HighLogic.LoadedScene != GameScenes.MAINMENU) return;
+            if (!Roster.Synced || Roster.NeedsAvatar) return;
+            _autoEntered = true;
+            try
+            {
+                Game.SessionStarter.EnterGame(TimeSync.HasSync ? TimeSync.ServerUt : Network.Welcome.UniversalTime);
+            }
+            catch (Exception e)
+            {
+                Log.Exception("Auto enter game", e);
             }
         }
 
@@ -180,6 +214,26 @@ namespace KspMp
             Systems.Update();
 
             if (_flyAt >= 0 && Time.realtimeSinceStartup >= _flyAt && HighLogic.LoadedSceneIsFlight) AutoFly();
+            if (_stageAt >= 0 && Time.realtimeSinceStartup >= _stageAt && HighLogic.LoadedSceneIsFlight && FlightGlobals.ready)
+            {
+                _stageAt = -1f;
+                Log.Info("Auto-stage: pressing space");
+                KSP.UI.Screens.StageManager.ActivateNextStage();
+            }
+            if (_inputAt >= 0 && HighLogic.LoadedSceneIsFlight && FlightGlobals.ready && Time.realtimeSinceStartup >= _inputAt)
+            {
+                if (Time.realtimeSinceStartup <= _inputUntil)
+                {
+                    FlightInputHandler.state.pitch = 0.3f;
+                    FlightInputHandler.state.mainThrottle = 0.8f;
+                }
+                else
+                {
+                    _inputAt = -1f;
+                    FlightInputHandler.state.pitch = 0f;
+                    Log.Info("Auto-input: released");
+                }
+            }
             if (_warpAt >= 0 && Time.realtimeSinceStartup >= _warpAt && HighLogic.LoadedSceneIsFlight)
             {
                 _warpAt = -1f;

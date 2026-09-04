@@ -142,7 +142,7 @@ namespace KspMp.Systems
         private void UpdateSpectating()
         {
             var active = FlightGlobals.ActiveVessel;
-            SetSpectating(HighLogic.LoadedSceneIsFlight && active != null && Registry.IsOwnedByOther(active.id));
+            SetSpectating(HighLogic.LoadedSceneIsFlight && active != null && Registry.IsOwnedByOther(active.id) && !Addon.Control.IAmAboard(active.id));
         }
 
         private void SetSpectating(bool spectating)

@@ -33,10 +33,10 @@ namespace KspMp.Ui
             GUILayout.Label("Ping: " + net.PingMs + " ms   rtt sample: " + time.RttMs.ToString("F0") + " ms");
             GUILayout.Label("Server UT: " + (time.HasSync ? time.ServerUt.ToString("F2") : "-") + "   local UT: " + (Planetarium.fetch != null ? Planetarium.GetUniversalTime().ToString("F2") : "-"));
             GUILayout.Label("UT drift: " + (time.DriftSeconds * 1000).ToString("F0") + " ms   corrections: " + time.Corrections + "   rate: " + time.Rate + "x   warp: " + _addon.Warp.StatusText + "   timeScale " + Time.timeScale.ToString("F2"));
-            GUILayout.Label("Players: " + _addon.Players.Count + "   chat lines: " + _addon.Chat.Lines.Count);
+            GUILayout.Label("Players: " + _addon.Players.Count + "   chat lines: " + _addon.Chat.Lines.Count + "   roster: " + _addon.Roster.Count + " kerbal(s), avatar " + (_addon.Roster.HasAvatar ? _addon.Roster.AvatarName : "none") + ", " + _addon.Presence.Describe(net.ClientId));
             GUILayout.Label("Vessels: " + _addon.Vessels.Count + " known, " + _addon.Vessels.CountOwnedByMe + " ours, " + _addon.Vessels.CountReplicas + " replicas"
                             + "   protos sent/applied " + _addon.VesselProto.Sent + "/" + _addon.VesselProto.Applied + "   states sent/recv " + _addon.VesselState.Sent + "/" + _addon.VesselState.Received);
-            if (_addon.Authority.Spectating) GUILayout.Label("<color=#ffd966>Spectating: " + _addon.Authority.SpectatingOwnerName + " simulates this vessel</color>");
+            GUILayout.Label("Control: " + _addon.Control.RoleText + "   inputs sent/recv " + _addon.Control.InputsSent + "/" + _addon.Control.InputsReceived + "   actions applied " + _addon.Control.ActionsApplied);
             GUILayout.Label("Player: " + _addon.Settings.PlayerName + " (" + _addon.Settings.PlayerId.ToString().Substring(0, 8) + ")");
             if (GUILayout.Button("Hide (Alt+F10 toggles)")) Visible = false;
             GUI.DragWindow();

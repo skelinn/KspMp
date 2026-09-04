@@ -10,6 +10,7 @@ namespace KspMp.Ui
         private static readonly int WindowId = "KspMp.MainMenu".GetHashCode();
         private readonly KspMpAddon _addon;
         private readonly ChatPanel _chat;
+        private AvatarPanel _avatar;
         private Rect _rect = new Rect(40, 130, 460, 0);
         private string _port;
 
@@ -73,7 +74,8 @@ namespace KspMp.Ui
             var net = _addon.Network;
             GUILayout.Label("<b>Players online (" + _addon.Players.Count + ")</b>");
             foreach (var p in _addon.Players.Players)
-                GUILayout.Label("  " + p.Name + (p.ClientId == net.ClientId ? "  (you)" : "  " + p.PingMs + " ms"));
+                GUILayout.Label("  " + p.Name + (string.IsNullOrEmpty(p.AvatarKerbalName) ? "" : " as " + p.AvatarKerbalName) + (p.ClientId == net.ClientId ? "  (you)" : "  " + p.PingMs + " ms")
+                                + (p.ClientId != net.ClientId ? "  " + _addon.Presence.Describe(p.ClientId) : ""));
 
             GUILayout.Space(6);
             _chat.Draw(160);
@@ -81,6 +83,15 @@ namespace KspMp.Ui
 
             var ut = _addon.TimeSync.HasSync ? _addon.TimeSync.ServerUt : net.Welcome.UniversalTime;
             GUILayout.Label("Server time: " + KSPUtil.PrintDateCompact(ut, true) + "   (UT " + ut.ToString("F0") + ")");
+            var roster = _addon.Roster;
+            if (roster.NeedsAvatar)
+            {
+                if (_avatar == null) _avatar = new AvatarPanel(_addon);
+                _avatar.Draw();
+                return;
+            }
+            GUILayout.Label("Your Kerbal: <b>" + roster.AvatarName + "</b>   roster: " + roster.Count + " kerbal(s), " + _addon.Vessels.Count + " vessel(s)" + (roster.Synced ? "" : "  (syncing ...)"));
+            GUI.enabled = roster.Synced;
             if (GUILayout.Button("Enter game"))
             {
                 try
@@ -93,6 +104,7 @@ namespace KspMp.Ui
                     _addon.Chat.AddLocal("Could not start the game: " + e.Message);
                 }
             }
+            GUI.enabled = true;
         }
     }
 }
