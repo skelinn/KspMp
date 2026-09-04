@@ -247,10 +247,12 @@ namespace KspMp
             var ourPartCount = ours.parts != null ? ours.parts.Count : 0;
             if (Launch.DockRendezvous)
             {
-                if (!Testing.TestRendezvous.MoveNear(ours, target, 80f)) yield break;
+                if (!Testing.TestRendezvous.MoveNear(ours, target, 30f)) yield break;
                 yield return new WaitForSeconds(10f);
             }
 
+            var aligned = false;
+            var alignedDistance = double.MaxValue;
             for (var attempt = 1; attempt <= 12; attempt++)
             {
                 var stillOurs = FlightGlobals.FindVessel(ourVesselId);
@@ -288,8 +290,15 @@ namespace KspMp
                     yield return new WaitForSeconds(5f);
                     continue;
                 }
-                // 0.45 m is inside the 0.5 m magnet range but far enough not to intersect the other hull.
-                Testing.TestRendezvous.AlignPorts(ours, target, 0.45f);
+                // Align once, then leave the ships alone: teleporting them again every few seconds resets the
+                // physics and never lets the magnets finish pulling the ports together.
+                if (!aligned || (ours.GetWorldPos3D() - target.GetWorldPos3D()).magnitude > alignedDistance + 1.0)
+                {
+                    // Start a little further out and drift in, the way a player finishes a docking.
+                    Testing.TestRendezvous.AlignPorts(ours, target, 0.6f, closingSpeed: 0.15f);
+                    aligned = true;
+                    alignedDistance = (ours.GetWorldPos3D() - target.GetWorldPos3D()).magnitude;
+                }
                 yield return new WaitForSeconds(6f);
             }
             Log.Warn("Auto-dock: gave up after 12 attempts");

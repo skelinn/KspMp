@@ -1,4 +1,5 @@
 using System;
+using KspMp.Vessels;
 using UnityEngine;
 
 namespace KspMp.Testing
@@ -120,7 +121,7 @@ namespace KspMp.Testing
         /// Fine step: rigidly moves our loaded vessel so its docking port sits just in front of the target's port,
         /// facing it, with matching velocity. KSP's magnets then pull the two together on their own.
         /// </summary>
-        public static bool AlignPorts(Vessel ours, Vessel target, float gapMetres)
+        public static bool AlignPorts(Vessel ours, Vessel target, float gapMetres, float closingSpeed = 0f)
         {
             if (ours == null || target == null || !ours.loaded || !target.loaded) return false;
             var ourNode = FindFreePort(ours, explain: true);
@@ -146,11 +147,20 @@ namespace KspMp.Testing
                 ours.SetRotation(delta * ours.transform.rotation, true);
                 var offset = wantedPos - ourPort.position;
                 ours.SetPosition(ours.transform.position + offset);
-                ours.SetWorldVelocity(WorldVelocityOf(target));
+                // A real dock ends with a slow drift onto the port. Matching velocity exactly leaves the two
+                // ships hanging just apart, and KSP's magnets never trigger, so add a gentle closing speed.
+                var approach = (theirPort.position - ourPort.position).normalized;
+                ours.SetWorldVelocity(WorldVelocityOf(target) + (Vector3d)(approach * closingSpeed));
                 ours.IgnoreGForces(20);
 
                 var achieved = (ourPort.position - theirPort.position).magnitude;
-                Log.Info("Test: aligned " + ours.GetDisplayName() + " port to " + target.GetDisplayName() + " port, gap now " + achieved.ToString("F2") + " m (acquire range " + theirNode.acquireRange.ToString("F2") + " m)");
+                var facing = Vector3.Dot(ourPort.forward, -theirPort.forward);
+                Log.Info("Test: aligned " + ours.GetDisplayName() + " port to " + target.GetDisplayName()
+                         + "; gap " + achieved.ToString("F2") + " m (acquire range " + theirNode.acquireRange.ToString("F2") + " m)"
+                         + ", facing " + facing.ToString("F2") + " (1.0 is head on)"
+                         + ", states " + ourNode.state + " / " + theirNode.state
+                         + ", immortal ours=" + VesselImmortal.IsImmortal(ours) + " theirs=" + VesselImmortal.IsImmortal(target)
+                         + ", closing at " + closingSpeed.ToString("F2") + " m/s");
                 return true;
             }
             catch (Exception e)
