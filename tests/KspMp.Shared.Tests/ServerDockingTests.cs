@@ -11,7 +11,7 @@ public class ServerDockingTests
 {
     private static byte[] Deflate(string text) => Encoding.UTF8.GetBytes(text) is var raw ? DeflateCodec.Compress(raw, 0, raw.Length) : throw new InvalidOperationException();
 
-    private static VesselProtoMsg Proto(Guid id, uint persistentId, string name, string crew) => new()
+    private static VesselProtoMsg Proto(Guid id, uint persistentId, string name, string? crew) => new()
     {
         VesselId = id, PersistentId = persistentId, Name = name, VesselType = "Ship", Reason = ProtoReason.FlightReady,
         ProtoDeflated = Deflate($"pid = {id:N}\npersistentId = {persistentId}\nname = {name}\nref = 1\nPART\n{{\n\tuid = 1\n" + (crew != null ? $"\tcrew = {crew}\n" : "") + "\tMODULE\n\t{\n\t\tname = ModuleCommand\n\t}\n}\n"),

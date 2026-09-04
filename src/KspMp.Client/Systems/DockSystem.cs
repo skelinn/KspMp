@@ -59,15 +59,54 @@ namespace KspMp.Systems
             for (var i = 0; i < loaded.Count; i++)
             {
                 var mine = loaded[i];
-                if (mine == null || !Registry.IsMine(mine.id)) continue;
+                if (mine == null || !Registry.IsMine(mine.id) || !CanDock(mine)) continue;
                 for (var j = 0; j < loaded.Count; j++)
                 {
                     var other = loaded[j];
-                    if (other == null || other == mine || !Registry.IsOwnedByOther(other.id)) continue;
+                    if (other == null || other == mine || !Registry.IsOwnedByOther(other.id) || !CanDock(other)) continue;
+                    if (!HasMatingHardware(mine, other)) continue;
                     var distance = (float)(mine.GetWorldPos3D() - other.GetWorldPos3D()).magnitude;
                     if (distance < ApproachMeters) SendIntent(mine.id, other.id, distance);
                 }
             }
+        }
+
+        /// <summary>Debris and space objects never dock, so they must not trigger a physics hand-off.</summary>
+        public static bool CanDock(Vessel vessel)
+        {
+            if (vessel == null || vessel.parts == null || vessel.parts.Count == 0) return false;
+            switch (vessel.vesselType)
+            {
+                case VesselType.Debris:
+                case VesselType.SpaceObject:
+                case VesselType.Unknown:
+                case VesselType.Flag:
+                case VesselType.EVA:
+                    return false;
+                default:
+                    return true;
+            }
+        }
+
+        /// <summary>Docking needs a port on both vessels, or a claw on either one.</summary>
+        public static bool HasMatingHardware(Vessel a, Vessel b)
+        {
+            var aPort = HasModule<ModuleDockingNode>(a);
+            var bPort = HasModule<ModuleDockingNode>(b);
+            if (aPort && bPort) return true;
+            return HasModule<ModuleGrappleNode>(a) || HasModule<ModuleGrappleNode>(b);
+        }
+
+        private static bool HasModule<T>(Vessel vessel) where T : PartModule
+        {
+            if (vessel == null || vessel.parts == null) return false;
+            for (var i = 0; i < vessel.parts.Count; i++)
+            {
+                var modules = vessel.parts[i].Modules;
+                for (var m = 0; m < modules.Count; m++)
+                    if (modules[m] is T) return true;
+            }
+            return false;
         }
 
         public void SendIntent(Guid mine, Guid other, float distance)

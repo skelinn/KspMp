@@ -80,6 +80,9 @@ internal class TestClient
             MessageId.SasMode => Envelope.Read<SasModeMsg>(body),
             MessageId.PartEvent => Envelope.Read<PartEventMsg>(body),
             MessageId.DockCommit => Envelope.Read<DockCommitMsg>(body),
+            MessageId.EditorSnapshot => Envelope.Read<EditorSnapshotMsg>(body),
+            MessageId.EditorPresence => Envelope.Read<EditorPresenceMsg>(body),
+            MessageId.EditorLaunch => Envelope.Read<EditorLaunchMsg>(body),
             _ => throw new Xunit.Sdk.XunitException("unexpected message " + id),
         };
         if (message is WelcomeMsg welcome) ClientId = welcome.ClientId;

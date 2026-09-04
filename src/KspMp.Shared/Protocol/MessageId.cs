@@ -60,6 +60,13 @@ namespace KspMp.Shared.Protocol
         DockIntent = 800,
         DockCommit = 801,
 
+        // shared editor (VAB / SPH)
+        EditorJoin = 900,
+        EditorLeave = 901,
+        EditorSnapshot = 902,
+        EditorPresence = 903,
+        EditorLaunch = 904,
+
         // shared control
         CtrlInput = 600,
         CtrlState = 601,

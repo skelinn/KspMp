@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using KspMp.Server.Services;
+using KspMp.Server.Editor;
 using KspMp.Server.Roster;
 using KspMp.Server.Universe;
 using KspMp.Server.Vessels;
@@ -65,6 +66,7 @@ namespace KspMp.Server
             Warp = new WarpService(this);
             Roster = new RosterService(this, new RosterStore(Universe, _log));
             Control = new ControlService(this);
+            Editor = new EditorSessionService(this);
 
             Transport.PeerConnected += OnPeerConnected;
             Transport.PeerDisconnected += OnPeerDisconnected;
@@ -82,6 +84,7 @@ namespace KspMp.Server
         public WarpService Warp { get; }
         public RosterService Roster { get; }
         public ControlService Control { get; }
+        public EditorSessionService Editor { get; }
 
         public IEnumerable<ClientSession> Clients => _clients.Values;
         public IEnumerable<ClientSession> HandshakenClients => _clients.Values.Where(c => c.IsOnline);
@@ -166,6 +169,7 @@ namespace KspMp.Server
             Touch(client);
             Authority.ReleaseAll(client);
             Warp.OnClientLeft(client);
+            Editor.HandleLeave(client, announce: false);
             Players.OnLeft(client, reason);
             Control.OnClientsChanged();
             Broadcast(MessageId.Presence, new PresenceMsg { ClientId = client.ClientId, State = PresenceState.MissionControl, VesselId = Guid.Empty, VesselName = string.Empty, Scene = 0 }, Channel.Control, Delivery.ReliableOrdered);
@@ -309,6 +313,21 @@ namespace KspMp.Server
                     if (Control.ForwardToOwner(client, ev.VesselId, MessageId.PartEvent, ev, Channel.Control, Delivery.ReliableOrdered)) _log(client.DisplayName + " pressed " + ev.EventName + " on vessel " + ev.VesselId.ToString().Substring(0, 8));
                     break;
                 }
+                case MessageId.EditorJoin:
+                    Editor.HandleJoin(client, Envelope.Read<EditorJoinMsg>(body));
+                    break;
+                case MessageId.EditorLeave:
+                    Editor.HandleLeave(client);
+                    break;
+                case MessageId.EditorSnapshot:
+                    Editor.HandleSnapshot(client, Envelope.Read<EditorSnapshotMsg>(body));
+                    break;
+                case MessageId.EditorPresence:
+                    Editor.HandlePresence(client, Envelope.Read<EditorPresenceMsg>(body));
+                    break;
+                case MessageId.EditorLaunch:
+                    Editor.HandleLaunch(client, Envelope.Read<EditorLaunchMsg>(body));
+                    break;
                 case MessageId.DockIntent:
                     Authority.HandleDockIntent(client, Envelope.Read<DockIntentMsg>(body));
                     break;

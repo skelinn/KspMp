@@ -14,11 +14,14 @@ namespace KspMp.Harmony
             if (!registry.IsKnown(a.id) && !registry.IsKnown(b.id)) return true;
             if (registry.IsMine(a.id) && registry.IsMine(b.id)) return true;
             var mine = registry.IsMine(a.id) ? a : registry.IsMine(b.id) ? b : null;
-            if (mine != null)
+            if (mine == null) return true;   // neither side is ours to simulate; leave it to whoever owns them
+            var other = mine == a ? b : a;
+            if (!DockSystem.CanDock(mine) || !DockSystem.CanDock(other))
             {
-                var other = mine == a ? b : a;
-                addon.Dock.SendIntent(mine.id, other.id, (float)(a.GetWorldPos3D() - b.GetWorldPos3D()).magnitude);
+                // Debris bumping into a ship is a collision, not a docking; let KSP handle it locally.
+                return true;
             }
+            addon.Dock.SendIntent(mine.id, other.id, (float)(a.GetWorldPos3D() - b.GetWorldPos3D()).magnitude);
             ScreenMessages.PostScreenMessage("Docking: waiting for the physics hand-off ...", 2f, ScreenMessageStyle.UPPER_CENTER);
             Log.Info("Docking deferred: " + a.GetDisplayName() + " and " + b.GetDisplayName() + " are not simulated by the same client yet");
             return false;

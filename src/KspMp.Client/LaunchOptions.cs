@@ -17,6 +17,8 @@ namespace KspMp
     ///   -kspmp-crew "Name,Name"      seat these kerbals after the avatar on -kspmp-launch
     ///   -kspmp-stage D               D seconds after entering flight: press space once
     ///   -kspmp-input D:S             D seconds after entering flight: hold pitch 0.3 and throttle 0.8 for S seconds
+    ///   -kspmp-toggle Group:D        D seconds after entering flight: toggle an action group (Light, Gear, RCS, Brakes, ...)
+    ///   -kspmp-partevent Name:D      D seconds after entering flight: fire a part-menu action by name on the active vessel
     /// </summary>
     public sealed class LaunchOptions
     {
@@ -35,6 +37,10 @@ namespace KspMp
         public float StageAfterSeconds = -1f;
         public float InputAfterSeconds = -1f;
         public float InputDurationSeconds = 10f;
+        public string ToggleGroup;
+        public float ToggleAfterSeconds = -1f;
+        public string PartEventName;
+        public float PartEventAfterSeconds = -1f;
         public int WarpIndex = -1;
         public float WarpAfterSeconds = 30f;
         public float WarpDurationSeconds = 30f;
@@ -98,6 +104,22 @@ namespace KspMp
                         var parts = args[++i].Split(':');
                         if (parts.Length > 0 && float.TryParse(parts[0], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var after)) options.InputAfterSeconds = after;
                         if (parts.Length > 1 && float.TryParse(parts[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var duration)) options.InputDurationSeconds = duration;
+                        break;
+                    }
+                    case "-kspmp-toggle" when i + 1 < args.Length:
+                    {
+                        var spec = args[++i];
+                        var colon = spec.LastIndexOf(':');
+                        options.ToggleGroup = colon > 0 ? spec.Substring(0, colon) : spec;
+                        if (colon > 0 && float.TryParse(spec.Substring(colon + 1), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var toggleAfter)) options.ToggleAfterSeconds = toggleAfter;
+                        break;
+                    }
+                    case "-kspmp-partevent" when i + 1 < args.Length:
+                    {
+                        var spec = args[++i];
+                        var colon = spec.LastIndexOf(':');
+                        options.PartEventName = colon > 0 ? spec.Substring(0, colon) : spec;
+                        if (colon > 0 && float.TryParse(spec.Substring(colon + 1), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var eventAfter)) options.PartEventAfterSeconds = eventAfter;
                         break;
                     }
                     case "-kspmp-warp" when i + 1 < args.Length:

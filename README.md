@@ -3,8 +3,10 @@
 Play KSP with your friends on one shared timeline: everyone is their own Kerbal, you can sit in the same
 rocket, share the controls, build together in the VAB/SPH, and dock.
 
-Status: **M0-M2 done** (connect, lobby, chat, shared clock, vessel replication with physics authority, all verified
-with two clients), **M3 in progress** (shared warp). See `docs/PLAN.md` for the architecture and milestones.
+Status: **M0-M5 verified** with two clients on one machine: connect, lobby and chat; a shared clock; vessel
+replication with physics authority; negotiated warp; Kerbal avatars and a shared roster; and shared control, where
+two players ride the same rocket and the co-pilot can stage, use action groups and steer. **M6 docking** and
+**M7 shared VAB/SPH** are written and unit-tested, not yet flown. See `docs/PLAN.md` for the plan.
 
 ## Requirements
 
@@ -62,6 +64,8 @@ Launch options (handy for testing and for jumping straight into your usual serve
     -kspmp-stage N               N seconds after entering flight: press space once
     -kspmp-input D:S             D seconds after entering flight: hold pitch/throttle input for S seconds
     -kspmp-warp I:D:S            D seconds after entering flight request warp index I, cancel S seconds later
+    -kspmp-toggle Group:D        D seconds after entering flight toggle an action group (Light, Gear, RCS, ...)
+    -kspmp-partevent Name:D      D seconds after entering flight fire a part-menu action by name
 
 `scripts/run-clients.ps1 -kspmp-connect 127.0.0.1:7777 -kspmp-enter` launches both test copies straight into the game.
 

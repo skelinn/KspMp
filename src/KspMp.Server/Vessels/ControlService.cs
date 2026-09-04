@@ -79,9 +79,12 @@ namespace KspMp.Server.Vessels
                 roles.PilotClientId = _server.Roster.OnlineClientIdOf(_server.Roster.AvatarOwner(pilotKerbal));
             }
 
-            var changed = !_roles.TryGetValue(vesselId, out var old) || old.PilotClientId != roles.PilotClientId || !old.Aboard.SequenceEqual(roles.Aboard);
+            var hadRoles = _roles.TryGetValue(vesselId, out var old);
+            var changed = !hadRoles || old.PilotClientId != roles.PilotClientId || !old.Aboard.SequenceEqual(roles.Aboard);
+            // A vessel nobody is aboard (debris, probes, a freshly separated booster) has nothing worth announcing.
+            var worthAnnouncing = roles.Aboard.Count > 0 || roles.PilotClientId != 0 || (hadRoles && (old.Aboard.Count > 0 || old.PilotClientId != 0));
             _roles[vesselId] = roles;
-            if (changed)
+            if (changed && worthAnnouncing)
             {
                 _server.Log("Roles for vessel " + vesselId.ToString().Substring(0, 8) + ": pilot " + (roles.PilotClientId != 0 ? "#" + roles.PilotClientId + " (" + roles.PilotKerbal + ")" : "none") + ", aboard [" + string.Join(", ", roles.Aboard.Select(c => "#" + c)) + "]");
                 Broadcast(roles);

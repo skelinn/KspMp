@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using KspMp.Harmony;
 using KspMp.Net;
 using KspMp.Systems;
@@ -29,6 +30,7 @@ namespace KspMp
         public PresenceSystem Presence { get; private set; }
         public ControlSystem Control { get; private set; }
         public DockSystem Dock { get; private set; }
+        public EditorSystem Editor { get; private set; }
         public VesselRegistry Vessels { get; private set; }
         public VesselProtoSystem VesselProto { get; private set; }
         public VesselStateSystem VesselState { get; private set; }
@@ -42,6 +44,8 @@ namespace KspMp
         private float _warpAt = -1f;
         private float _warpCancelAt = -1f;
         private float _stageAt = -1f;
+        private float _toggleAt = -1f;
+        private float _partEventAt = -1f;
         private float _inputAt = -1f;
         private float _inputUntil = -1f;
         private HudWindow _hud;
@@ -89,6 +93,7 @@ namespace KspMp
             Systems.Add(Authority = new AuthoritySystem(this));
             Systems.Add(Control = new ControlSystem(this));
             Systems.Add(Dock = new DockSystem(this));
+            Systems.Add(Editor = new EditorSystem(this));
             Roster.SyncCompleted += TryAutoEnter;
             Roster.AvatarChanged += TryAutoEnter;
             Systems.Add(VesselProto = new VesselProtoSystem(this));
@@ -119,6 +124,10 @@ namespace KspMp
                 _flyAt = Time.realtimeSinceStartup + Launch.FlyAfterSeconds;
             if (scene == GameScenes.FLIGHT && Launch.StageAfterSeconds >= 0 && _stageAt < 0)
                 _stageAt = Time.realtimeSinceStartup + Launch.StageAfterSeconds;
+            if (scene == GameScenes.FLIGHT && Launch.ToggleAfterSeconds >= 0 && _toggleAt < 0)
+                _toggleAt = Time.realtimeSinceStartup + Launch.ToggleAfterSeconds;
+            if (scene == GameScenes.FLIGHT && Launch.PartEventAfterSeconds >= 0 && _partEventAt < 0)
+                _partEventAt = Time.realtimeSinceStartup + Launch.PartEventAfterSeconds;
             if (scene == GameScenes.FLIGHT && Launch.InputAfterSeconds >= 0 && _inputAt < 0)
             {
                 _inputAt = Time.realtimeSinceStartup + Launch.InputAfterSeconds;
@@ -155,6 +164,58 @@ namespace KspMp
             {
                 Log.Exception("Auto-launch", e);
             }
+        }
+
+        /// <summary>Toggles an action group the way the keyboard does, so co-pilot relaying is exercised.</summary>
+        private void AutoToggleGroup()
+        {
+            var vessel = FlightGlobals.ActiveVessel;
+            if (vessel == null) return;
+            try
+            {
+                var group = (KSPActionGroup)Enum.Parse(typeof(KSPActionGroup), Launch.ToggleGroup, true);
+                Log.Info("Auto-toggle: " + group + " on " + vessel.GetDisplayName());
+                vessel.ActionGroups.ToggleGroup(group);
+            }
+            catch (Exception e)
+            {
+                Log.Exception("Auto-toggle " + Launch.ToggleGroup, e);
+            }
+        }
+
+        /// <summary>
+        /// Fires a part-menu action by name. A real player clicks the button (which the UIPartActionButton patch
+        /// intercepts); this takes the same relay path directly so the flow can be tested without a mouse.
+        /// </summary>
+        private void AutoPartEvent()
+        {
+            var vessel = FlightGlobals.ActiveVessel;
+            if (vessel == null || vessel.parts == null) return;
+            foreach (var part in vessel.parts)
+            {
+                for (var m = 0; m < part.Modules.Count; m++)
+                {
+                    var evt = part.Modules[m].Events[Launch.PartEventName];
+                    if (evt == null || !evt.active) continue;
+                    if (Vessels.IsOwnedByOther(vessel.id) && Control.IAmAboard(vessel.id))
+                    {
+                        Log.Info("Auto-partevent: relaying '" + evt.name + "' on " + part.partInfo.title + " to the owner");
+                        Control.SendPartEvent(vessel.id, part.flightID, m, evt.name);
+                    }
+                    else
+                    {
+                        Log.Info("Auto-partevent: invoking '" + evt.name + "' on " + part.partInfo.title + " locally");
+                        evt.Invoke();
+                    }
+                    return;
+                }
+            }
+            var available = new List<string>();
+            foreach (var part in vessel.parts)
+                for (var m = 0; m < part.Modules.Count; m++)
+                    foreach (BaseEvent evt in part.Modules[m].Events)
+                        if (evt.active && evt.guiActive && !available.Contains(evt.name)) available.Add(evt.name);
+            Log.Warn("Auto-partevent: no active event named '" + Launch.PartEventName + "' on " + vessel.GetDisplayName() + ". Available: " + string.Join(", ", available.ToArray()));
         }
 
         private void AutoFly()
@@ -220,6 +281,16 @@ namespace KspMp
                 Log.Info("Auto-stage: pressing space");
                 KSP.UI.Screens.StageManager.ActivateNextStage();
             }
+            if (_toggleAt >= 0 && Time.realtimeSinceStartup >= _toggleAt && HighLogic.LoadedSceneIsFlight && FlightGlobals.ready)
+            {
+                _toggleAt = -1f;
+                AutoToggleGroup();
+            }
+            if (_partEventAt >= 0 && Time.realtimeSinceStartup >= _partEventAt && HighLogic.LoadedSceneIsFlight && FlightGlobals.ready)
+            {
+                _partEventAt = -1f;
+                AutoPartEvent();
+            }
             if (_inputAt >= 0 && HighLogic.LoadedSceneIsFlight && FlightGlobals.ready && Time.realtimeSinceStartup >= _inputAt)
             {
                 if (Time.realtimeSinceStartup <= _inputUntil)
@@ -264,6 +335,7 @@ namespace KspMp
 
         private void OnGUI()
         {
+            Editor.DrawOverlay();
             _mainMenu.Draw();
             _hud.Draw();
             _debug.Draw();
