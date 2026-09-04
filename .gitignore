@@ -21,3 +21,6 @@ test-installs/
 
 # server runtime data
 universe/
+
+# release packages
+artifacts/
