@@ -59,6 +59,7 @@ namespace KspMp.Systems
             GameEvents.onLevelWasLoadedGUIReady.Remove(OnLevelLoaded);
             _modifiedAt.Clear();
             _newVessels.Clear();
+            _idsMadeUnique.Clear();
             Registry.Clear();
         }
 
@@ -157,9 +158,37 @@ namespace KspMp.Systems
 
         // ---- sending ----
 
+        private readonly HashSet<Guid> _idsMadeUnique = new HashSet<Guid>();
+
+        /// <summary>
+        /// A launched vessel keeps the persistent ids written in its .craft file, so two players launching the same
+        /// craft end up with identical ids. KSP treats a colliding persistent id as the same object and destroys one
+        /// of the two vessels, which is easy to hit because everyone has the same stock craft. Give every vessel we
+        /// launch fresh ids before anyone else hears about it.
+        /// </summary>
+        private void EnsureUniquePersistentIds(Vessel vessel)
+        {
+            if (vessel == null || !_idsMadeUnique.Add(vessel.id)) return;
+            try
+            {
+                var before = vessel.persistentId;
+                vessel.persistentId = FlightGlobals.GetUniquepersistentId();
+                if (vessel.parts != null)
+                    for (var i = 0; i < vessel.parts.Count; i++)
+                        vessel.parts[i].persistentId = FlightGlobals.GetUniquepersistentId();
+                if (before != vessel.persistentId)
+                    Log.Info("Gave " + vessel.GetDisplayName() + " fresh persistent ids (" + before + " -> " + vessel.persistentId + ") so it cannot collide with the same craft launched elsewhere");
+            }
+            catch (Exception e)
+            {
+                Log.Exception("Refreshing persistent ids for " + vessel.GetDisplayName(), e);
+            }
+        }
+
         public void SendProto(Vessel vessel, ProtoReason reason)
         {
             if (vessel == null || vessel.id == Guid.Empty || !Net.IsConnected) return;
+            if (reason == ProtoReason.FlightReady || reason == ProtoReason.Created) EnsureUniquePersistentIds(vessel);
             try
             {
                 var proto = vessel.BackupVessel();

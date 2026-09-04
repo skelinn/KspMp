@@ -241,8 +241,8 @@ namespace KspMp
             if (target == null) { Log.Warn("Auto-dock: found no other player's ship with a docking port"); yield break; }
             Log.Info("Auto-dock: target is " + target.GetDisplayName() + " at " + (target.GetWorldPos3D() - ours.GetWorldPos3D()).magnitude.ToString("F0") + " m");
 
-            if (!Testing.TestRendezvous.MoveNear(ours, target, 300f)) yield break;
-            yield return new WaitForSeconds(8f);
+            if (!Testing.TestRendezvous.MoveNear(ours, target, 80f)) yield break;
+            yield return new WaitForSeconds(10f);
 
             for (var attempt = 1; attempt <= 6; attempt++)
             {
@@ -256,7 +256,8 @@ namespace KspMp
                     yield return new WaitForSeconds(4f);
                     continue;
                 }
-                Log.Info("Auto-dock: alignment attempt " + attempt + "; owner of target is " + (Vessels.IsMine(target.id) ? "us" : "#" + Vessels.OwnerOf(target.id)));
+                Log.Info("Auto-dock: alignment attempt " + attempt + "; owner of target is " + (Vessels.IsMine(target.id) ? "us" : "#" + Vessels.OwnerOf(target.id))
+                         + "; distance " + (ours.GetWorldPos3D() - target.GetWorldPos3D()).magnitude.ToString("F1") + " m; target packed=" + target.packed);
                 Testing.TestRendezvous.AlignPorts(ours, target, 0.3f);
                 yield return new WaitForSeconds(6f);
                 if (FlightGlobals.ActiveVessel != null && FlightGlobals.FindVessel(target.id) == null)

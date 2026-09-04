@@ -74,21 +74,40 @@ namespace KspMp.Testing
             }
         }
 
-        public static ModuleDockingNode FindFreePort(Vessel vessel)
+        public static ModuleDockingNode FindFreePort(Vessel vessel, bool explain = false)
         {
-            if (vessel == null || vessel.parts == null) return null;
+            if (vessel == null || vessel.parts == null)
+            {
+                if (explain) Log.Warn("Test:   " + (vessel == null ? "vessel is null" : vessel.GetDisplayName() + " has no parts list"));
+                return null;
+            }
+            var seen = 0;
             for (var i = 0; i < vessel.parts.Count; i++)
             {
                 var modules = vessel.parts[i].Modules;
                 for (var m = 0; m < modules.Count; m++)
                 {
                     if (!(modules[m] is ModuleDockingNode node)) continue;
-                    if (node.nodeTransform == null) continue;
-                    if (node.state != null && node.state.StartsWith("Docked", StringComparison.Ordinal)) continue;
-                    if (node.otherNode != null) continue;
+                    seen++;
+                    if (node.nodeTransform == null)
+                    {
+                        if (explain) Log.Warn("Test:   " + vessel.GetDisplayName() + " port on " + vessel.parts[i].partInfo.title + " has no nodeTransform yet");
+                        continue;
+                    }
+                    if (node.state != null && node.state.StartsWith("Docked", StringComparison.Ordinal))
+                    {
+                        if (explain) Log.Warn("Test:   " + vessel.GetDisplayName() + " port state is " + node.state);
+                        continue;
+                    }
+                    if (node.otherNode != null)
+                    {
+                        if (explain) Log.Warn("Test:   " + vessel.GetDisplayName() + " port is already paired");
+                        continue;
+                    }
                     return node;
                 }
             }
+            if (explain) Log.Warn("Test:   " + vessel.GetDisplayName() + ": " + seen + " docking module(s) across " + vessel.parts.Count + " part(s), none usable; loaded=" + vessel.loaded + " packed=" + vessel.packed);
             return null;
         }
 
@@ -99,11 +118,12 @@ namespace KspMp.Testing
         public static bool AlignPorts(Vessel ours, Vessel target, float gapMetres)
         {
             if (ours == null || target == null || !ours.loaded || !target.loaded) return false;
-            var ourNode = FindFreePort(ours);
-            var theirNode = FindFreePort(target);
+            var ourNode = FindFreePort(ours, explain: true);
+            var theirNode = FindFreePort(target, explain: true);
             if (ourNode == null || theirNode == null)
             {
-                Log.Warn("Test: no free docking port on " + (ourNode == null ? ours.GetDisplayName() : target.GetDisplayName()));
+                Log.Warn("Test: no usable port; ours=" + (ourNode != null) + " theirs=" + (theirNode != null)
+                         + " (our vessel loaded=" + ours.loaded + " packed=" + ours.packed + ", target loaded=" + target.loaded + " packed=" + target.packed + ")");
                 return false;
             }
             try
