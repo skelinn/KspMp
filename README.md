@@ -3,10 +3,15 @@
 Play KSP with your friends on one shared timeline: everyone is their own Kerbal, you can sit in the same
 rocket, share the controls, build together in the VAB/SPH, and dock.
 
-Status: **M0-M5 verified** with two clients on one machine: connect, lobby and chat; a shared clock; vessel
-replication with physics authority; negotiated warp; Kerbal avatars and a shared roster; and shared control, where
-two players ride the same rocket and the co-pilot can stage, use action groups and steer. **M6 docking** and
-**M7 shared VAB/SPH** are written and unit-tested, not yet flown. See `docs/PLAN.md` for the plan.
+Status: **M0-M7 flown** with two clients on one machine: connect, lobby and chat; a shared clock; vessel
+replication with physics authority; negotiated warp; Kerbal avatars and a shared roster; shared control, where
+two players ride the same rocket and the co-pilot can stage, use action groups and steer; docking, which merges
+the two craft and leaves the other player aboard as co-pilot; and a shared VAB/SPH workbench, where both
+builders converge on one craft hash. See `docs/PLAN.md` for the plan, and the gaps below before you rely on any
+of it.
+
+Everything so far has been verified over localhost, at `rtt 0 ms`. None of the timing work - the shared clock,
+replica interpolation, shared-stick input - has ever seen real latency.
 
 ## Requirements
 
@@ -71,11 +76,41 @@ Launch options (handy for testing and for jumping straight into your usual serve
     -kspmp-toggle Group:D        D seconds after entering flight toggle an action group (Light, Gear, RCS, ...)
     -kspmp-partevent Name:D      D seconds after entering flight fire a part-menu action by name
 
+Test harness only. These teleport craft around and drive KSP directly, so they are for testing, not for play:
+
+    -kspmp-orbit ALT:D           D seconds after entering flight, place us in a circular orbit ALT km up
+    -kspmp-dock D                D seconds after entering flight, rendezvous with another player's ship and dock
+    -kspmp-dockassist D          like -kspmp-dock but never moves our ship; helps finish a dock someone else started
+    -kspmp-undock D              D seconds after a dock completes, split the pair again
+    -kspmp-editor VAB|SPH:D      D seconds after reaching the space center, open that editor
+    -kspmp-editorload "path":D   D seconds after the editor opens, load that craft onto the shared workbench
+    -kspmp-editorwatch D         log the local craft hash every D seconds, so two clients can be compared
+
 `scripts/run-clients.ps1 -kspmp-connect 127.0.0.1:7777 -kspmp-enter` launches both test copies straight into the game.
 
 Server files live in the universe folder: `server.cfg` (name, port, max players, MOTD, `sharedStickDefault`,
 `hostControlsWarp`), `time.cfg` (shared UT, saved every minute and on shutdown), `players.cfg` (known players and
 their Kerbal avatars), `vessels/<id>.cfg` and `roster/<name>.cfg` (the shared world, readable KSP ConfigNode text).
+
+## Known gaps
+
+Worth knowing before you play, roughly in the order you would hit them.
+
+- **Getting connected is on you.** There is no NAT traversal, no UPnP, and no Steam transport yet, so either
+  forward UDP 7777 or put both machines on a VPN such as Tailscale and connect to that address.
+- **Both sides need identical GameData.** The handshake checks the protocol version and nothing else - there is
+  no mod manifest - so a single part mod on one side and not the other will fail while loading a vessel rather
+  than telling you why. A stock install on both sides is the safe option.
+- **Undocking is not implemented.** There is no `Undock` or `Decouple` message and no patch for either, so once
+  two craft are docked they stay that way.
+- **Physics authority does not return to the pilot after a dock.** The server hands the target vessel to the
+  approaching player and never hands it back, so the merged craft ends up piloted by one player and simulated by
+  the other. This is also why neither side can undock.
+- **Stock docking magnets do not fire on a teleported approach.** The test harness closes the last centimetres
+  itself, through `ModuleDockingNode.DockToVessel`, which is what the mod patches. A hand-flown dock has not been
+  tried, so it is not known whether this affects normal play or only the harness.
+- **Which client ends up owning a shared vessel is not deterministic.** The same scenario can hand authority to
+  either player from one run to the next.
 
 ## How playing together works
 
