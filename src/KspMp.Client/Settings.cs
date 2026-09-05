@@ -27,7 +27,10 @@ namespace KspMp
             {
                 if (File.Exists(FilePath))
                 {
-                    var node = ConfigNode.Load(FilePath)?.GetNode(NodeName);
+                    var root = ConfigNode.Load(FilePath);
+                    // Builds before the wrapper fix saved the settings node straight to the file, which
+                    // writes its values without the enclosing node; fall back to reading them from the root.
+                    var node = root == null ? null : (root.GetNode(NodeName) ?? root);
                     if (node != null)
                     {
                         node.TryGetValue("playerName", ref settings.PlayerName);
@@ -71,7 +74,11 @@ namespace KspMp
                 node.AddValue("showDebugWindow", ShowDebugWindow);
                 node.AddValue("showHud", ShowHud);
                 Directory.CreateDirectory(Path.GetDirectoryName(FilePath));
-                node.Save(FilePath);
+                // Saving the node directly would write only its values, and Load looks for the node by
+                // name, so the settings would never read back. Wrap it in a root node.
+                var file = new ConfigNode();
+                file.AddNode(node);
+                file.Save(FilePath);
             }
             catch (Exception e)
             {
