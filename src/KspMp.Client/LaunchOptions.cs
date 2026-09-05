@@ -23,6 +23,10 @@ namespace KspMp
     ///   -kspmp-dock D                D seconds after entering flight: rendezvous with another player's ship and dock (test harness)
     ///   -kspmp-dockassist D          like -kspmp-dock but never moves our ship across the sky; helps finish a dock
     ///                                the other player started, since only the client simulating both can align them
+    ///   -kspmp-editor VAB|SPH:D      D seconds after reaching the space center, open that editor (test harness)
+    ///   -kspmp-editorload "path":D   D seconds after the editor opens, load that craft into the shared workbench
+    ///   -kspmp-editorwatch D         log the local craft hash every D seconds while in the editor, so two
+    ///                                clients can be compared for convergence
     /// </summary>
     public sealed class LaunchOptions
     {
@@ -45,6 +49,11 @@ namespace KspMp
         public float ToggleAfterSeconds = -1f;
         public string PartEventName;
         public float PartEventAfterSeconds = -1f;
+        public string EditorFacilityName;
+        public float EditorAfterSeconds = -1f;
+        public string EditorLoadCraft;
+        public float EditorLoadAfterSeconds = -1f;
+        public float EditorWatchSeconds = -1f;
         public double OrbitAltitudeKm = -1;
         public float OrbitAfterSeconds = -1f;
         public float DockAfterSeconds = -1f;
@@ -130,6 +139,27 @@ namespace KspMp
                         if (colon > 0 && float.TryParse(spec.Substring(colon + 1), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var eventAfter)) options.PartEventAfterSeconds = eventAfter;
                         break;
                     }
+                    case "-kspmp-editor" when i + 1 < args.Length:
+                    {
+                        var spec = args[++i];
+                        var colon = spec.LastIndexOf(':');
+                        options.EditorFacilityName = colon > 0 ? spec.Substring(0, colon) : spec;
+                        options.EditorAfterSeconds = 0f;
+                        if (colon > 0 && float.TryParse(spec.Substring(colon + 1), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var afterEditor)) options.EditorAfterSeconds = afterEditor;
+                        break;
+                    }
+                    case "-kspmp-editorload" when i + 1 < args.Length:
+                    {
+                        var spec = args[++i];
+                        var colon = spec.LastIndexOf(':');
+                        options.EditorLoadCraft = colon > 0 ? spec.Substring(0, colon) : spec;
+                        options.EditorLoadAfterSeconds = 0f;
+                        if (colon > 0 && float.TryParse(spec.Substring(colon + 1), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var afterLoad)) options.EditorLoadAfterSeconds = afterLoad;
+                        break;
+                    }
+                    case "-kspmp-editorwatch" when i + 1 < args.Length:
+                        if (float.TryParse(args[++i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var watchEvery)) options.EditorWatchSeconds = watchEvery;
+                        break;
                     case "-kspmp-orbit" when i + 1 < args.Length:
                     {
                         var parts = args[++i].Split(':');

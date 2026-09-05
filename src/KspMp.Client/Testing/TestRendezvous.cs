@@ -1,4 +1,6 @@
 using System;
+using System.Reflection;
+using System.Text;
 using KspMp.Vessels;
 using UnityEngine;
 
@@ -138,8 +140,13 @@ namespace KspMp.Testing
                 var theirPort = theirNode.nodeTransform;
                 var ourPort = ourNode.nodeTransform;
 
+                // KSP's magnets only reach inside the port's acquireRange (0.5 m on a Clamp-O-Tron),
+                // so parking at the requested gap can leave the ports aligned but permanently outside
+                // capture. Never sit further out than the range the port can actually act over.
+                var gap = Mathf.Min(gapMetres, theirNode.acquireRange * 0.6f);
+
                 // Where our port must end up: in front of theirs, pointing back at it.
-                var wantedPos = theirPort.position + theirPort.forward * gapMetres;
+                var wantedPos = theirPort.position + theirPort.forward * gap;
                 var wantedRot = Quaternion.LookRotation(-theirPort.forward, theirPort.up);
 
                 // Move the whole vessel by the rigid transform that takes our port to that pose.
@@ -150,17 +157,19 @@ namespace KspMp.Testing
                 // A real dock ends with a slow drift onto the port. Matching velocity exactly leaves the two
                 // ships hanging just apart, and KSP's magnets never trigger, so add a gentle closing speed.
                 var approach = (theirPort.position - ourPort.position).normalized;
-                ours.SetWorldVelocity(WorldVelocityOf(target) + (Vector3d)(approach * closingSpeed));
-                ours.IgnoreGForces(20);
+                ApplyVelocity(ours, WorldVelocityOf(target) + (Vector3d)(approach * closingSpeed));
 
                 var achieved = (ourPort.position - theirPort.position).magnitude;
+                var relativeSpeed = (WorldVelocityOf(ours) - WorldVelocityOf(target)).magnitude;
                 var facing = Vector3.Dot(ourPort.forward, -theirPort.forward);
                 Log.Info("Test: aligned " + ours.GetDisplayName() + " port to " + target.GetDisplayName()
-                         + "; gap " + achieved.ToString("F2") + " m (acquire range " + theirNode.acquireRange.ToString("F2") + " m)"
+                         + "; gap " + achieved.ToString("F2") + " m (asked " + gapMetres.ToString("F2") + ", capped to " + gap.ToString("F2")
+                         + ", acquire range " + theirNode.acquireRange.ToString("F2") + " m)"
                          + ", facing " + facing.ToString("F2") + " (1.0 is head on)"
                          + ", states " + ourNode.state + " / " + theirNode.state
                          + ", immortal ours=" + VesselImmortal.IsImmortal(ours) + " theirs=" + VesselImmortal.IsImmortal(target)
-                         + ", closing at " + closingSpeed.ToString("F2") + " m/s");
+                         + ", closing at " + closingSpeed.ToString("F2") + " m/s"
+                         + ", relative speed now " + relativeSpeed.ToString("F3") + " m/s");
                 return true;
             }
             catch (Exception e)
@@ -174,6 +183,199 @@ namespace KspMp.Testing
         /// The velocity to copy so we drift alongside a vessel rather than into it. A landed vessel's orbital
         /// velocity still carries the planet's rotation (~175 m/s at the equator), so using it would fling us.
         /// </summary>
+        /// <summary>
+        /// Renews the closing velocity without moving either ship. KSP re-derives part velocities every
+        /// frame, so the single push AlignPorts gives fades almost at once and the ports hang just apart;
+        /// call this every few frames while the approach finishes. Returns false once there is no free
+        /// port left to aim at, which is what a completed capture looks like from here.
+        /// </summary>
+        public static bool HoldApproach(Vessel ours, Vessel target, float closingSpeed)
+        {
+            if (ours == null || target == null || !ours.loaded || !target.loaded || ours.packed) return false;
+            var ourNode = FindFreePort(ours);
+            var theirNode = FindFreePort(target);
+            if (ourNode == null || theirNode == null) return false;
+            var approach = theirNode.nodeTransform.position - ourNode.nodeTransform.position;
+            ApplyVelocity(ours, WorldVelocityOf(target) + (Vector3d)(approach.normalized * closingSpeed));
+            return true;
+        }
+
+        /// <summary>Port-to-port gap, facing and node states, for the docking test's progress log.</summary>
+        public static string DescribePorts(Vessel ours, Vessel target)
+        {
+            var ourNode = FindFreePort(ours);
+            var theirNode = FindFreePort(target);
+            if (ourNode == null || theirNode == null)
+                return "free port ours=" + (ourNode != null) + " theirs=" + (theirNode != null);
+            var gap = (ourNode.nodeTransform.position - theirNode.nodeTransform.position).magnitude;
+            var facing = Vector3.Dot(ourNode.nodeTransform.forward, -theirNode.nodeTransform.forward);
+            var closing = Vector3d.Dot(WorldVelocityOf(target) - WorldVelocityOf(ours),
+                                       (theirNode.nodeTransform.position - ourNode.nodeTransform.position).normalized);
+            return "port gap " + gap.ToString("F2") + " m, facing " + facing.ToString("F2")
+                   + ", closing " + (-closing).ToString("F3") + " m/s, states " + ourNode.state + " / " + theirNode.state;
+        }
+
+        /// <summary>
+        /// Sets a vessel's velocity down to the part rigidbodies. Vessel.SetWorldVelocity alone does not
+        /// reach them, so PhysX keeps whatever momentum an unpacked ship already had. Spin is zeroed so a
+        /// lined-up pair of ports stays lined up.
+        /// </summary>
+        private static void ApplyVelocity(Vessel vessel, Vector3d velocity)
+        {
+            vessel.SetWorldVelocity(velocity);
+            if (vessel.loaded && !vessel.packed)
+            {
+                var parts = vessel.parts;
+                for (var i = 0; i < parts.Count; i++)
+                {
+                    var rb = parts[i].rb;
+                    if (rb == null) continue;
+                    rb.velocity = (Vector3)velocity;
+                    rb.angularVelocity = Vector3.zero;
+                }
+            }
+            vessel.IgnoreGForces(20);
+        }
+
+        // Docking-node instrumentation. Read by reflection so this compiles whatever the exact KSP API
+        // shape is, and so a renamed or missing member degrades to "not present" instead of a build break.
+        private const BindingFlags AnyMember = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
+
+        private static readonly string[] NodeFields =
+        {
+            "nodeType", "gendered", "genderFemale", "acquireRange", "acquireMinFwdDot", "acquireMinRollDot",
+            "captureRange", "captureMinFwdDot", "captureMinRollDot", "minDistanceToReEngage",
+            "snapRotation", "snapOffset", "state", "otherNode", "dockedPartUId", "deployAnimationController",
+        };
+
+        private static object Member(object target, string name)
+        {
+            if (target == null) return null;
+            var type = target.GetType();
+            var field = type.GetField(name, AnyMember);
+            if (field != null) return field.GetValue(target);
+            var property = type.GetProperty(name, AnyMember);
+            return property != null && property.CanRead ? property.GetValue(target, null) : null;
+        }
+
+        private static bool HasMember(object target, string name)
+        {
+            if (target == null) return false;
+            var type = target.GetType();
+            return type.GetField(name, AnyMember) != null || type.GetProperty(name, AnyMember) != null;
+        }
+
+        /// <summary>
+        /// Everything KSP's own docking logic decides on, for one node: the tunables it compares against,
+        /// the finite-state-machine state, and - the point of the exercise - whether the node's own approach
+        /// scan can see the port opposite it.
+        /// </summary>
+        public static string DescribeNode(ModuleDockingNode node, string label)
+        {
+            if (node == null) return label + "=(no free node)";
+            var text = new StringBuilder(label).Append("{");
+            for (var i = 0; i < NodeFields.Length; i++)
+            {
+                var name = NodeFields[i];
+                if (!HasMember(node, name)) continue;
+                var value = Member(node, name);
+                if (value is ModuleDockingNode other) value = other.part != null ? other.part.name : "node";
+                text.Append(name).Append('=').Append(value == null ? "null" : value.ToString()).Append(' ');
+            }
+
+            var fsm = Member(node, "fsm");
+            var fsmState = Member(fsm, "currentStateName") ?? Member(Member(fsm, "currentState"), "name");
+            text.Append("fsm=").Append(fsmState == null ? "none" : fsmState.ToString());
+
+            // The decisive question: does the node itself find an approach? If this is null while the ports
+            // are centimetres apart and lined up, detection is what is broken, not the approach we flew.
+            var scan = node.GetType().GetMethod("FindNodeApproaches", AnyMember, null, Type.EmptyTypes, null);
+            if (scan != null)
+            {
+                try
+                {
+                    var found = scan.Invoke(node, null) as ModuleDockingNode;
+                    text.Append(" approach=").Append(found == null ? "NONE"
+                        : (found.part != null && found.part.vessel != null ? found.part.vessel.GetDisplayName() : "found"));
+                }
+                catch (Exception e) { text.Append(" approach=threw ").Append(e.GetBaseException().GetType().Name); }
+            }
+            else text.Append(" approach=(no FindNodeApproaches)");
+
+            // Whether the port is physically able to touch anything. Include inactive children: a trigger
+            // parked on a deactivated GameObject is invisible to the default search, and "missing" and
+            // "switched off" call for completely different fixes.
+            var part = node.part;
+            if (part != null)
+            {
+                text.Append(" partState=").Append(part.State);
+                text.Append(" shielded=").Append(part.ShieldedFromAirstream);
+                var colliders = part.GetComponentsInChildren<Collider>(true);
+                text.Append(" colliders[");
+                for (var i = 0; colliders != null && i < colliders.Length; i++)
+                {
+                    var c = colliders[i];
+                    if (i > 0) text.Append(", ");
+                    text.Append(c.name)
+                        .Append(c.enabled ? ":on" : ":off")
+                        .Append(c.isTrigger ? ":trigger" : ":solid")
+                        .Append(c.gameObject.activeInHierarchy ? ":active" : ":INACTIVE");
+                }
+                text.Append("]");
+            }
+            return text.Append("}").ToString();
+        }
+
+        /// <summary>
+        /// Drives the dock through KSP's own entry point. The stock magnets never pair on a teleported
+        /// approach - the node's approach scan returns nothing even with the ports centimetres apart, lined
+        /// up and inside captureRange - so the test would otherwise never reach the code that matters.
+        /// DockToVessel is what the mod patches, so everything under test (the couple gate, authority merge,
+        /// id remap, proto resync) runs exactly as it would for a hand-flown dock.
+        /// </summary>
+        public static bool ForceDock(Vessel ours, Vessel target)
+        {
+            var ourNode = FindFreePort(ours);
+            var theirNode = FindFreePort(target);
+            if (ourNode == null || theirNode == null) return false;
+            var gap = (ourNode.nodeTransform.position - theirNode.nodeTransform.position).magnitude;
+            if (gap > ourNode.captureRange)
+            {
+                Log.Info("Test: not forcing the dock yet, ports are " + gap.ToString("F2") + " m apart (capture range "
+                         + ourNode.captureRange.ToString("F2") + " m)");
+                return false;
+            }
+            try
+            {
+                Log.Info("Test: ports are " + gap.ToString("F3") + " m apart and stock acquisition has not fired; "
+                         + "docking through ModuleDockingNode.DockToVessel");
+                ourNode.otherNode = theirNode;
+                theirNode.otherNode = ourNode;
+                ourNode.DockToVessel(theirNode);
+                return true;
+            }
+            catch (Exception e)
+            {
+                Log.Exception("Test: forcing the dock", e);
+                ourNode.otherNode = null;
+                theirNode.otherNode = null;
+                return false;
+            }
+        }
+
+        /// <summary>Full node instrumentation for both sides of an attempted dock.</summary>
+        public static string DescribeDockingNodes(Vessel ours, Vessel target)
+        {
+            // KSP's node scan walks the loaded-vessel list, so a vessel missing from it is invisible to
+            // docking no matter how close the ports are.
+            var loaded = FlightGlobals.VesselsLoaded;
+            var oursListed = loaded != null && loaded.Contains(ours);
+            var theirsListed = loaded != null && loaded.Contains(target);
+            return "VesselsLoaded=" + (loaded == null ? 0 : loaded.Count)
+                   + " containsOurs=" + oursListed + " containsTheirs=" + theirsListed + " | "
+                   + DescribeNode(FindFreePort(ours), "ours") + " | " + DescribeNode(FindFreePort(target), "theirs");
+        }
+
         private static Vector3d WorldVelocityOf(Vessel vessel)
         {
             if (vessel.loaded && vessel.rootPart != null && vessel.rootPart.rb != null) return vessel.rootPart.rb.velocity;

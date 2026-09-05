@@ -122,6 +122,21 @@ namespace KspMp
                 _autoLaunchDone = true;
                 StartCoroutine(AutoLaunchAfterDelay(3f));
             }
+            if (scene == GameScenes.SPACECENTER && !string.IsNullOrEmpty(Launch.EditorFacilityName) && !_autoEditorDone && Network.IsConnected)
+            {
+                _autoEditorDone = true;
+                StartCoroutine(AutoOpenEditor(Launch.EditorAfterSeconds));
+            }
+            if (scene == GameScenes.EDITOR && !string.IsNullOrEmpty(Launch.EditorLoadCraft) && !_editorLoadDone)
+            {
+                _editorLoadDone = true;
+                StartCoroutine(AutoLoadCraft(Launch.EditorLoadAfterSeconds));
+            }
+            if (scene == GameScenes.EDITOR && Launch.EditorWatchSeconds > 0 && !_editorWatchStarted)
+            {
+                _editorWatchStarted = true;
+                StartCoroutine(EditorWatch(Launch.EditorWatchSeconds));
+            }
             if (scene == GameScenes.FLIGHT && Launch.FlyAfterSeconds >= 0 && _autoLaunchDone && _flyAt < 0)
                 _flyAt = Time.realtimeSinceStartup + Launch.FlyAfterSeconds;
             if (scene == GameScenes.FLIGHT && Launch.StageAfterSeconds >= 0 && _stageAt < 0)
@@ -282,7 +297,8 @@ namespace KspMp
                 }
                 var weOwnBoth = Vessels.IsMine(ours.id) && Vessels.IsMine(target.id);
                 Log.Info("Auto-dock: attempt " + attempt + "; we simulate ours=" + Vessels.IsMine(ours.id) + " theirs=" + Vessels.IsMine(target.id)
-                         + "; distance " + (ours.GetWorldPos3D() - target.GetWorldPos3D()).magnitude.ToString("F1") + " m; target packed=" + target.packed);
+                         + "; distance " + (ours.GetWorldPos3D() - target.GetWorldPos3D()).magnitude.ToString("F1") + " m; target packed=" + target.packed
+                         + "; " + Testing.TestRendezvous.DescribePorts(ours, target));
                 if (!weOwnBoth)
                 {
                     // Only the client simulating both ships can put them together; the other one waits for the
@@ -290,8 +306,12 @@ namespace KspMp
                     yield return new WaitForSeconds(5f);
                     continue;
                 }
-                // Align once, then leave the ships alone: teleporting them again every few seconds resets the
-                // physics and never lets the magnets finish pulling the ports together.
+                // Both ships are ours to move, so KSP's own docking logic should be engaging by now. Dump
+                // what the nodes themselves think, above all whether their approach scan sees each other.
+                Log.Info("Auto-dock: nodes " + Testing.TestRendezvous.DescribeDockingNodes(ours, target));
+                // Teleport into place only once: repeating it every few seconds resets the physics and never
+                // lets the magnets finish pulling the ports together. The approach is then held by renewing
+                // velocity alone, below.
                 if (!aligned || (ours.GetWorldPos3D() - target.GetWorldPos3D()).magnitude > alignedDistance + 1.0)
                 {
                     // Start a little further out and drift in, the way a player finishes a docking.
@@ -299,7 +319,25 @@ namespace KspMp
                     aligned = true;
                     alignedDistance = (ours.GetWorldPos3D() - target.GetWorldPos3D()).magnitude;
                 }
-                yield return new WaitForSeconds(6f);
+                // Give stock acquisition a couple of attempts, then drive the dock ourselves: the node's
+                // approach scan never pairs teleported ports, so waiting longer only burns attempts.
+                if (aligned && attempt >= 3 && Testing.TestRendezvous.ForceDock(ours, target))
+                {
+                    yield return new WaitForSeconds(3f);
+                    continue;
+                }
+                // One velocity write fades within a frame or two as KSP re-derives part velocities, so a
+                // single push per attempt leaves the ports creeping apart faster than they close. Renew the
+                // approach twice a second instead, without teleporting anything.
+                for (var tick = 0; tick < 12; tick++)
+                {
+                    yield return new WaitForSeconds(0.5f);
+                    var closingOurs = FlightGlobals.FindVessel(ourVesselId);
+                    var closingTarget = FlightGlobals.FindVessel(target.id);
+                    if (closingOurs == null || closingTarget == null) break;
+                    if (closingOurs.parts != null && closingOurs.parts.Count > ourPartCount) break;
+                    if (!Testing.TestRendezvous.HoldApproach(closingOurs, closingTarget, 0.15f)) break;
+                }
             }
             Log.Warn("Auto-dock: gave up after 12 attempts");
         }
@@ -323,6 +361,94 @@ namespace KspMp
         }
 
         private bool _autoEntered;
+        private bool _autoEditorDone;
+        private bool _editorLoadDone;
+        private bool _editorWatchStarted;
+
+        /// <summary>Test harness: open the VAB or SPH so two clients end up on one shared workbench.</summary>
+        private System.Collections.IEnumerator AutoOpenEditor(float delaySeconds)
+        {
+            yield return new WaitForSeconds(Mathf.Max(delaySeconds, 0f));
+            var wantSph = Launch.EditorFacilityName != null
+                          && Launch.EditorFacilityName.Equals("SPH", StringComparison.OrdinalIgnoreCase);
+            var facility = wantSph ? EditorFacility.SPH : EditorFacility.VAB;
+            Log.Info("Auto-editor: opening the " + facility);
+            EditorDriver.StartupBehaviour = EditorDriver.StartupBehaviours.START_CLEAN;
+            EditorDriver.StartEditor(facility);
+        }
+
+        private System.Collections.IEnumerator AutoLoadCraft(float delaySeconds)
+        {
+            yield return new WaitForSeconds(Mathf.Max(delaySeconds, 0f));
+            LoadCraftIntoEditor();
+        }
+
+        /// <summary>
+        /// Test harness: drop a craft onto the shared workbench. This mirrors how EditorSystem applies a
+        /// snapshot it receives, but without suppressing the change event, so the local edit path runs
+        /// exactly as it would for a part attached by hand and the craft is shared with everyone else.
+        /// </summary>
+        private void LoadCraftIntoEditor()
+        {
+            var editor = EditorLogic.fetch;
+            if (editor == null) { Log.Warn("Auto-editor: no editor open to load into"); return; }
+            var path = System.IO.Path.Combine(KSPUtil.ApplicationRootPath, Launch.EditorLoadCraft.Replace(System.IO.Path.DirectorySeparatorChar, '/'));
+            if (!System.IO.File.Exists(path)) { Log.Warn("Auto-editor: no craft file at " + path); return; }
+            try
+            {
+                var file = ConfigNode.Load(path);
+                var shipNode = file == null ? null : (file.GetNode("ShipConstruct") ?? file);
+                var ship = new ShipConstruct();
+                if (shipNode == null || !ship.LoadShip(shipNode))
+                {
+                    Log.Warn("Auto-editor: could not read a craft out of " + path);
+                    return;
+                }
+                editor.ship.Clear();
+                EditorLogic.fetch.ship = ship;
+                editor.SetBackup();
+                GameEvents.onEditorShipModified.Fire(ship);
+                Log.Info("Auto-editor: loaded " + ship.shipName + " ("
+                         + (ship.parts != null ? ship.parts.Count : 0) + " part(s)) onto the shared workbench");
+            }
+            catch (Exception e)
+            {
+                Log.Exception("Auto-editor: loading a craft", e);
+            }
+        }
+
+        private System.Collections.IEnumerator EditorWatch(float everySeconds)
+        {
+            while (HighLogic.LoadedScene == GameScenes.EDITOR)
+            {
+                yield return new WaitForSeconds(Mathf.Max(everySeconds, 1f));
+                LogEditorState();
+            }
+        }
+
+        /// <summary>What this client believes is on the workbench; two clients' lines should match exactly.</summary>
+        private void LogEditorState()
+        {
+            var editor = EditorLogic.fetch;
+            if (editor == null || editor.ship == null) { Log.Info("Auto-editor: nothing on the workbench yet"); return; }
+            var parts = editor.ship.parts != null ? editor.ship.parts.Count : 0;
+            var hash = "n/a";
+            try
+            {
+                var node = editor.ship.SaveShip();
+                if (node != null)
+                {
+                    var text = KspMp.Vessels.ProtoCodec.ToText(node);
+                    hash = text.Length + ":" + text.GetHashCode();
+                }
+            }
+            catch (Exception e) { hash = "threw " + e.GetBaseException().GetType().Name; }
+            Log.Info("Auto-editor: workbench '" + editor.ship.shipName + "' parts=" + parts + " hash=" + hash
+                     + " builders=" + (Editor != null ? Editor.BuilderCount : 0)
+                     + " revision=" + (Editor != null ? Editor.Revision : -1)
+                     + " sent=" + (Editor != null ? Editor.SnapshotsSent : -1)
+                     + " applied=" + (Editor != null ? Editor.SnapshotsApplied : -1));
+        }
 
         private void OnWelcomedForLaunchOptions(Shared.Protocol.WelcomeMsg welcome)
         {
