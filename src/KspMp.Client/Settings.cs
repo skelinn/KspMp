@@ -11,6 +11,8 @@ namespace KspMp
         public string PlayerName = "Kerbonaut";
         public Guid PlayerId = Guid.Empty;
         public string LastServer = "127.0.0.1";
+        /// <summary>Password for LastServer, so it does not have to be retyped every session.</summary>
+        public string LastPassword = "";
         public int Port = 7777;
         public string AvatarKerbalName = "";
         public float UiScale = 1f;
@@ -37,6 +39,7 @@ namespace KspMp
                         var id = string.Empty;
                         if (node.TryGetValue("playerId", ref id) && Guid.TryParse(id, out var guid)) settings.PlayerId = guid;
                         node.TryGetValue("lastServer", ref settings.LastServer);
+                        node.TryGetValue("lastPassword", ref settings.LastPassword);
                         node.TryGetValue("port", ref settings.Port);
                         node.TryGetValue("avatarKerbalName", ref settings.AvatarKerbalName);
                         node.TryGetValue("uiScale", ref settings.UiScale);
@@ -67,6 +70,7 @@ namespace KspMp
                 node.AddValue("playerName", PlayerName);
                 node.AddValue("playerId", PlayerId.ToString());
                 node.AddValue("lastServer", LastServer);
+                node.AddValue("lastPassword", LastPassword);
                 node.AddValue("port", Port);
                 node.AddValue("avatarKerbalName", AvatarKerbalName);
                 node.AddValue("uiScale", UiScale);

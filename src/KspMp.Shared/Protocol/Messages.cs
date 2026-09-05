@@ -12,6 +12,8 @@ namespace KspMp.Shared.Protocol
         public Guid PlayerId;
         public string PlayerName;
         public string KspVersion;
+        /// <summary>Hex SHA-256 of the server password, or empty when the server has none.</summary>
+        public string PasswordHash;
 
         public void Serialize(NetDataWriter w)
         {
@@ -20,6 +22,7 @@ namespace KspMp.Shared.Protocol
             w.PutGuidRaw(PlayerId);
             w.Put(PlayerName ?? string.Empty);
             w.Put(KspVersion ?? string.Empty);
+            w.Put(PasswordHash ?? string.Empty);
         }
 
         public void Deserialize(NetDataReader r)
@@ -29,6 +32,7 @@ namespace KspMp.Shared.Protocol
             PlayerId = r.GetGuidRaw();
             PlayerName = r.GetString();
             KspVersion = r.GetString();
+            PasswordHash = r.GetString();
         }
     }
 

@@ -119,6 +119,7 @@ namespace KspMp
             {
                 _autoConnectDone = true;
                 Log.Info("Auto-connecting to " + Launch.ConnectHost + ":" + Launch.ConnectPort);
+                Network.Password = Launch.Password ?? Settings.LastPassword ?? string.Empty;
                 Network.Connect(Launch.ConnectHost, Launch.ConnectPort, Launch.Introducer, Launch.JoinCode);
             }
             if (scene == GameScenes.SPACECENTER && !string.IsNullOrEmpty(Launch.LaunchCraft) && !_autoLaunchDone && Network.IsConnected)

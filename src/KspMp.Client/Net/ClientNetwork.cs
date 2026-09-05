@@ -57,6 +57,9 @@ namespace KspMp.Net
             if (_handlers.TryGetValue(id, out var current) && current == handler) _handlers.Remove(id);
         }
 
+        /// <summary>Server password for the next connection; empty for servers that do not ask for one.</summary>
+        public string Password { get; set; } = string.Empty;
+
         public void Connect(string address, int port) => Connect(address, port, null, null);
 
         /// <summary>
@@ -160,6 +163,7 @@ namespace KspMp.Net
                 PlayerId = _settings.PlayerId,
                 PlayerName = _settings.PlayerName,
                 KspVersion = Versioning.GetVersionString(),
+                PasswordHash = PasswordHash.Of(Password),
             }, Channel.Control, Delivery.ReliableOrdered);
         }
 

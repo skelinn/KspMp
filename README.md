@@ -88,8 +88,8 @@ Test harness only. These teleport craft around and drive KSP directly, so they a
 
 `scripts/run-clients.ps1 -kspmp-connect 127.0.0.1:7777 -kspmp-enter` launches both test copies straight into the game.
 
-Server files live in the universe folder: `server.cfg` (name, port, max players, MOTD, `sharedStickDefault`,
-`hostControlsWarp`, `upnp`), `time.cfg` (shared UT, saved every minute and on shutdown), `players.cfg` (known players and
+Server files live in the universe folder: `server.cfg` (name, port, max players, MOTD, `password`,
+`sharedStickDefault`, `hostControlsWarp`, `upnp`), `time.cfg` (shared UT, saved every minute and on shutdown), `players.cfg` (known players and
 their Kerbal avatars), `vessels/<id>.cfg` and `roster/<name>.cfg` (the shared world, readable KSP ConfigNode text).
 
 ## Playing over the internet
@@ -115,6 +115,19 @@ Players then join with that code instead of an address:
 The address stays as a fallback: if nobody answers within twelve seconds the client dials it directly, which
 still works on a LAN or a VPN. Failing all of that, forward the port by hand or put both machines on a VPN such
 as Tailscale.
+
+## Server passwords
+
+Set `password` in `server.cfg` and players need it to join; leave it empty and anyone who can reach the port can
+play. Worth setting on anything reachable from the internet, since UDP ports get scanned and there is nothing
+else stopping a stranger flying your ships.
+
+Players type it in the Multiplayer window, or pass `-kspmp-password "text"`. It is remembered per install, so
+it only has to be typed once.
+
+The password is hashed before it leaves the client, which keeps the password itself off the network - people
+reuse them. It is not strong authentication: there is no challenge from the server, so anyone who can read a
+join packet could replay it. Treat it as a lock on the door, not a guarantee about who is behind it.
 
 ## Known gaps
 

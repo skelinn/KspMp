@@ -47,12 +47,19 @@ namespace KspMp.Ui
                 _port = GUILayout.TextField(_port, 5, GUILayout.Width(70));
                 GUILayout.EndHorizontal();
 
+                GUILayout.BeginHorizontal();
+                GUILayout.Label("Password", GUILayout.Width(60));
+                settings.LastPassword = GUILayout.PasswordField(settings.LastPassword ?? string.Empty, '*', 32);
+                GUILayout.EndHorizontal();
+                GUILayout.Label("<i>Leave blank unless the host set one.</i>");
+
                 if (GUILayout.Button("Connect"))
                 {
                     if (int.TryParse(_port, out var port) && port > 0 && port < 65536)
                     {
                         settings.Port = port;
                         settings.Save();
+                        net.Password = settings.LastPassword ?? string.Empty;
                         net.Connect(settings.LastServer.Trim(), port);
                     }
                 }

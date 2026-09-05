@@ -354,6 +354,13 @@ namespace KspMp.Server
                 Reject(client, "Protocol version mismatch: server " + ProtocolVersion.Current + ", client " + hello.ProtocolVersion + ". Update KspMp on the side that is behind.");
                 return;
             }
+            if (!PasswordHash.Matches(Config.Password, hello.PasswordHash))
+            {
+                Reject(client, string.IsNullOrEmpty(hello.PasswordHash)
+                    ? "This server needs a password. Enter it in the Multiplayer window before connecting."
+                    : "Wrong password.");
+                return;
+            }
             if (OnlineCount >= Config.MaxPlayers)
             {
                 Reject(client, "Server is full (" + Config.MaxPlayers + " players)");

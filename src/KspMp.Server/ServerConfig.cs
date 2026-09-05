@@ -12,6 +12,8 @@ namespace KspMp.Server
         public int Port = 7777;
         public int MaxPlayers = 16;
         public string MessageOfTheDay = "";
+        /// <summary>Players must know this to join. Empty means anyone who can reach the port can play.</summary>
+        public string Password = "";
         public bool HostControlsWarp = false;
         /// <summary>Ask the router to forward <see cref="Port"/> on startup, so hosting from home needs no router setup.</summary>
         public bool Upnp = true;
@@ -36,6 +38,7 @@ namespace KspMp.Server
             config.Port = node.GetInt("port", config.Port);
             config.MaxPlayers = node.GetInt("maxPlayers", config.MaxPlayers);
             config.MessageOfTheDay = node.GetValue("motd") ?? config.MessageOfTheDay;
+            config.Password = node.GetValue("password") ?? config.Password;
             config.HostControlsWarp = node.GetBool("hostControlsWarp", config.HostControlsWarp);
             config.Upnp = node.GetBool("upnp", config.Upnp);
             config.RespawnSeconds = node.GetFloat("respawnSeconds", config.RespawnSeconds);
@@ -52,6 +55,7 @@ namespace KspMp.Server
             node.AddValue("port", Port);
             node.AddValue("maxPlayers", MaxPlayers);
             node.AddValue("motd", MessageOfTheDay);
+            node.AddValue("password", Password);
             node.AddValue("hostControlsWarp", HostControlsWarp);
             node.AddValue("upnp", Upnp);
             node.AddValue("respawnSeconds", RespawnSeconds);
