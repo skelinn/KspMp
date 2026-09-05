@@ -227,6 +227,27 @@ Semantics mirror DMP `DMPModInterface` and LMP `ModApiSystem.SendModMessage`. Pa
 
 Names to confirm in the decompile during M0 (flagged unverified by the design pass): `KSPAssemblyDependency` constructor arity, `CrewTransfer.CrewTransferData.canTransfer`, `ControlTypes.VESSEL_SWITCHING`/`EVA_INPUT`, `Vessel.GetReferenceTransformPart`, `BaseField.OnValueModified`, `UI_Control.onFieldChanged`, `Vessel.CrewListSetDirty`, `EditorLogic.attachPart/detachPart` parameters, `ShipConstruct.Clear`, `ConstructionEventType` members, `RespawnTimer` units (`ProtoCrewMember.StartRespawnPeriod`), `TimingManager.TimingStage.Precalc`, `MainMenu.Start`.
 
+## Docking authority: why the obvious fix is not the fix (investigated 2026-09-05)
+
+After a dock the merged craft is flown by one player and simulated by another. `HandleDockIntent` hands the
+target to the approaching client and sets a 60 s hold; the pilot rule in `ControlService` is skipped while a
+hold is active, and nothing re-runs it when the hold expires, so the wrong client keeps simulating.
+
+Two apparently obvious fixes were tried and both are wrong:
+
+- **Releasing the hold when the dock commits.** Authority does then go back to the pilot - the client logs
+  `Authority for ... : us (Granted)` - but that client never actually takes up simulating it. `states sent`
+  stops climbing on both sides and their altitudes diverge (one holds 100000 m while the other decays), so the
+  end state is worse than the bug: instead of the wrong player simulating, nobody does. Something later in the
+  merge resets the receiving client's registry ownership, and that has to be found first.
+- **Sweeping lapsed holds from the server tick.** This breaks a dock that takes longer than the hold: authority
+  is pulled back to the pilot mid-approach, when the whole point of the hold is to keep both craft under one
+  simulator. `ServerDockingTests.WithTwoPilotsTheLowerPersistentIdYieldsAndTheHoldExpires` catches it.
+
+So the server-side assignment is not the whole story. The next step is the client: find what resets
+`RemoteVessel.OwnerClientId` after a merged proto arrives, and why a client told it owns a vessel does not
+start sending its state.
+
 ## Steam transport: what is actually possible (verified 2026-09-05)
 
 The M8 note used to say KSP ships no Steam natives and that we would bundle Steamworks.NET plus our own
