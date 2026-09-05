@@ -116,16 +116,32 @@ namespace KspMp.Ui
             }
             GUILayout.EndHorizontal();
 
+            var hosting = _addon.Host != null && _addon.Host.Running;
+
             GUILayout.BeginHorizontal();
             GUILayout.Label("Friends", GUILayout.Width(60));
             settings.AllowedSteamIds = GUILayout.TextField(settings.AllowedSteamIds ?? string.Empty);
+            // While hosting, changes to the list can be applied straight away. Steam accepts a session on
+            // demand, so a friend added mid-game gets in without anyone restarting anything.
+            if (hosting && GUILayout.Button("Apply", GUILayout.Width(60)))
+            {
+                settings.Save();
+                var added = 0;
+                foreach (var id in ParseSteamIds(settings.AllowedSteamIds)) if (_addon.Host.Allow(id)) added++;
+                Log.Info("Allowed " + added + " new Steam player(s) into the hosted game.");
+            }
             GUILayout.EndHorizontal();
             GUILayout.Label("<i>Steam IDs allowed into a game you host, comma separated. Steam needs them "
                             + "before it will accept anything from them.</i>");
 
-            if (_addon.Host != null && _addon.Host.Running)
+            if (hosting)
             {
-                GUILayout.Label("<b>Hosting.</b> Friends join with your ID above.");
+                GUILayout.Label("<b>Hosting.</b> Friends join with your ID above. Add one to the list and press "
+                                + "Apply and they can join straight away.");
+                if (GUILayout.Button("Stop hosting"))
+                {
+                    _addon.StopHosting();
+                }
             }
             else if (GUILayout.Button("Host a game"))
             {

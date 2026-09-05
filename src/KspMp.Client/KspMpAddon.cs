@@ -478,6 +478,15 @@ namespace KspMp
         /// through the socket rather than short-circuiting keeps the host on exactly the same code path as
         /// everyone else, so hosting cannot quietly behave differently from joining.
         /// </summary>
+        /// <summary>Stops serving, and drops our own connection to it, so hosting can be started again.</summary>
+        public void StopHosting()
+        {
+            Network?.Disconnect("stopped hosting");
+            Host?.Stop();
+            Host = null;
+            Log.Info("Stopped hosting.");
+        }
+
         public void StartHosting() => StartHosting(Launch.AllowedSteamIds, Launch.HostPort, Launch.Password);
 
         public void StartHosting(System.Collections.Generic.IEnumerable<ulong> allowedSteamIds) =>
@@ -491,6 +500,7 @@ namespace KspMp
         public void StartHosting(System.Collections.Generic.IEnumerable<ulong> allowedSteamIds, int port, string password)
         {
             if (Host != null && Host.Running) return;
+            Host?.Stop();
             Host = new Net.InProcessHost();
             if (!Host.Start(port, password, allowedSteamIds))
             {

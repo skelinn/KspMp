@@ -22,6 +22,7 @@ namespace KspMp.Net
     {
         private ServerCore _server;
         private CompositeTransport _transport;
+        private Steam.SteamP2PTransport _steam;
 
         public bool Running => _server != null;
         /// <summary>The Steam ID friends need to join, or 0 when hosting is UDP-only.</summary>
@@ -62,7 +63,8 @@ namespace KspMp.Net
 
                 if (Steam.SteamP2P.TryInitialise())
                 {
-                    transports.Add(new Steam.SteamP2PTransport(true, 0, expectedSteamIds, m => Log.Info("[host/steam] " + m)));
+                    _steam = new Steam.SteamP2PTransport(true, 0, expectedSteamIds, m => Log.Info("[host/steam] " + m));
+                    transports.Add(_steam);
                     SteamId = Steam.SteamP2P.LocalSteamId;
                 }
                 else
@@ -87,6 +89,9 @@ namespace KspMp.Net
             }
         }
 
+        /// <summary>Lets a friend in without restarting the game. False when Steam is not hosting.</summary>
+        public bool Allow(ulong steamId) => _steam != null && _steam.Allow(steamId);
+
         /// <summary>Call once a frame, alongside the client's own polling.</summary>
         public void Poll()
         {
@@ -109,6 +114,7 @@ namespace KspMp.Net
                 catch (Exception e) { Log.Exception("Disposing host transports", e); }
                 _transport = null;
             }
+            _steam = null;
             SteamId = 0;
         }
 

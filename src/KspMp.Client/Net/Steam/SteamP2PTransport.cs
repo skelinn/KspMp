@@ -53,6 +53,21 @@ namespace KspMp.Net.Steam
 
         public bool IsRunning { get; private set; }
 
+        /// <summary>
+        /// Lets a player in while the game is already running. Steam throws away packets from anyone whose
+        /// session was never accepted, and accepting is cheap and idempotent, so a friend added mid-session
+        /// can join without the host restarting.
+        /// </summary>
+        public bool Allow(ulong steamId)
+        {
+            if (steamId == 0) return false;
+            var isNew = _expected.Add(steamId);
+            if (IsRunning && SteamP2P.Available)
+                SteamNative.SteamAPI_ISteamNetworking_AcceptP2PSessionWithUser(SteamP2P.Networking, steamId);
+            if (isNew) _log("Now expecting Steam player " + steamId + ".");
+            return isNew;
+        }
+
         public event Action<PeerId> PeerConnected;
         public event Action<PeerId, string> PeerDisconnected;
         public event ReceivedHandler Received;
