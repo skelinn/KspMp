@@ -23,7 +23,7 @@ namespace KspMp.Net
         private readonly NetDataWriter _writer = new NetDataWriter();
         private readonly Dictionary<MessageId, Action<NetDataReader>> _handlers = new Dictionary<MessageId, Action<NetDataReader>>();
         private readonly HashSet<MessageId> _warnedUnhandled = new HashSet<MessageId>();
-        private LiteNetLibTransport _transport;
+        private INetTransport _transport;
         private bool _stopRequested;
         private string _stopReason;
 
@@ -43,7 +43,7 @@ namespace KspMp.Net
         public string ServerName { get; private set; }
         public WelcomeMsg Welcome { get; private set; }
         public bool IsConnected => State == ConnectionState.Connected;
-        public int PingMs => _transport != null ? _transport.PingMs : 0;
+        public int PingMs => _transport != null ? _transport.GetPeerPingMs(PeerId.Server) : 0;
 
         /// <summary>Raised once the server accepted us (after Welcome).</summary>
         public event Action<WelcomeMsg> Welcomed;
@@ -67,6 +67,37 @@ namespace KspMp.Net
         /// server rather than dialling it, which is what lets two people behind home routers reach each other
         /// without either forwarding a port. The address stays as the fallback if nobody answers.
         /// </summary>
+        /// <summary>
+        /// Joins over Steam instead of a UDP socket. Nobody forwards a port: Steam finds a route, falling
+        /// back to its own relay when it cannot make a direct one. The host has to have been told this
+        /// player's Steam ID first, since Steam will not deliver to a session nobody accepted.
+        /// </summary>
+        public void ConnectOverSteam(ulong hostSteamId)
+        {
+            if (_transport != null) Disconnect("reconnecting");
+            try
+            {
+                _transport = new Net.Steam.SteamP2PTransport(false, hostSteamId, null, m => Log.Info("[steam] " + m));
+                _transport.PeerConnected += OnPeerConnected;
+                _transport.PeerDisconnected += OnPeerDisconnected;
+                _transport.Received += OnReceived;
+                _transport.Start();
+                ServerAddress = "steam:" + hostSteamId;
+                ServerPort = 0;
+                LastError = null;
+                State = ConnectionState.Connecting;
+                Status = "Joining " + hostSteamId + " over Steam ...";
+            }
+            catch (Exception e)
+            {
+                Log.Exception("Steam connect", e);
+                _transport = null;
+                State = ConnectionState.Disconnected;
+                LastError = e.Message;
+                Status = "Steam: " + e.Message;
+            }
+        }
+
         public void Connect(string address, int port, string introducer, string joinCode)
         {
             if (_transport != null) Disconnect("reconnecting");

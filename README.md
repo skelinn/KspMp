@@ -133,6 +133,12 @@ join packet could replay it. Treat it as a lock on the door, not a guarantee abo
 
 Worth knowing before you play, roughly in the order you would hit them.
 
+- **Steam P2P has a client but no host yet.** Steam initialises inside KSP and the transport is written, so a
+  player can join a host's Steam ID without anyone forwarding a port. What is missing is the other half: the
+  dedicated server is a separate process with no Steam context, and a host cannot send Steam packets to
+  itself, so hosting means running the server inside KSP behind a transport that carries local and Steam
+  players at once. Until that exists, `-kspmp-steamjoin` has nothing to connect to. None of the Steam path has
+  been exercised between two machines.
 - **Hole punching has only been proven on one machine.** The registration, code lookup, introduction and
   connect all work, and a client whose only direct address was unroutable still reached the server through an
   introducer. But both ends were on the same machine, so LiteNetLib paired them on the internal address:

@@ -69,6 +69,14 @@ namespace KspMp
             Settings = Settings.Load();
             Launch = LaunchOptions.Parse(Environment.GetCommandLineArgs());
             if (!string.IsNullOrEmpty(Launch.PlayerName)) Settings.PlayerName = Launch.PlayerName;
+            if (Launch.SteamInfo)
+            {
+                if (Net.Steam.SteamP2P.TryInitialise())
+                    Log.Info("Steam check: available, our Steam ID is " + Net.Steam.SteamP2P.LocalSteamId);
+                else
+                    Log.Warn("Steam check: unavailable - " + Net.Steam.SteamP2P.Unavailable);
+            }
+            if (Launch.SteamHostId != 0) Log.Info("Launch options: join Steam host " + Launch.SteamHostId);
             if (Launch.AutoConnect) Log.Info("Launch options: connect " + Launch.ConnectHost + ":" + Launch.ConnectPort + (Launch.EnterGame ? ", enter game" : "") + (Launch.Say != null ? ", say" : ""));
             try
             {
@@ -120,7 +128,8 @@ namespace KspMp
                 _autoConnectDone = true;
                 Log.Info("Auto-connecting to " + Launch.ConnectHost + ":" + Launch.ConnectPort);
                 Network.Password = Launch.Password ?? Settings.LastPassword ?? string.Empty;
-                Network.Connect(Launch.ConnectHost, Launch.ConnectPort, Launch.Introducer, Launch.JoinCode);
+                if (Launch.SteamHostId != 0) Network.ConnectOverSteam(Launch.SteamHostId);
+                else Network.Connect(Launch.ConnectHost, Launch.ConnectPort, Launch.Introducer, Launch.JoinCode);
             }
             if (scene == GameScenes.SPACECENTER && !string.IsNullOrEmpty(Launch.LaunchCraft) && !_autoLaunchDone && Network.IsConnected)
             {

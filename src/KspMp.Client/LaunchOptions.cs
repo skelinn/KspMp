@@ -12,6 +12,8 @@ namespace KspMp
     ///   -kspmp-enter                 enter the game right after the server accepts us
     ///   -kspmp-say "text"            send one chat message after joining
     ///   -kspmp-debug                 show the debug window
+    ///   -kspmp-steaminfo             report whether Steam P2P is usable, then carry on
+    ///   -kspmp-steamjoin ID          join this Steam ID over Steam instead of an address (no port forwarding)
     ///   -kspmp-launch "Ships/VAB/Kerbal X.craft"   launch a craft (path relative to the KSP folder) once in the space center
     ///   -kspmp-site LaunchPad|Runway  launch site for -kspmp-launch (default from the craft folder)
     ///   -kspmp-fly N                 N seconds after launch: SAS on, full throttle, stage once
@@ -43,6 +45,8 @@ namespace KspMp
         public bool EnterGame;
         public string Say;
         public bool Debug;
+        public bool SteamInfo;
+        public ulong SteamHostId;
         public string LaunchCraft;
         public string LaunchSite;
         public float FlyAfterSeconds = -1f;
@@ -70,7 +74,7 @@ namespace KspMp
         public float WarpAfterSeconds = 30f;
         public float WarpDurationSeconds = 30f;
 
-        public bool AutoConnect => !string.IsNullOrEmpty(ConnectHost);
+        public bool AutoConnect => !string.IsNullOrEmpty(ConnectHost) || SteamHostId != 0;
 
         public static LaunchOptions Parse(string[] args)
         {
@@ -108,6 +112,12 @@ namespace KspMp
                         break;
                     case "-kspmp-say" when i + 1 < args.Length:
                         options.Say = args[++i];
+                        break;
+                    case "-kspmp-steamjoin" when i + 1 < args.Length:
+                        ulong.TryParse(args[++i], out options.SteamHostId);
+                        break;
+                    case "-kspmp-steaminfo":
+                        options.SteamInfo = true;
                         break;
                     case "-kspmp-debug":
                         options.Debug = true;
