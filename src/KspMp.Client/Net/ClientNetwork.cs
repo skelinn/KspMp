@@ -57,12 +57,26 @@ namespace KspMp.Net
             if (_handlers.TryGetValue(id, out var current) && current == handler) _handlers.Remove(id);
         }
 
-        public void Connect(string address, int port)
+        public void Connect(string address, int port) => Connect(address, port, null, null);
+
+        /// <summary>
+        /// Connects, optionally by join code. With an introducer and a code we ask to be introduced to the
+        /// server rather than dialling it, which is what lets two people behind home routers reach each other
+        /// without either forwarding a port. The address stays as the fallback if nobody answers.
+        /// </summary>
+        public void Connect(string address, int port, string introducer, string joinCode)
         {
             if (_transport != null) Disconnect("reconnecting");
             try
             {
-                _transport = new LiteNetLibTransport(new TransportOptions { IsServer = false, Address = address, Port = port }, m => Log.Info("[net] " + m));
+                _transport = new LiteNetLibTransport(new TransportOptions
+                {
+                    IsServer = false,
+                    Address = address,
+                    Port = port,
+                    Introducer = introducer ?? string.Empty,
+                    JoinCode = joinCode ?? string.Empty,
+                }, m => Log.Info("[net] " + m));
                 _transport.PeerConnected += OnPeerConnected;
                 _transport.PeerDisconnected += OnPeerDisconnected;
                 _transport.Received += OnReceived;
@@ -71,7 +85,9 @@ namespace KspMp.Net
                 ServerPort = port;
                 LastError = null;
                 State = ConnectionState.Connecting;
-                Status = "Connecting to " + address + ":" + port + " ...";
+                Status = !string.IsNullOrEmpty(joinCode)
+                    ? "Looking for '" + joinCode + "' via " + introducer + " ..."
+                    : "Connecting to " + address + ":" + port + " ...";
             }
             catch (Exception e)
             {

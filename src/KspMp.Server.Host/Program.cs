@@ -7,6 +7,9 @@ using KspMp.Shared.Protocol;
 int? portOverride = null;
 var universeDir = "universe";
 bool? upnpOverride = null;
+var introducerMode = false;
+var introducer = "";
+var joinCode = "";
 for (var i = 0; i < args.Length; i++)
 {
     switch (args[i])
@@ -17,6 +20,15 @@ for (var i = 0; i < args.Length; i++)
         case "--universe" when i + 1 < args.Length:
             universeDir = args[++i];
             break;
+        case "--introducer-server":
+            introducerMode = true;
+            break;
+        case "--introducer" when i + 1 < args.Length:
+            introducer = args[++i];
+            break;
+        case "--code" when i + 1 < args.Length:
+            joinCode = args[++i];
+            break;
         case "--upnp":
             upnpOverride = true;
             break;
@@ -25,12 +37,22 @@ for (var i = 0; i < args.Length; i++)
             break;
         case "-h":
         case "--help":
-            Console.WriteLine("KspMp dedicated server\n  --universe <dir>   world folder, created if missing (default ./universe)\n  --port <udp port>  overrides port from <universe>/server.cfg (default 7777)\n  --upnp/--no-upnp   ask the router to forward the port (overrides upnp in server.cfg)");
+            Console.WriteLine("KspMp dedicated server\n  --universe <dir>   world folder, created if missing (default ./universe)\n  --port <udp port>  overrides port from <universe>/server.cfg (default 7777)\n  --upnp/--no-upnp   ask the router to forward the port (overrides upnp in server.cfg)\n  --introducer-server run as an introducer that brokers hole punching for others\n  --introducer host:port  register with an introducer so players can join by code\n  --code <code>      the code players use to find this server");
             return 0;
     }
 }
 
 void Log(string message) => Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] {message}");
+
+if (introducerMode)
+{
+    var introStop = new CancellationTokenSource();
+    Console.CancelKeyPress += (_, e) => { e.Cancel = true; introStop.Cancel(); };
+    using var introSigint = PosixSignalRegistration.Create(PosixSignal.SIGINT, ctx => { ctx.Cancel = true; introStop.Cancel(); });
+    using var introSigterm = PosixSignalRegistration.Create(PosixSignal.SIGTERM, ctx => { ctx.Cancel = true; introStop.Cancel(); });
+    new Introducer(portOverride ?? 7777, Log).Run(introStop.Token);
+    return 0;
+}
 
 universeDir = Path.GetFullPath(universeDir);
 var universe = new UniverseStore(universeDir);
@@ -38,11 +60,23 @@ var config = ServerConfig.Load(universeDir);
 if (portOverride.HasValue) config.Port = portOverride.Value;
 if (upnpOverride.HasValue) config.Upnp = upnpOverride.Value;
 
-var transport = new LiteNetLibTransport(new TransportOptions { IsServer = true, Port = config.Port, MaxPeers = config.MaxPlayers + 4 }, Log);
+var transport = new LiteNetLibTransport(new TransportOptions
+{
+    IsServer = true,
+    Port = config.Port,
+    MaxPeers = config.MaxPlayers + 4,
+    Introducer = introducer,
+    JoinCode = joinCode,
+}, Log);
 using var server = new ServerCore(transport, config, universe, Log);
 server.Start();
 Log($"KspMp server {typeof(ServerCore).Assembly.GetName().Version?.ToString(3)} '{config.ServerName}' listening on UDP {config.Port}; universe {universeDir}");
 Log("Players connect from the KSP main menu (Multiplayer window). Ctrl+C stops the server and saves.");
+if (!string.IsNullOrEmpty(introducer) && !string.IsNullOrEmpty(joinCode))
+    Log($"Registering with the introducer at {introducer} as '{joinCode}'; players can join with that code "
+        + "even if neither of you has forwarded a port.");
+else if (!string.IsNullOrEmpty(introducer) || !string.IsNullOrEmpty(joinCode))
+    Log("--introducer and --code only work together; hole punching is off.");
 
 // Best-effort: ask the router to forward the port so hosting from home needs no router configuration.
 await using var portMapper = config.Upnp ? new PortMapper(config.Port, Log) : null;

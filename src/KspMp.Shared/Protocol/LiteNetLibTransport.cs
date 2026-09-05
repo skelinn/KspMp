@@ -44,7 +44,9 @@ namespace KspMp.Shared.Protocol
                 IPv6Enabled = false,
                 AutoRecycle = true,
                 UseNativeSockets = false,
+                NatPunchEnabled = _options.UsesIntroducer,
             };
+            if (_options.UsesIntroducer) StartPunching();
 
             if (_options.IsServer)
             {
@@ -56,9 +58,82 @@ namespace KspMp.Shared.Protocol
             {
                 if (!_manager.Start())
                     throw new InvalidOperationException("Could not open a UDP socket");
-                _serverPeer = _manager.Connect(_options.Address, _options.Port, _options.ConnectionKey);
-                _log("Connecting to " + _options.Address + ":" + _options.Port);
+                if (_options.UsesIntroducer)
+                {
+                    // Ask to be introduced rather than dialling an address we cannot reach. If nobody answers
+                    // in time we fall back to a direct connection, which still works on a LAN or a VPN.
+                    _punchDeadline = DateTime.UtcNow.AddMilliseconds(_options.PunchTimeoutMs);
+                    RequestIntroduction("C");
+                    _log("Asking " + _options.Introducer + " to introduce us to '" + _options.JoinCode + "'");
+                }
+                else
+                {
+                    _serverPeer = _manager.Connect(_options.Address, _options.Port, _options.ConnectionKey);
+                    _log("Connecting to " + _options.Address + ":" + _options.Port);
+                }
             }
+        }
+
+        // ---- NAT hole punching ----
+
+        private const double RegisterIntervalSeconds = 20;
+        private DateTime _nextRegisterAt;
+        private DateTime _punchDeadline;
+
+        /// <summary>
+        /// Both sides ask the introducer to pair them by join code. It replies to each with the other's
+        /// address, and the packets they then send each other punch a hole through their own routers.
+        /// </summary>
+        private void StartPunching()
+        {
+            var listener = new EventBasedNatPunchListener();
+            listener.NatIntroductionSuccess += OnIntroduced;
+            _manager.NatPunchModule.Init(listener);
+            _nextRegisterAt = DateTime.UtcNow;
+        }
+
+        private void RequestIntroduction(string role)
+        {
+            var introducer = ParseEndPoint(_options.Introducer);
+            if (introducer == null)
+            {
+                _log("Introducer address '" + _options.Introducer + "' is not host:port; skipping hole punching.");
+                return;
+            }
+            try { _manager.NatPunchModule.SendNatIntroduceRequest(introducer, role + "|" + _options.JoinCode); }
+            catch (Exception e) { _log("Could not reach the introducer: " + e.Message); }
+        }
+
+        private void OnIntroduced(IPEndPoint target, NatAddressType type, string token)
+        {
+            if (_options.IsServer)
+            {
+                // Nothing to dial: the introduce packet we just sent has already opened our router for this
+                // peer, so its connection request will get through.
+                _log("Introduced to a player at " + target + " (" + type + "); waiting for them to connect.");
+                return;
+            }
+            if (_serverPeer != null) return;
+            _punchDeadline = default;
+            _log("Introduced to the server at " + target + " (" + type + "); connecting.");
+            _serverPeer = _manager.Connect(target, _options.ConnectionKey);
+        }
+
+        /// <summary>Parses "host:port", resolving a name if it is not already an address.</summary>
+        internal static IPEndPoint ParseEndPoint(string hostPort)
+        {
+            if (string.IsNullOrEmpty(hostPort)) return null;
+            var colon = hostPort.LastIndexOf(':');
+            if (colon <= 0 || !int.TryParse(hostPort.Substring(colon + 1), out var port)) return null;
+            var host = hostPort.Substring(0, colon);
+            if (IPAddress.TryParse(host, out var address)) return new IPEndPoint(address, port);
+            try
+            {
+                foreach (var resolved in Dns.GetHostAddresses(host))
+                    if (resolved.AddressFamily == AddressFamily.InterNetwork) return new IPEndPoint(resolved, port);
+            }
+            catch { /* unresolvable: treated as no introducer */ }
+            return null;
         }
 
         public void Stop()
@@ -73,6 +148,27 @@ namespace KspMp.Shared.Protocol
         public void Poll()
         {
             _manager?.PollEvents();
+            if (_manager == null || !_options.UsesIntroducer) return;
+            _manager.NatPunchModule.PollEvents();
+
+            var now = DateTime.UtcNow;
+            if (_options.IsServer)
+            {
+                // Keep our endpoints fresh at the introducer: a NAT mapping expires, and the address it saw
+                // last week is no use to anyone trying to join today.
+                if (now >= _nextRegisterAt)
+                {
+                    _nextRegisterAt = now.AddSeconds(RegisterIntervalSeconds);
+                    RequestIntroduction("H");
+                }
+            }
+            else if (_serverPeer == null && _punchDeadline != default && now >= _punchDeadline)
+            {
+                _punchDeadline = default;
+                _log("Nobody introduced us within " + (_options.PunchTimeoutMs / 1000) + "s; trying "
+                     + _options.Address + ":" + _options.Port + " directly instead.");
+                _serverPeer = _manager.Connect(_options.Address, _options.Port, _options.ConnectionKey);
+            }
         }
 
         public void Send(PeerId to, byte[] data, int offset, int length, Channel channel, Delivery delivery)

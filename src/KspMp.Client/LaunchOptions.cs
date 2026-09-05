@@ -6,6 +6,8 @@ namespace KspMp
     /// Command-line options for scripted sessions and quick testing:
     ///   -kspmp-connect host[:port]   connect as soon as the main menu is ready
     ///   -kspmp-name Name             player name for this run (not saved)
+    ///   -kspmp-introducer host:port  broker to ask for an introduction, instead of connecting directly
+    ///   -kspmp-code CODE             the server's join code at that introducer
     ///   -kspmp-enter                 enter the game right after the server accepts us
     ///   -kspmp-say "text"            send one chat message after joining
     ///   -kspmp-debug                 show the debug window
@@ -34,6 +36,8 @@ namespace KspMp
         public string ConnectHost;
         public int ConnectPort = 7777;
         public string PlayerName;
+        public string Introducer;
+        public string JoinCode;
         public bool EnterGame;
         public string Say;
         public bool Debug;
@@ -85,6 +89,12 @@ namespace KspMp
                         else options.ConnectHost = target;
                         break;
                     }
+                    case "-kspmp-introducer" when i + 1 < args.Length:
+                        options.Introducer = args[++i];
+                        break;
+                    case "-kspmp-code" when i + 1 < args.Length:
+                        options.JoinCode = args[++i];
+                        break;
                     case "-kspmp-name" when i + 1 < args.Length:
                         options.PlayerName = args[++i];
                         break;

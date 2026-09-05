@@ -92,16 +92,39 @@ Server files live in the universe folder: `server.cfg` (name, port, max players,
 `hostControlsWarp`, `upnp`), `time.cfg` (shared UT, saved every minute and on shutdown), `players.cfg` (known players and
 their Kerbal avatars), `vessels/<id>.cfg` and `roster/<name>.cfg` (the shared world, readable KSP ConfigNode text).
 
+## Playing over the internet
+
+The server asks your router to forward its port over UPnP on startup, which is enough on its own for many home
+connections. The startup log says if it could not: UPnP switched off, a second router above the first, or the
+ISP's own NAT.
+
+When that is not enough, run an introducer somewhere with a public address and let it broker the connection.
+Neither of two machines behind home routers can reach the other to begin with, so both talk to the introducer,
+which sees the real external address each router presents and tells each about the other. It brokers the
+handshake and nothing else - the game traffic that follows is peer to peer and never passes through it, so one
+small instance serves any number of games.
+
+    KspMp.Server.Host --introducer-server --port 7000          # once, on a public address
+
+    KspMp.Server.Host --introducer example.com:7000 --code kerbal    # whoever is hosting the game
+
+Players then join with that code instead of an address:
+
+    -kspmp-connect <any address> -kspmp-introducer example.com:7000 -kspmp-code kerbal
+
+The address stays as a fallback: if nobody answers within twelve seconds the client dials it directly, which
+still works on a LAN or a VPN. Failing all of that, forward the port by hand or put both machines on a VPN such
+as Tailscale.
+
 ## Known gaps
 
 Worth knowing before you play, roughly in the order you would hit them.
 
-- **Getting connected may still be on you.** The server asks your router to forward its port over UPnP on
-  startup, which is enough on its own for many home connections. It cannot help when UPnP is switched off, when
-  there is a second router above the first, or when the ISP puts you behind carrier-grade NAT - the startup log
-  says which of those it hit. Failing that, forward the port by hand, put both machines on a VPN such as
-  Tailscale, or run the server somewhere with a public address. Peer-to-peer hole punching, the thing that would
-  make self-hosting work without any of this, is not built yet.
+- **Hole punching has only been proven on one machine.** The registration, code lookup, introduction and
+  connect all work, and a client whose only direct address was unroutable still reached the server through an
+  introducer. But both ends were on the same machine, so LiteNetLib paired them on the internal address:
+  traversal through two separate home routers is untested, and symmetric NAT or carrier-grade NAT on both ends
+  will defeat it however well the rest works.
 - **Both sides need identical GameData.** The handshake checks the protocol version and nothing else - there is
   no mod manifest - so a single part mod on one side and not the other will fail while loading a vessel rather
   than telling you why. A stock install on both sides is the safe option.
