@@ -250,7 +250,11 @@ namespace KspMp.Systems
         public void DrawOverlay()
         {
             if (!Active || _others.Count == 0 || EditorLogic.fetch == null || EditorLogic.fetch.editorCamera == null) return;
-            if (_labelStyle == null) _labelStyle = new GUIStyle(GUI.skin.label) { fontSize = 12, richText = true, alignment = TextAnchor.MiddleCenter };
+            // Plain text over the editor is unreadable against a pale hull or the bright floor, so the label
+            // gets the same dark chip the windows use, and each builder keeps the colour they have everywhere else.
+            Ui.Theme.Ensure();
+            if (_labelStyle == null)
+                _labelStyle = new GUIStyle(Ui.Theme.Chip) { fontSize = 12, richText = true, alignment = TextAnchor.MiddleCenter };
             var camera = EditorLogic.fetch.editorCamera;
             foreach (var pair in _others)
             {
@@ -259,8 +263,11 @@ namespace KspMp.Systems
                 var world = new Vector3(presence.CursorX, presence.CursorY, presence.CursorZ);
                 var screen = camera.WorldToScreenPoint(world);
                 if (screen.z <= 0) continue;
-                var rect = new Rect(screen.x - 90, Screen.height - screen.y - 12, 180, 24);
-                GUI.Label(rect, "<color=#ffd966>" + NameOf(pair.Key) + ": " + presence.HeldPartName + "</color>", _labelStyle);
+                var text = Ui.Theme.Tint(NameOf(pair.Key), Ui.Theme.PlayerColour(pair.Key))
+                           + Ui.Theme.Tint("  " + presence.HeldPartName, Ui.Theme.Ink);
+                var size = _labelStyle.CalcSize(new GUIContent(text));
+                var rect = new Rect(screen.x - size.x / 2f, Screen.height - screen.y - 12, size.x, size.y);
+                GUI.Label(rect, text, _labelStyle);
             }
         }
     }

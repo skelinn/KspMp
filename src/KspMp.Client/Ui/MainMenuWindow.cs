@@ -7,11 +7,13 @@ namespace KspMp.Ui
     /// <summary>Main-menu window: connect to a server, then the lobby (players, chat, Enter game).</summary>
     internal sealed class MainMenuWindow
     {
+        private const float Width = 500f;
+        private const float LabelColumn = 74f;
         private static readonly int WindowId = "KspMp.MainMenu".GetHashCode();
         private readonly KspMpAddon _addon;
         private readonly ChatPanel _chat;
         private AvatarPanel _avatar;
-        private Rect _rect = new Rect(40, 130, 460, 0);
+        private Rect _rect = new Rect(40, 130, Width, 0);
         private string _port;
 
         public MainMenuWindow(KspMpAddon addon)
@@ -24,8 +26,10 @@ namespace KspMp.Ui
         public void Draw()
         {
             if (HighLogic.LoadedScene != GameScenes.MAINMENU) return;
-            GUI.skin = HighLogic.Skin;
-            _rect = GUILayout.Window(WindowId, _rect, DrawContents, "KspMp multiplayer " + KspMpAddon.Version, GUILayout.Width(460));
+            Theme.Begin();
+            _rect = Theme.Clamp(GUILayout.Window(WindowId, _rect, DrawContents,
+                                     "KspMp" + Theme.Tint("   " + KspMpAddon.Version, Theme.Dim), GUILayout.Width(Width)));
+            Theme.End();
         }
 
         private void DrawContents(int id)
@@ -33,49 +37,114 @@ namespace KspMp.Ui
             var net = _addon.Network;
             var settings = _addon.Settings;
 
+            DrawStatusStrip(net);
+
             if (net.State == ConnectionState.Disconnected)
             {
-                GUILayout.BeginHorizontal();
-                GUILayout.Label("Name", GUILayout.Width(60));
-                settings.PlayerName = GUILayout.TextField(settings.PlayerName, 24);
-                GUILayout.EndHorizontal();
-
-                GUILayout.BeginHorizontal();
-                GUILayout.Label("Server", GUILayout.Width(60));
-                settings.LastServer = GUILayout.TextField(settings.LastServer);
-                GUILayout.Label("Port", GUILayout.Width(40));
-                _port = GUILayout.TextField(_port, 5, GUILayout.Width(70));
-                GUILayout.EndHorizontal();
-
-                GUILayout.BeginHorizontal();
-                GUILayout.Label("Password", GUILayout.Width(60));
-                settings.LastPassword = GUILayout.PasswordField(settings.LastPassword ?? string.Empty, '*', 32);
-                GUILayout.EndHorizontal();
-                GUILayout.Label("<i>Leave blank unless the host set one.</i>");
-
-                if (GUILayout.Button("Connect"))
-                {
-                    if (int.TryParse(_port, out var port) && port > 0 && port < 65536)
-                    {
-                        settings.Port = port;
-                        settings.Save();
-                        net.Password = settings.LastPassword ?? string.Empty;
-                        net.Connect(settings.LastServer.Trim(), port);
-                    }
-                }
+                DrawDirectConnect(net, settings);
                 DrawSteam(net, settings);
-
-                if (!string.IsNullOrEmpty(net.LastError)) GUILayout.Label("<color=#ff8080>" + net.LastError + "</color>");
-                else if (net.Status != "Not connected") GUILayout.Label(net.Status);
             }
             else
             {
-                GUILayout.Label(net.Status);
                 if (net.IsConnected) DrawLobby();
                 if (GUILayout.Button("Disconnect")) net.Disconnect("user");
             }
 
-            GUI.DragWindow();
+            DrawSizeRow();
+            Theme.DragHeader();
+        }
+
+        /// <summary>
+        /// The one setting worth having in the window rather than in a config file: on a large screen the
+        /// windows are drawn small, and someone who cannot read them cannot go looking for the file either.
+        /// </summary>
+        private void DrawSizeRow()
+        {
+            Theme.Separator();
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Interface size", Theme.Key);
+            GUILayout.FlexibleSpace();
+            if (GUILayout.Button("-", GUILayout.Width(32))) Resize(-0.1f);
+            GUILayout.Label(Mathf.RoundToInt(Theme.Scale * 100) + "%", Theme.Chip, GUILayout.Width(52));
+            if (GUILayout.Button("+", GUILayout.Width(32))) Resize(0.1f);
+            GUILayout.EndHorizontal();
+        }
+
+        private void Resize(float by)
+        {
+            var settings = _addon.Settings;
+            settings.InterfaceScale = Mathf.Clamp(Mathf.Round((Theme.Scale + by) * 20f) / 20f, 0.7f, 2.5f);
+            Theme.SetScale(settings.InterfaceScale);
+            settings.Save();
+        }
+
+        /// <summary>
+        /// One line that always says where things stand, in the same place whatever the window is showing.
+        /// Colour does the work: green is connected, amber is in progress, red is a problem worth reading.
+        /// </summary>
+        private void DrawStatusStrip(ClientNetwork net)
+        {
+            var hosting = _addon.Host != null && _addon.Host.Running;
+            Color colour;
+            string text;
+            if (!string.IsNullOrEmpty(net.LastError) && net.State == ConnectionState.Disconnected)
+            {
+                colour = Theme.Bad;
+                text = net.LastError;
+            }
+            else
+            {
+                switch (net.State)
+                {
+                    case ConnectionState.Connected: colour = Theme.Accent; break;
+                    case ConnectionState.Disconnected: colour = hosting ? Theme.Accent : Theme.Dim; break;
+                    default: colour = Theme.Warn; break;
+                }
+                text = net.Status;
+            }
+
+            GUILayout.BeginHorizontal();
+            GUILayout.Label(Theme.Dot(colour) + "  " + Theme.Tint(text, colour), Theme.Value);
+            GUILayout.FlexibleSpace();
+            if (hosting) GUILayout.Label(Theme.Tint("HOSTING", Theme.Accent), Theme.Chip);
+            GUILayout.EndHorizontal();
+            Theme.Separator();
+        }
+
+        private void DrawDirectConnect(ClientNetwork net, Settings settings)
+        {
+            Theme.BeginSection("DIRECT CONNECT");
+
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Your name", Theme.FieldKey, GUILayout.Width(LabelColumn));
+            settings.PlayerName = GUILayout.TextField(settings.PlayerName, 24);
+            GUILayout.EndHorizontal();
+
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Address", Theme.FieldKey, GUILayout.Width(LabelColumn));
+            settings.LastServer = GUILayout.TextField(settings.LastServer);
+            GUILayout.Label("Port", Theme.FieldKey, GUILayout.Width(32));
+            _port = GUILayout.TextField(_port, 5, GUILayout.Width(64));
+            GUILayout.EndHorizontal();
+
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Password", Theme.FieldKey, GUILayout.Width(LabelColumn));
+            settings.LastPassword = GUILayout.PasswordField(settings.LastPassword ?? string.Empty, '*', 32);
+            GUILayout.EndHorizontal();
+            GUILayout.Label("Leave blank unless the host set one.", Theme.Caption);
+
+            if (GUILayout.Button("Connect", Theme.Primary))
+            {
+                if (int.TryParse(_port, out var port) && port > 0 && port < 65536)
+                {
+                    settings.Port = port;
+                    settings.Save();
+                    net.Password = settings.LastPassword ?? string.Empty;
+                    net.Connect(settings.LastServer.Trim(), port);
+                }
+            }
+
+            Theme.EndSection();
         }
 
         /// <summary>
@@ -86,25 +155,27 @@ namespace KspMp.Ui
         /// </summary>
         private void DrawSteam(ClientNetwork net, Settings settings)
         {
-            GUILayout.Space(8);
             if (!Net.Steam.SteamP2P.TryInitialise())
             {
-                GUILayout.Label("<i>Steam play unavailable: " + Net.Steam.SteamP2P.Unavailable + "</i>");
+                Theme.BeginSection("PLAY OVER STEAM");
+                GUILayout.Label("Unavailable: " + Net.Steam.SteamP2P.Unavailable, Theme.Caption);
+                Theme.EndSection();
                 return;
             }
 
-            GUILayout.Label("<b>Play over Steam</b>  <i>(no port forwarding)</i>");
+            Theme.BeginSection("PLAY OVER STEAM");
+            GUILayout.Label("Nobody has to forward a port. Swap IDs with a friend and go.", Theme.Caption);
 
             GUILayout.BeginHorizontal();
-            GUILayout.Label("Your ID", GUILayout.Width(60));
+            GUILayout.Label("Your ID", Theme.FieldKey, GUILayout.Width(LabelColumn));
             // Selectable rather than a label, so it can be copied out and sent to a friend.
             GUILayout.TextField(Net.Steam.SteamP2P.LocalSteamId.ToString());
             GUILayout.EndHorizontal();
 
             GUILayout.BeginHorizontal();
-            GUILayout.Label("Join", GUILayout.Width(60));
+            GUILayout.Label("Join", Theme.FieldKey, GUILayout.Width(LabelColumn));
             settings.LastSteamHost = GUILayout.TextField(settings.LastSteamHost ?? string.Empty, 20);
-            if (GUILayout.Button("Join", GUILayout.Width(70)))
+            if (GUILayout.Button("Join", GUILayout.Width(76)))
             {
                 if (ulong.TryParse((settings.LastSteamHost ?? string.Empty).Trim(), out var hostId) && hostId != 0)
                 {
@@ -118,36 +189,40 @@ namespace KspMp.Ui
 
             var hosting = _addon.Host != null && _addon.Host.Running;
 
+            Theme.Separator();
+            GUILayout.Label("HOST A GAME", Theme.Head);
+
             GUILayout.BeginHorizontal();
-            GUILayout.Label("Friends", GUILayout.Width(60));
+            GUILayout.Label("Let in", Theme.FieldKey, GUILayout.Width(LabelColumn));
             settings.AllowedSteamIds = GUILayout.TextField(settings.AllowedSteamIds ?? string.Empty);
             // While hosting, changes to the list can be applied straight away. Steam accepts a session on
             // demand, so a friend added mid-game gets in without anyone restarting anything.
-            if (hosting && GUILayout.Button("Apply", GUILayout.Width(60)))
+            GUI.enabled = hosting;
+            if (GUILayout.Button("Apply", GUILayout.Width(76)))
             {
                 settings.Save();
                 var added = 0;
                 foreach (var id in ParseSteamIds(settings.AllowedSteamIds)) if (_addon.Host.Allow(id)) added++;
                 Log.Info("Allowed " + added + " new Steam player(s) into the hosted game.");
             }
+            GUI.enabled = true;
             GUILayout.EndHorizontal();
-            GUILayout.Label("<i>Steam IDs allowed into a game you host, comma separated. Steam needs them "
-                            + "before it will accept anything from them.</i>");
+            GUILayout.Label("Steam IDs allowed into your game, comma separated. Steam needs them before it "
+                            + "will accept anything from those players.", Theme.Caption);
 
             if (hosting)
             {
-                GUILayout.Label("<b>Hosting.</b> Friends join with your ID above. Add one to the list and press "
-                                + "Apply and they can join straight away.");
-                if (GUILayout.Button("Stop hosting"))
-                {
-                    _addon.StopHosting();
-                }
+                GUILayout.Label(Theme.Dot(Theme.Accent) + "  Hosting. Friends join with your ID above; add one "
+                                + "to the list and press Apply to let them in without restarting.", Theme.Value);
+                if (GUILayout.Button("Stop hosting")) _addon.StopHosting();
             }
-            else if (GUILayout.Button("Host a game"))
+            else if (GUILayout.Button("Host a game", Theme.Primary))
             {
                 settings.Save();
                 _addon.StartHosting(ParseSteamIds(settings.AllowedSteamIds));
             }
+
+            Theme.EndSection();
         }
 
         /// <summary>Reads the friends box, ignoring anything that is not a Steam ID rather than refusing it all.</summary>
@@ -163,27 +238,45 @@ namespace KspMp.Ui
         private void DrawLobby()
         {
             var net = _addon.Network;
-            GUILayout.Label("<b>Players online (" + _addon.Players.Count + ")</b>");
-            foreach (var p in _addon.Players.Players)
-                GUILayout.Label("  " + p.Name + (string.IsNullOrEmpty(p.AvatarKerbalName) ? "" : " as " + p.AvatarKerbalName) + (p.ClientId == net.ClientId ? "  (you)" : "  " + p.PingMs + " ms")
-                                + (p.ClientId != net.ClientId ? "  " + _addon.Presence.Describe(p.ClientId) : ""));
 
-            GUILayout.Space(6);
+            Theme.BeginSection("PLAYERS  (" + _addon.Players.Count + ")");
+            foreach (var p in _addon.Players.Players)
+            {
+                var you = p.ClientId == net.ClientId;
+                GUILayout.BeginHorizontal();
+                GUILayout.Label(Theme.Dot(Theme.PlayerColour(p.ClientId)) + "  " + p.Name
+                                + (string.IsNullOrEmpty(p.AvatarKerbalName) ? "" : Theme.Tint("  as " + p.AvatarKerbalName, Theme.Dim)),
+                                Theme.Value);
+                GUILayout.FlexibleSpace();
+                GUILayout.Label(you ? "you" : p.PingMs + " ms", Theme.Key);
+                GUILayout.EndHorizontal();
+                if (!you) GUILayout.Label("      " + _addon.Presence.Describe(p.ClientId), Theme.Caption);
+            }
+            Theme.EndSection();
+
+            Theme.BeginSection("CHAT");
             _chat.Draw(160);
-            GUILayout.Space(6);
+            Theme.EndSection();
 
             var ut = _addon.TimeSync.HasSync ? _addon.TimeSync.ServerUt : net.Welcome.UniversalTime;
-            GUILayout.Label("Server time: " + KSPUtil.PrintDateCompact(ut, true) + "   (UT " + ut.ToString("F0") + ")");
             var roster = _addon.Roster;
+
             if (roster.NeedsAvatar)
             {
                 if (_avatar == null) _avatar = new AvatarPanel(_addon);
                 _avatar.Draw();
                 return;
             }
-            GUILayout.Label("Your Kerbal: <b>" + roster.AvatarName + "</b>   roster: " + roster.Count + " kerbal(s), " + _addon.Vessels.Count + " vessel(s)" + (roster.Synced ? "" : "  (syncing ...)"));
+
+            Theme.BeginSection("WORLD");
+            Theme.Row("Server time", KSPUtil.PrintDateCompact(ut, true) + Theme.Tint("   UT " + ut.ToString("F0"), Theme.Dim));
+            Theme.Row("Your Kerbal", roster.AvatarName);
+            Theme.Row("Roster", roster.Count + " kerbal(s), " + _addon.Vessels.Count + " vessel(s)"
+                                + (roster.Synced ? "" : Theme.Tint("   syncing ...", Theme.Warn)));
+            Theme.EndSection();
+
             GUI.enabled = roster.Synced;
-            if (GUILayout.Button("Enter game"))
+            if (GUILayout.Button(roster.Synced ? "Enter game" : "Waiting for the world ...", Theme.Primary))
             {
                 try
                 {

@@ -60,6 +60,12 @@ mirror the whole install when you need to test against your mod set.
 In game: the main menu shows the KspMp window (connect, lobby, chat, Enter game); Alt+M toggles the in-game
 players/chat window; Alt+F10 toggles the debug window. Logs go to `<install>/KSP.log`; grep for `[KspMp]`.
 
+The windows are drawn in the mod's own dark skin rather than KSP's pale one, which is a good deal easier to
+read over a bright sky or a lit VAB. Each player gets a colour, and keeps it everywhere: their dot in the
+player list, their name in chat, and the label over their cursor on the shared workbench. **Interface size**
+at the foot of the main-menu window scales the windows, since IMGUI draws in raw pixels and would otherwise
+shrink as your resolution grows; a fresh install works it out from your screen, and the choice is saved.
+
 Launch options (handy for testing and for jumping straight into your usual server):
 
     -kspmp-connect host[:port]   connect as soon as the main menu is ready
@@ -87,6 +93,8 @@ Test harness only. These teleport craft around and drive KSP directly, so they a
     -kspmp-editor VAB|SPH:D      D seconds after reaching the space center, open that editor
     -kspmp-editorload "path":D   D seconds after the editor opens, load that craft onto the shared workbench
     -kspmp-editorwatch D         log the local craft hash every D seconds, so two clients can be compared
+    -kspmp-screenshot D          D seconds after the main menu appears, save kspmp-screenshot.png beside the
+                                 install, for checking how the interface actually renders
 
 `scripts/run-clients.ps1 -kspmp-connect 127.0.0.1:7777 -kspmp-enter` launches both test copies straight into the game.
 

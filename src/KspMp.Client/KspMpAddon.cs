@@ -67,6 +67,7 @@ namespace KspMp
                      + ", " + Application.platform + ", runtime " + Environment.Version);
 
             Settings = Settings.Load();
+            Ui.Theme.SetScale(Settings.InterfaceScale);
             Launch = LaunchOptions.Parse(Environment.GetCommandLineArgs());
             if (!string.IsNullOrEmpty(Launch.PlayerName)) Settings.PlayerName = Launch.PlayerName;
             if (Launch.SteamInfo)
@@ -142,6 +143,11 @@ namespace KspMp
             {
                 _autoLaunchDone = true;
                 StartCoroutine(AutoLaunchAfterDelay(3f));
+            }
+            if (scene == GameScenes.MAINMENU && Launch.ScreenshotAfterSeconds >= 0 && !_screenshotStarted)
+            {
+                _screenshotStarted = true;
+                StartCoroutine(AutoScreenshot(Launch.ScreenshotAfterSeconds));
             }
             if (scene == GameScenes.SPACECENTER && !string.IsNullOrEmpty(Launch.EditorFacilityName) && !_autoEditorDone && Network.IsConnected)
             {
@@ -513,6 +519,21 @@ namespace KspMp
                          + " (their ID has to be in your friends list here first).");
             Network.Password = password ?? string.Empty;
             Network.Connect("127.0.0.1", Host.Port, null, null);
+        }
+
+        private bool _screenshotStarted;
+
+        /// <summary>Test harness: capture the screen, so the interface can be looked at without being there.</summary>
+        private System.Collections.IEnumerator AutoScreenshot(float delaySeconds)
+        {
+            yield return new WaitForSeconds(Mathf.Max(delaySeconds, 0f));
+            var path = System.IO.Path.Combine(KSPUtil.ApplicationRootPath, "kspmp-screenshot.png");
+            try { if (System.IO.File.Exists(path)) System.IO.File.Delete(path); }
+            catch (Exception e) { Log.Exception("Clearing the old screenshot", e); }
+            ScreenCapture.CaptureScreenshot(path);
+            // CaptureScreenshot finishes at the end of some later frame, so the file is not there yet.
+            yield return new WaitForSeconds(4f);
+            Log.Info("Screenshot " + (System.IO.File.Exists(path) ? "written to " : "FAILED for ") + path);
         }
 
         private bool _autoEditorDone;

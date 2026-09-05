@@ -20,19 +20,28 @@ namespace KspMp.Ui
         public void Draw()
         {
             var roster = _addon.Roster;
-            GUILayout.Label("<b>Choose your Kerbal</b>  (you will be this Kerbal in the world)");
+
+            Theme.BeginSection("CHOOSE YOUR KERBAL");
+            GUILayout.Label("You will be this Kerbal in the world. Everyone sees the name.", Theme.Caption);
+
             GUILayout.BeginHorizontal();
-            GUILayout.Label("Name", GUILayout.Width(60));
+            GUILayout.Label("Name", Theme.FieldKey, GUILayout.Width(74));
             _name = GUILayout.TextField(_name, 40);
             GUILayout.EndHorizontal();
+
             GUILayout.BeginHorizontal();
-            GUILayout.Label("Trait", GUILayout.Width(60));
+            GUILayout.Label("Trait", Theme.FieldKey, GUILayout.Width(74));
             _trait = GUILayout.SelectionGrid(_trait, Traits, 3);
             GUILayout.EndHorizontal();
+
             GUI.enabled = !roster.ClaimPending;
-            if (GUILayout.Button(roster.ClaimPending ? "Claiming ..." : "Claim this Kerbal")) roster.Claim(_name, Traits[_trait]);
+            if (GUILayout.Button(roster.ClaimPending ? "Claiming ..." : "Claim this Kerbal", Theme.Primary))
+                roster.Claim(_name, Traits[_trait]);
             GUI.enabled = true;
-            if (!string.IsNullOrEmpty(roster.ClaimError)) GUILayout.Label("<color=#ff8080>" + roster.ClaimError + "</color>");
+
+            if (!string.IsNullOrEmpty(roster.ClaimError))
+                GUILayout.Label(Theme.Dot(Theme.Bad) + "  " + roster.ClaimError, Theme.Danger);
+            Theme.EndSection();
         }
     }
 }

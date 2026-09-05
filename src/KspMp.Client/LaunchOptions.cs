@@ -14,6 +14,7 @@ namespace KspMp
     ///   -kspmp-say "text"            send one chat message after joining
     ///   -kspmp-debug                 show the debug window
     ///   -kspmp-steaminfo             report whether Steam P2P is usable, then carry on
+    ///   -kspmp-screenshot D          save a screenshot D seconds after the main menu appears
     ///   -kspmp-steamjoin ID          join this Steam ID over Steam instead of an address (no port forwarding)
     ///   -kspmp-host [port]           run the server inside this game, on UDP and over Steam at once
     ///   -kspmp-allow "id,id"         Steam IDs allowed to join the hosted game
@@ -49,6 +50,7 @@ namespace KspMp
         public string Say;
         public bool Debug;
         public bool SteamInfo;
+        public float ScreenshotAfterSeconds = -1f;
         public ulong SteamHostId;
         public bool HostGame;
         public int HostPort = 7777;
@@ -134,6 +136,9 @@ namespace KspMp
                     }
                     case "-kspmp-steamjoin" when i + 1 < args.Length:
                         ulong.TryParse(args[++i], out options.SteamHostId);
+                        break;
+                    case "-kspmp-screenshot" when i + 1 < args.Length:
+                        if (float.TryParse(args[++i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var shotAfter)) options.ScreenshotAfterSeconds = shotAfter;
                         break;
                     case "-kspmp-steaminfo":
                         options.SteamInfo = true;

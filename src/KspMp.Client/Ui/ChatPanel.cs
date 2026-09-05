@@ -23,7 +23,9 @@ namespace KspMp.Ui
 
         public void Draw(float height)
         {
-            if (_lineStyle == null) _lineStyle = new GUIStyle(GUI.skin.label) { wordWrap = true, richText = true, fontSize = 12 };
+            Theme.Ensure();
+            if (_lineStyle == null)
+                _lineStyle = new GUIStyle(Theme.Value) { wordWrap = true, richText = true, fontSize = 12, padding = new RectOffset(0, 0, 2, 2) };
 
             if (_chat.Revision != _seenRevision)
             {
@@ -31,12 +33,17 @@ namespace KspMp.Ui
                 _scroll.y = float.MaxValue;
             }
 
-            _scroll = GUILayout.BeginScrollView(_scroll, GUILayout.Height(height));
+            // The well is passed as the scroll view's own background so the log reads as sunk into the panel
+            // rather than floating on it. No horizontal bar: the lines wrap, so there is never anything to the side.
+            _scroll = GUILayout.BeginScrollView(_scroll, false, false, GUIStyle.none, GUI.skin.verticalScrollbar,
+                                                Theme.Well, GUILayout.Height(height));
+            if (_chat.Lines.Count == 0) GUILayout.Label("Nothing said yet.", Theme.Caption);
             foreach (var line in _chat.Lines)
             {
-                var prefix = line.IsLocal ? "<i>" : line.IsServer ? "<color=#ffd966>" : "<b>";
-                var suffix = line.IsLocal ? "</i>" : line.IsServer ? "</color>" : "</b>";
-                var text = line.IsLocal ? prefix + line.Text + suffix : prefix + line.From + ":" + suffix + " " + line.Text;
+                string text;
+                if (line.IsLocal) text = Theme.Tint(line.Text, Theme.Dim);
+                else if (line.IsServer) text = Theme.Tint(line.Text, Theme.Warn);
+                else text = "<b>" + Theme.Tint(line.From, Theme.PlayerColour(line.FromClientId)) + "</b>  " + line.Text;
                 GUILayout.Label(text, _lineStyle);
             }
             GUILayout.EndScrollView();
@@ -44,7 +51,7 @@ namespace KspMp.Ui
             GUILayout.BeginHorizontal();
             GUI.SetNextControlName(InputControlName);
             _input = GUILayout.TextField(_input, 500);
-            var send = GUILayout.Button("Send", GUILayout.Width(60));
+            var send = GUILayout.Button("Send", GUILayout.Width(66));
             var e = Event.current;
             if (e.type == EventType.KeyDown && (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter) && InputFocused)
             {

@@ -19,7 +19,12 @@ namespace KspMp
         public string AllowedSteamIds = "";
         public int Port = 7777;
         public string AvatarKerbalName = "";
-        public float UiScale = 1f;
+        /// <summary>
+        /// How large the mod's windows are drawn. Zero means work it out from the screen, which is what a
+        /// fresh install gets: IMGUI draws in raw pixels, so the same window is half the size on a 1440p
+        /// screen as on a 720p one unless something scales it.
+        /// </summary>
+        public float InterfaceScale = 0f;
         public int LogLevel = 1;
         public bool ShowDebugWindow = false;
         public bool ShowHud = true;
@@ -48,7 +53,7 @@ namespace KspMp
                         node.TryGetValue("allowedSteamIds", ref settings.AllowedSteamIds);
                         node.TryGetValue("port", ref settings.Port);
                         node.TryGetValue("avatarKerbalName", ref settings.AvatarKerbalName);
-                        node.TryGetValue("uiScale", ref settings.UiScale);
+                        node.TryGetValue("interfaceScale", ref settings.InterfaceScale);
                         node.TryGetValue("logLevel", ref settings.LogLevel);
                         node.TryGetValue("showDebugWindow", ref settings.ShowDebugWindow);
                         node.TryGetValue("showHud", ref settings.ShowHud);
@@ -81,7 +86,7 @@ namespace KspMp
                 node.AddValue("allowedSteamIds", AllowedSteamIds);
                 node.AddValue("port", Port);
                 node.AddValue("avatarKerbalName", AvatarKerbalName);
-                node.AddValue("uiScale", UiScale);
+                node.AddValue("interfaceScale", InterfaceScale);
                 node.AddValue("logLevel", LogLevel);
                 node.AddValue("showDebugWindow", ShowDebugWindow);
                 node.AddValue("showHud", ShowHud);

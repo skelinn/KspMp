@@ -24,7 +24,7 @@
 
   <!-- KSP / Unity assemblies from the local install (never copied to output, never committed). -->
   <ItemGroup>
-    <KspReference Include="Assembly-CSharp;Assembly-CSharp-firstpass;UnityEngine;UnityEngine.CoreModule;UnityEngine.PhysicsModule;UnityEngine.IMGUIModule;UnityEngine.InputLegacyModule;UnityEngine.UI;UnityEngine.UIModule;UnityEngine.TextRenderingModule;UnityEngine.AnimationModule" />
+    <KspReference Include="Assembly-CSharp;Assembly-CSharp-firstpass;UnityEngine;UnityEngine.CoreModule;UnityEngine.PhysicsModule;UnityEngine.IMGUIModule;UnityEngine.InputLegacyModule;UnityEngine.UI;UnityEngine.UIModule;UnityEngine.TextRenderingModule;UnityEngine.AnimationModule;UnityEngine.ScreenCaptureModule" />
     <Reference Include="@(KspReference)">
       <HintPath>$(KspManagedDir)/%(Identity).dll</HintPath>
       <Private>false</Private>
