@@ -200,6 +200,18 @@ namespace KspMp.Testing
             return true;
         }
 
+        /// <summary>
+        /// How squarely the two free ports face each other: 1 is head on, 0 is side on, negative is
+        /// back to back. -2 means one of them has no usable port.
+        /// </summary>
+        public static float PortFacing(Vessel ours, Vessel target)
+        {
+            var ourNode = FindFreePort(ours);
+            var theirNode = FindFreePort(target);
+            if (ourNode == null || theirNode == null) return -2f;
+            return Vector3.Dot(ourNode.nodeTransform.forward, -theirNode.nodeTransform.forward);
+        }
+
         /// <summary>Port-to-port gap, facing and node states, for the docking test's progress log.</summary>
         public static string DescribePorts(Vessel ours, Vessel target)
         {
@@ -359,6 +371,52 @@ namespace KspMp.Testing
                 Log.Exception("Test: forcing the dock", e);
                 ourNode.otherNode = null;
                 theirNode.otherNode = null;
+                return false;
+            }
+        }
+
+        /// <summary>Any docking node on this vessel that is currently docked to another.</summary>
+        public static ModuleDockingNode FindDockedPort(Vessel vessel)
+        {
+            if (vessel == null || vessel.parts == null) return null;
+            for (var i = 0; i < vessel.parts.Count; i++)
+            {
+                var modules = vessel.parts[i].Modules;
+                for (var m = 0; m < modules.Count; m++)
+                {
+                    if (!(modules[m] is ModuleDockingNode node)) continue;
+                    if (node.otherNode == null) continue;
+                    if (node.state != null && node.state.StartsWith("Docked", StringComparison.Ordinal)) return node;
+                }
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// Test harness: split a docked pair again. Nothing in the mod handles undocking yet - there is no
+        /// Undock message, no Part.Undock or ModuleDockingNode.Undock patch - so this exists to show what
+        /// the stock call actually does to a shared vessel, not to verify replication that is not written.
+        /// </summary>
+        public static bool ForceUndock(Vessel vessel)
+        {
+            var node = FindDockedPort(vessel);
+            if (node == null)
+            {
+                Log.Warn("Test: nothing to undock on " + (vessel != null ? vessel.GetDisplayName() : "(null)"));
+                return false;
+            }
+            try
+            {
+                Log.Info("Test: undocking " + vessel.GetDisplayName() + " at " + node.part.partInfo.title
+                         + " (state " + node.state + ", " + vessel.parts.Count + " parts before)");
+                var undock = node.GetType().GetMethod("Undock", AnyMember, null, Type.EmptyTypes, null);
+                if (undock == null) { Log.Warn("Test: ModuleDockingNode has no parameterless Undock"); return false; }
+                undock.Invoke(node, null);
+                return true;
+            }
+            catch (Exception e)
+            {
+                Log.Exception("Test: undocking", e);
                 return false;
             }
         }

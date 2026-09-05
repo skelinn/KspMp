@@ -279,16 +279,21 @@ namespace KspMp
                     Log.Info(grew
                         ? "Auto-dock: our ship merged into " + stillTheirs.GetDisplayName() + " (" + stillTheirs.parts.Count + " parts), docking succeeded"
                         : "Auto-dock: our ship was destroyed, not docked (" + stillTheirs.GetDisplayName() + " still has " + (stillTheirs.parts != null ? stillTheirs.parts.Count : 0) + " parts)");
+                    if (grew && Launch.UndockAfterSeconds >= 0) StartCoroutine(AutoUndock(stillTheirs.id, Launch.UndockAfterSeconds));
                     yield break;
                 }
                 ours = stillOurs;
                 target = stillTheirs;
-                if (ours == null || target == null) { Log.Warn("Auto-dock: lost a vessel"); yield break; }
-                if (ours.parts != null && ours.parts.Count > ourPartCount)
+                // Absorbing their ship removes their vessel, so this has to be checked before treating a
+                // missing target as a loss - otherwise the success is reported as "lost a vessel" and the
+                // client that ends up owning the merged craft never notices it docked at all.
+                if (ours != null && ours.parts != null && ours.parts.Count > ourPartCount)
                 {
                     Log.Info("Auto-dock: our ship absorbed theirs (" + ourPartCount + " -> " + ours.parts.Count + " parts), docking succeeded");
+                    if (Launch.UndockAfterSeconds >= 0) StartCoroutine(AutoUndock(ours.id, Launch.UndockAfterSeconds));
                     yield break;
                 }
+                if (ours == null || target == null) { Log.Warn("Auto-dock: lost a vessel"); yield break; }
                 if (!target.loaded)
                 {
                     Log.Info("Auto-dock: waiting for " + target.GetDisplayName() + " to load (attempt " + attempt + ")");
@@ -312,8 +317,16 @@ namespace KspMp
                 // Teleport into place only once: repeating it every few seconds resets the physics and never
                 // lets the magnets finish pulling the ports together. The approach is then held by renewing
                 // velocity alone, below.
-                if (!aligned || (ours.GetWorldPos3D() - target.GetWorldPos3D()).magnitude > alignedDistance + 1.0)
+                // Re-align on orientation as well as range. Two ships can sit two metres apart and slowly
+                // rotate until their ports face away from each other, which no distance check ever notices,
+                // and a pair that has turned back to back can never capture however long it is left.
+                var portFacing = Testing.TestRendezvous.PortFacing(ours, target);
+                var driftedApart = (ours.GetWorldPos3D() - target.GetWorldPos3D()).magnitude > alignedDistance + 1.0;
+                var turnedAway = portFacing > -2f && portFacing < 0.9f;
+                if (!aligned || driftedApart || turnedAway)
                 {
+                    if (aligned && turnedAway)
+                        Log.Info("Auto-dock: ports drifted to facing " + portFacing.ToString("F2") + ", lining up again");
                     // Start a little further out and drift in, the way a player finishes a docking.
                     Testing.TestRendezvous.AlignPorts(ours, target, 0.6f, closingSpeed: 0.15f);
                     aligned = true;
@@ -361,6 +374,58 @@ namespace KspMp
         }
 
         private bool _autoEntered;
+        /// <summary>
+        /// Test harness: undock the pair we just put together and report what both halves become. Undocking
+        /// is not replicated by anything yet, so this is here to show the failure, not to confirm a feature.
+        /// </summary>
+        private System.Collections.IEnumerator AutoUndock(Guid mergedVesselId, float delaySeconds)
+        {
+            yield return new WaitForSeconds(Mathf.Max(delaySeconds, 0f));
+            var merged = FlightGlobals.FindVessel(mergedVesselId);
+            if (merged == null) { Log.Warn("Auto-undock: the merged vessel is gone"); yield break; }
+            var partsBefore = merged.parts != null ? merged.parts.Count : 0;
+            // Only the client simulating the merged craft can split it; on anyone else the docking nodes
+            // come from an applied proto and are not linked to each other.
+            if (!Vessels.IsMine(mergedVesselId))
+            {
+                Log.Info("Auto-undock: " + merged.GetDisplayName() + " is simulated by someone else, leaving the undock to them");
+                yield break;
+            }
+            if (!Testing.TestRendezvous.ForceUndock(merged)) yield break;
+
+            for (var tick = 0; tick < 10; tick++)
+            {
+                yield return new WaitForSeconds(2f);
+                var still = FlightGlobals.FindVessel(mergedVesselId);
+                var count = still != null && still.parts != null ? still.parts.Count : -1;
+                if (still != null && count < partsBefore)
+                {
+                    Log.Info("Auto-undock: split; " + still.GetDisplayName() + " kept id " + mergedVesselId.ToString().Substring(0, 8)
+                             + " with " + count + " of " + partsBefore + " parts");
+                    LogVesselsInRange(mergedVesselId);
+                    yield break;
+                }
+            }
+            Log.Warn("Auto-undock: the vessel still has " + partsBefore + " parts after 20 s; nothing split");
+            LogVesselsInRange(mergedVesselId);
+        }
+
+        /// <summary>Which vessels this client can see after an undock, and who the server says owns them.</summary>
+        private void LogVesselsInRange(Guid mergedVesselId)
+        {
+            var vessels = FlightGlobals.Vessels;
+            if (vessels == null) return;
+            for (var i = 0; i < vessels.Count; i++)
+            {
+                var v = vessels[i];
+                if (v == null || v.parts == null || v.parts.Count == 0) continue;
+                if (v.vesselType == VesselType.SpaceObject || v.vesselType == VesselType.Unknown) continue;
+                Log.Info("Auto-undock: sees " + v.GetDisplayName() + " " + v.id.ToString().Substring(0, 8)
+                         + " parts=" + v.parts.Count + " known=" + Vessels.IsKnown(v.id) + " ours=" + Vessels.IsMine(v.id)
+                         + (v.id == mergedVesselId ? " (the merged one)" : ""));
+            }
+        }
+
         private bool _autoEditorDone;
         private bool _editorLoadDone;
         private bool _editorWatchStarted;
