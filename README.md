@@ -89,15 +89,19 @@ Test harness only. These teleport craft around and drive KSP directly, so they a
 `scripts/run-clients.ps1 -kspmp-connect 127.0.0.1:7777 -kspmp-enter` launches both test copies straight into the game.
 
 Server files live in the universe folder: `server.cfg` (name, port, max players, MOTD, `sharedStickDefault`,
-`hostControlsWarp`), `time.cfg` (shared UT, saved every minute and on shutdown), `players.cfg` (known players and
+`hostControlsWarp`, `upnp`), `time.cfg` (shared UT, saved every minute and on shutdown), `players.cfg` (known players and
 their Kerbal avatars), `vessels/<id>.cfg` and `roster/<name>.cfg` (the shared world, readable KSP ConfigNode text).
 
 ## Known gaps
 
 Worth knowing before you play, roughly in the order you would hit them.
 
-- **Getting connected is on you.** There is no NAT traversal, no UPnP, and no Steam transport yet, so either
-  forward UDP 7777 or put both machines on a VPN such as Tailscale and connect to that address.
+- **Getting connected may still be on you.** The server asks your router to forward its port over UPnP on
+  startup, which is enough on its own for many home connections. It cannot help when UPnP is switched off, when
+  there is a second router above the first, or when the ISP puts you behind carrier-grade NAT - the startup log
+  says which of those it hit. Failing that, forward the port by hand, put both machines on a VPN such as
+  Tailscale, or run the server somewhere with a public address. Peer-to-peer hole punching, the thing that would
+  make self-hosting work without any of this, is not built yet.
 - **Both sides need identical GameData.** The handshake checks the protocol version and nothing else - there is
   no mod manifest - so a single part mod on one side and not the other will fail while loading a vessel rather
   than telling you why. A stock install on both sides is the safe option.

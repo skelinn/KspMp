@@ -11,4 +11,10 @@
   <ItemGroup>
     <ProjectReference Include="../KspMp.Server/KspMp.Server.csproj" />
   </ItemGroup>
+
+  <!-- UPnP lives here rather than in KspMp.Server: that library also builds for net472 and ships into
+       GameData, where a netstandard dependency would not load. -->
+  <ItemGroup>
+    <PackageReference Include="Mono.Nat" />
+  </ItemGroup>
 </Project>

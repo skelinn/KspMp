@@ -13,6 +13,8 @@ namespace KspMp.Server
         public int MaxPlayers = 16;
         public string MessageOfTheDay = "";
         public bool HostControlsWarp = false;
+        /// <summary>Ask the router to forward <see cref="Port"/> on startup, so hosting from home needs no router setup.</summary>
+        public bool Upnp = true;
         public float RespawnSeconds = 7200f;
         public bool SharedStickDefault = false;
         public double InitialUniversalTime = 0;
@@ -35,6 +37,7 @@ namespace KspMp.Server
             config.MaxPlayers = node.GetInt("maxPlayers", config.MaxPlayers);
             config.MessageOfTheDay = node.GetValue("motd") ?? config.MessageOfTheDay;
             config.HostControlsWarp = node.GetBool("hostControlsWarp", config.HostControlsWarp);
+            config.Upnp = node.GetBool("upnp", config.Upnp);
             config.RespawnSeconds = node.GetFloat("respawnSeconds", config.RespawnSeconds);
             config.SharedStickDefault = node.GetBool("sharedStickDefault", config.SharedStickDefault);
             config.InitialUniversalTime = node.GetDouble("initialUniversalTime", config.InitialUniversalTime);
@@ -50,6 +53,7 @@ namespace KspMp.Server
             node.AddValue("maxPlayers", MaxPlayers);
             node.AddValue("motd", MessageOfTheDay);
             node.AddValue("hostControlsWarp", HostControlsWarp);
+            node.AddValue("upnp", Upnp);
             node.AddValue("respawnSeconds", RespawnSeconds);
             node.AddValue("sharedStickDefault", SharedStickDefault);
             node.AddValue("initialUniversalTime", InitialUniversalTime);
