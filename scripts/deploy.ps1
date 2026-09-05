@@ -12,9 +12,9 @@ if (-not $Installs) {
     else { $Installs = @('C:\Program Files (x86)\Steam\steamapps\common\Kerbal Space Program') }
 }
 foreach ($install in $Installs) {
-    if (-not (Test-Path (Join-Path $install 'GameData'))) { Write-Warning "Skipping $install: no GameData folder"; continue }
+    if (-not (Test-Path (Join-Path $install 'GameData'))) { Write-Warning "Skipping ${install}: no GameData folder"; continue }
     Write-Host "Deploying to $install\GameData\KspMp"
-    robocopy (Join-Path $repo 'GameData\KspMp') (Join-Path $install 'GameData\KspMp') /MIR /XD PluginData /NFL /NDL /NJH /NJS /NP | Out-Null
+    robocopy (Join-Path $repo 'GameData\KspMp') (Join-Path $install 'GameData\KspMp') /MIR /XD PluginData /R:2 /W:5 /NFL /NDL /NJH /NJS /NP | Out-Null
     if ($LASTEXITCODE -ge 8) { throw "robocopy failed with exit code $LASTEXITCODE" }
     $harmonyDir = Join-Path $install 'GameData\000_Harmony'
     if (-not (Test-Path $harmonyDir) -and $harmony) {
@@ -23,3 +23,5 @@ foreach ($install in $Installs) {
         Write-Host '  added 000_Harmony\0Harmony.dll'
     }
 }
+# robocopy exits 1-7 on success, which PowerShell would otherwise surface as a failed script.
+exit 0

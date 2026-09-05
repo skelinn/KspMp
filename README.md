@@ -39,12 +39,16 @@ if no Harmony is installed. Without the flag the build only refreshes `GameData/
 
 ## Local multiplayer testing (two clients + server on one machine)
 
-    scripts/make-test-installs.ps1   # copies the install to %USERPROFILE%\ksp-test\ksp-a and ksp-b (once, ~6 GB each)
+    scripts/make-test-installs.ps1 -Stock   # copies the install to %USERPROFILE%\ksp-test\ksp-a and ksp-b (once)
     scripts/deploy.ps1               # deploys the mod into both copies
     scripts/run-server.ps1           # dedicated server on UDP 7777
     scripts/run-clients.ps1          # launches both copies windowed, bypassing Steam and the launcher
 
 macOS: the same scripts with a `.sh` extension (copies go to `~/ksp-test`).
+
+`-Stock` (`--stock` on macOS) copies only the stock `GameData` (Squad, SquadExpansion) and leaves your
+mods behind: far smaller, loads in seconds, and a Kraken is never another mod's fault. Drop the flag to
+mirror the whole install when you need to test against your mod set.
 
 In game: the main menu shows the KspMp window (connect, lobby, chat, Enter game); Alt+M toggles the in-game
 players/chat window; Alt+F10 toggles the debug window. Logs go to `<install>/KSP.log`; grep for `[KspMp]`.
