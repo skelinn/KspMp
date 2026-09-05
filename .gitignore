@@ -14,13 +14,13 @@ KspRoot.user.props
 .DS_Store
 
 # never commit game assemblies or decompiled code
-decompiled/
-test-installs/
+/decompiled/
+/test-installs/
 *.dll
 *.pdb
 
-# server runtime data
-universe/
+# server runtime data (root only: src/KspMp.Server/Universe/ is source)
+/universe/
 
 # release packages
-artifacts/
+/artifacts/
