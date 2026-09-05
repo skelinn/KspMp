@@ -67,10 +67,28 @@ namespace KspMp.Server.Editor
             }
         }
 
+        /// <summary>
+        /// Membership follows the traffic. A client that is sending editor messages is plainly in that
+        /// facility, so treat it as a builder even if its join never arrived: relying on the join alone
+        /// means one lost packet leaves the player invisible to everyone, unable to send or receive a
+        /// craft, with nothing to recover it short of leaving and coming back.
+        /// </summary>
+        private bool EnsureBuilder(Session session, ClientSession client)
+        {
+            if (session.Builders.Contains(client.ClientId)) return false;
+            session.Builders.Add(client.ClientId);
+            _server.Log(client.DisplayName + " is building in the " + session.Facility + " (joined implicitly, "
+                        + session.Builders.Count + " builder(s), revision " + session.Revision + ")");
+            if (session.HasCraft)
+                _server.Send(client.Peer, MessageId.EditorSnapshot, ToSnapshot(session, 0), Channel.Bulk, Delivery.ReliableOrdered);
+            BroadcastRoster(session);
+            return true;
+        }
+
         public void HandleSnapshot(ClientSession client, EditorSnapshotMsg snapshot)
         {
             var session = Get(snapshot.Facility);
-            if (!session.Builders.Contains(client.ClientId)) return;
+            EnsureBuilder(session, client);
 
             // Built on an older revision: someone else changed the craft first, so send the current one back.
             if (snapshot.Revision < session.Revision)
@@ -103,7 +121,7 @@ namespace KspMp.Server.Editor
         public void HandlePresence(ClientSession client, EditorPresenceMsg presence)
         {
             var session = Get(presence.Facility);
-            if (!session.Builders.Contains(client.ClientId)) return;
+            EnsureBuilder(session, client);
             presence.ClientId = client.ClientId;
             foreach (var peer in Peers(session, except: client.ClientId))
                 _server.Send(peer.Peer, MessageId.EditorPresence, presence, Channel.State, Delivery.Sequenced);
@@ -112,6 +130,7 @@ namespace KspMp.Server.Editor
         public void HandleLaunch(ClientSession client, EditorLaunchMsg launch)
         {
             var session = Get(launch.Facility);
+            EnsureBuilder(session, client);
             if (!session.Builders.Contains(client.ClientId)) return;
             launch.FromClientId = client.ClientId;
             _server.Log(client.DisplayName + " launched '" + launch.ShipName + "' from the " + launch.Facility + " to " + launch.LaunchSite);
