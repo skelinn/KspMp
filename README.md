@@ -210,4 +210,6 @@ API research: `scripts/decompile.ps1` / `.sh` decompiles Assembly-CSharp into `d
 
 ## License
 
-Not chosen yet. Third-party notices are in `THIRD_PARTY_NOTICES.md`.
+MIT, in `LICENSE`. Everything KspMp is built on is MIT too, so nothing here narrows what you can do with it;
+those notices are in `THIRD_PARTY_NOTICES.md`, and keeping them with any copy you pass on is the one thing
+their licences ask for.

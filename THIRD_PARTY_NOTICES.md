@@ -11,6 +11,10 @@ MIT License, Copyright (c) 2016 Ruslan Pyrch.
 https://github.com/pardeike/Harmony — runtime patching library (`0Harmony.dll`, deployed to `GameData/000_Harmony` when no Harmony is installed).
 MIT License, Copyright (c) 2017 Andreas Pardeike.
 
+## Mono.Nat
+https://github.com/alanmcgovern/Mono.Nat — UPnP port forwarding, shipped alongside the dedicated server host.
+MIT License, Copyright (c) Alan McGovern and contributors.
+
 ## LunaMultiplayer
 https://github.com/LunaMultiplayer/LunaMultiplayer — reference for vessel serialization, time sync and Harmony patch points.
 MIT License, Copyright (c) 2016 Gabriel Vazquez.

@@ -10,6 +10,8 @@
     <Version>0.1.0</Version>
     <Authors>Campbell Scott</Authors>
     <Product>KspMp</Product>
+    <Copyright>Copyright (c) 2026 Campbell Scott</Copyright>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
   </PropertyGroup>
 
   <!-- Per-machine override (gitignored): <Project><PropertyGroup><KspRoot>...</KspRoot></PropertyGroup></Project> -->
