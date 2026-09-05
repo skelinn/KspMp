@@ -202,7 +202,7 @@ Semantics mirror DMP `DMPModInterface` and LMP `ModApiSystem.SendModMessage`. Pa
 | **M5** Shared control (seat model) | Control system, `CtrlInput` merge, discrete-action patches, PartEvent, SasMode, EVA/board/crew-transfer flow | A launches a two-seat craft with both avatars (B enters flight automatically). A flies; B stages, toggles gear/lights, deploys a panel from a part menu; both see everything. B requests pilot, A accepts → B's client owns physics (log). A EVAs and re-boards; rosters and vessels stay consistent |
 | **M6** Docking | Dock system, authority merge at 50 m, couple/undock patches, id remap | A's station in orbit; B approaches: at 50 m B's client owns the station (log); docking succeeds, A sees the merged vessel and becomes co-pilot; undock gives a new id and A regains its vessel and pilot role. Repeat with roles swapped |
 | **M7** Shared VAB/SPH | M7a snapshots + presence, then M7b op log; crew seat ops; shared launch | A and B enter one VAB session; each attaches parts; the debug window shows identical craft hashes; each seats their own avatar; A launches → both are in flight on the same vessel, A pilots, B stages |
-| **M8** Mod API, Steam transport, scenario sync, in-process host | `KspMp.Api`, `ModMessage`, `SteamTransport` (bundle Steamworks.NET net472 + steam_api natives, since KSP ships none), `ScenarioModule` messages, "Host game" button (`LoopbackTransport` + `KspMp.Server` inside KSP) | A tiny test mod sends a channel message A→B; two clients play over Steam relay without port forwarding; a science-mode save shares science |
+| **M8** Mod API, Steam transport, scenario sync, in-process host | `KspMp.Api`, `ModMessage`, `SteamTransport` (**legacy `ISteamNetworking` P2P against KSP's own `steam_api64.dll`** - see the Steam findings below; the original plan to bundle Steamworks.NET and newer natives does not work), `ScenarioModule` messages, "Host game" button (`LoopbackTransport` + `KspMp.Server` inside KSP) | A tiny test mod sends a channel message A→B; two clients play over Steam relay without port forwarding; a science-mode save shares science |
 
 ## How to build and test
 
@@ -227,6 +227,51 @@ Semantics mirror DMP `DMPModInterface` and LMP `ModApiSystem.SendModMessage`. Pa
 
 Names to confirm in the decompile during M0 (flagged unverified by the design pass): `KSPAssemblyDependency` constructor arity, `CrewTransfer.CrewTransferData.canTransfer`, `ControlTypes.VESSEL_SWITCHING`/`EVA_INPUT`, `Vessel.GetReferenceTransformPart`, `BaseField.OnValueModified`, `UI_Control.onFieldChanged`, `Vessel.CrewListSetDirty`, `EditorLogic.attachPart/detachPart` parameters, `ShipConstruct.Clear`, `ConstructionEventType` members, `RespawnTimer` units (`ProtoCrewMember.StartRespawnPeriod`), `TimingManager.TimingStage.Precalc`, `MainMenu.Start`.
 
+## Steam transport: what is actually possible (verified 2026-09-05)
+
+The M8 note used to say KSP ships no Steam natives and that we would bundle Steamworks.NET plus our own
+`steam_api64.dll`. Both are wrong, and the second is not merely wrong but unworkable.
+
+**KSP does ship the native.** `KSP_x64_Data/Plugins/x86_64/steam_api64.dll`, loaded at startup for Squad's
+`GameData/Squad/Plugins/KSPSteamCtrlr.dll` (controller support only - it has no networking types). What is
+missing from `Managed/` is the *managed wrapper*, not the native library.
+
+**It is an old SDK.** Interface version strings are `SteamUser019` and `SteamUtils009`, which is the
+Steamworks 1.42 era. That matters because:
+
+- **The modern API is absent.** No `SteamNetworkingSockets`, no `ConnectP2P`, no `SteamNetworkingUtils`. So
+  Steam Datagram Relay, the thing usually meant by "Steam relay", cannot be called at all.
+- **Shipping a newer `steam_api64.dll` is not a way round it.** Windows loads a DLL of that name once per
+  process, and KSP has already loaded its own before any addon runs. Our P/Invokes would bind to the old one
+  and fail at the entry point. Renaming ours means forking Steamworks.NET to change its hardcoded library
+  name, and then two Steam API instances would be initialised against one client - unsupported, and liable to
+  break Squad's controller integration.
+
+**The legacy P2P API is fully present**, and is enough:
+
+    SteamAPI_ISteamNetworking_SendP2PPacket / ReadP2PPacket / IsP2PPacketAvailable
+    SteamAPI_ISteamNetworking_AcceptP2PSessionWithUser / CloseP2PSessionWithUser
+    SteamAPI_ISteamNetworking_AllowP2PPacketRelay      <- relay fallback when the punch fails
+    SteamAPI_ISteamUser_GetSteamID, SteamAPI_RunCallbacks, SteamAPI_RegisterCallback
+    SteamInternal_CreateInterface, SteamAPI_ISteamClient_GetISteamNetworking
+
+`AllowP2PPacketRelay` is the part that matters for the players we cannot otherwise reach: Steam falls back to
+its own relay servers when a direct connection cannot be made, which covers carrier-grade NAT, and Valve pays
+for it rather than us.
+
+**Steamworks.NET from NuGet is not usable**: 2024.8.0 is netstandard2.1 only, which net472 cannot consume and
+which GameData could not load anyway. Either vendor a source release from the era that matches SDK 1.42, or -
+probably better - write the dozen P/Invokes by hand, which keeps the surface small enough to audit and avoids
+matching library versions to a native we do not control.
+
+**The fiddly part is the session handshake.** Packets do not arrive until the receiving side has called
+`AcceptP2PSessionWithUser`, and it learns who is asking from a `P2PSessionRequest` callback - so
+`SteamAPI_RegisterCallback` and its dispatch machinery are needed, unless the host is given the joining
+player's SteamID up front and accepts it proactively.
+
+**Testing needs two Steam accounts on two machines.** Two KSP instances on one machine under one account
+cannot exercise P2P against each other, so none of this can be verified the way M6 and M7 were.
+
 ## Reference reading (LMP `LmpClient/...` unless noted; DMP `Client/...`)
 
 - Architecture: `MainSystem.cs`, `Base/System.cs`, `Base/SystemBase.cs`, `Base/MessageSystem.cs`; DMP `Main.cs`.
@@ -245,5 +290,5 @@ Names to confirm in the decompile during M0 (flagged unverified by the design pa
 - GitHub remote creation and the ~12 GB of test-install copies will be confirmed with the user before running.
 - Shared VAB ships snapshot sync first (M7a) and the op log second (M7b).
 - Publicizer pinned to 2.2.1 (known good with KSP); bump later.
-- Steam transport bundles Steamworks.NET rather than reusing KSP's Steam controller plugin.
+- ~~Steam transport bundles Steamworks.NET rather than reusing KSP's Steam controller plugin.~~ Wrong on both counts; see the Steam findings below.
 - Science/career sync, tourist/rescue contract handling and mod-control manifests are all M8+.
