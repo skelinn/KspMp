@@ -116,7 +116,7 @@ namespace KspMp.Systems
                 var node = editor.ship.SaveShip();
                 if (node == null) return;
                 var text = ProtoCodec.ToText(node);
-                var hash = text.Length + ":" + text.GetHashCode();
+                var hash = HashOf(text);
                 if (hash == _lastSentHash) return;   // nothing actually changed (KSP fires the event generously)
                 _lastSentHash = hash;
 
@@ -191,7 +191,12 @@ namespace KspMp.Systems
                 EditorLogic.fetch.ship = ship;
                 editor.SetBackup();
                 GameEvents.onEditorShipModified.Fire(ship);
-                _lastSentHash = text.Length + ":" + text.GetHashCode();
+                // Hash what SendSnapshot would hash, not the bytes that arrived. KSP renumbers parts and
+                // reorders them as it loads a craft, so the text we received and the text we would write back
+                // out differ for the very same ship. Storing the received text here meant the guard never
+                // matched, every applied craft was echoed back as if it were a local edit, and a part the
+                // other player had just deleted reappeared on the next round trip.
+                _lastSentHash = LocalCraftHash();
                 SnapshotsApplied++;
                 Log.Info("Applied the shared craft from " + NameOf(msg.FromClientId) + ": " + msg.ShipName + ", " + msg.PartCount + " part(s), revision " + msg.Revision);
             }
@@ -202,6 +207,26 @@ namespace KspMp.Systems
             finally
             {
                 Applying = false;
+            }
+        }
+
+        private static string HashOf(string craftText) =>
+            craftText == null ? "" : craftText.Length + ":" + craftText.GetHashCode();
+
+        /// <summary>The workbench as we would send it, which is the only form worth comparing against.</summary>
+        private static string LocalCraftHash()
+        {
+            var editor = EditorLogic.fetch;
+            if (editor == null || editor.ship == null) return "";
+            try
+            {
+                var node = editor.ship.SaveShip();
+                return node == null ? "" : HashOf(ProtoCodec.ToText(node));
+            }
+            catch (Exception e)
+            {
+                Log.Exception("Hashing the workbench", e);
+                return "";
             }
         }
 
