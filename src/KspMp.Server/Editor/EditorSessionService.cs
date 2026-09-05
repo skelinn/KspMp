@@ -134,8 +134,12 @@ namespace KspMp.Server.Editor
             if (!session.Builders.Contains(client.ClientId)) return;
             launch.FromClientId = client.ClientId;
             _server.Log(client.DisplayName + " launched '" + launch.ShipName + "' from the " + launch.Facility + " to " + launch.LaunchSite);
-            foreach (var peer in Peers(session, except: client.ClientId))
-                _server.Send(peer.Peer, MessageId.EditorLaunch, launch, Channel.Control, Delivery.ReliableOrdered);
+            // Everyone needs this, not just the other builders: a player stood in the space center about to
+            // launch has no other way to know the pad is about to be taken, and two craft on one pad destroy
+            // each other along with everybody aboard.
+            foreach (var peer in _server.HandshakenClients)
+                if (peer.ClientId != client.ClientId)
+                    _server.Send(peer.Peer, MessageId.EditorLaunch, launch, Channel.Control, Delivery.ReliableOrdered);
             Clear(session, "launched");
         }
 

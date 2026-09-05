@@ -84,6 +84,10 @@ namespace KspMp
             Network.Welcomed += welcome => { Vessels.LocalClientId = welcome.ClientId; RefreshSystems(); };
             Network.Disconnected += _ => { RefreshSystems(); Vessels.LocalClientId = 0; };
             Network.Welcomed += OnWelcomedForLaunchOptions;
+            // Launch notices are handled here rather than in EditorSystem, which only runs inside the VAB.
+            // The player who most needs to hear that a pad is being taken is the one stood in the space
+            // center about to launch onto it.
+            Network.RegisterHandler(Shared.Protocol.MessageId.EditorLaunch, OnRemoteLaunchNotice);
 
             Systems = new SystemRegistry();
             Systems.Add(Players = new PlayersSystem(this));
@@ -167,6 +171,27 @@ namespace KspMp
         private System.Collections.IEnumerator AutoLaunchAfterDelay(float seconds)
         {
             yield return new WaitForSeconds(seconds);
+            var launchSite = !string.IsNullOrEmpty(Launch.LaunchSite)
+                ? Launch.LaunchSite
+                : Launch.LaunchCraft.Replace(System.IO.Path.DirectorySeparatorChar, '/')
+                        .IndexOf("/SPH/", StringComparison.OrdinalIgnoreCase) >= 0 ? "Runway" : "LaunchPad";
+
+            // Same rule the Launch button obeys: never drop a craft onto an occupied pad. Tests wait
+            // for it to clear rather than failing, since both clients launch within a few seconds.
+            var held = string.Empty;
+            for (var attempt = 0; attempt < 40; attempt++)
+            {
+                if (!KspMp.Vessels.LaunchSiteGuard.IsBlocked(launchSite, Vessels, out var blocked)) { held = string.Empty; break; }
+                if (blocked != held) { Log.Info("Auto-launch: holding off - " + blocked); held = blocked; }
+                yield return new WaitForSeconds(3f);
+            }
+            if (!string.IsNullOrEmpty(held))
+            {
+                // Launching anyway is the thing this guard exists to stop, so give up rather than do it.
+                Log.Error("Auto-launch: gave up, the " + launchSite + " never cleared - " + held);
+                yield break;
+            }
+
             try
             {
                 var craft = Launch.LaunchCraft.Replace('\\', '/');
@@ -176,12 +201,14 @@ namespace KspMp
                     Log.Error("Auto-launch: craft file not found: " + path);
                     yield break;
                 }
-                var site = !string.IsNullOrEmpty(Launch.LaunchSite) ? Launch.LaunchSite : craft.IndexOf("/SPH/", StringComparison.OrdinalIgnoreCase) >= 0 ? "Runway" : "LaunchPad";
+                var site = launchSite;
                 var craftNode = ConfigNode.Load(path);
                 var manifest = HighLogic.CurrentGame.CrewRoster.DefaultCrewForVessel(craftNode);
                 var seated = Game.SessionStarter.SeatAvatar(manifest);
                 var extra = Game.SessionStarter.SeatCrew(manifest, Launch.ExtraCrew);
                 Log.Info("Auto-launch: " + craft + " from " + site + (seated ? " with " + Roster.AvatarName + " in the first seat" : " with default crew") + (extra > 0 ? " and " + extra + " extra crew" : ""));
+                KspMp.Vessels.LaunchSiteGuard.Clear(site);
+                AnnounceLaunch(System.IO.Path.GetFileNameWithoutExtension(path), site);
                 FlightDriver.StartWithNewLaunch(path, "Squad/Flags/default", site, manifest);
             }
             catch (Exception e)
@@ -513,6 +540,34 @@ namespace KspMp
                      + " revision=" + (Editor != null ? Editor.Revision : -1)
                      + " sent=" + (Editor != null ? Editor.SnapshotsSent : -1)
                      + " applied=" + (Editor != null ? Editor.SnapshotsApplied : -1));
+        }
+
+        /// <summary>
+        /// Tell everyone we are taking a launch site. Sent from here rather than EditorSystem so it also
+        /// covers launches that never go through the VAB, such as the test harness.
+        /// </summary>
+        public void AnnounceLaunch(string shipName, string site)
+        {
+            if (!Network.IsConnected) return;
+            var facility = !string.IsNullOrEmpty(site) && site.IndexOf("Runway", StringComparison.OrdinalIgnoreCase) >= 0
+                ? Shared.Protocol.EditorFacilityKind.Sph
+                : Shared.Protocol.EditorFacilityKind.Vab;
+            Network.Send(Shared.Protocol.MessageId.EditorLaunch, new Shared.Protocol.EditorLaunchMsg
+            {
+                Facility = facility,
+                ShipName = shipName ?? "a craft",
+                LaunchSite = site ?? string.Empty,
+            }, Shared.Protocol.Channel.Control, Shared.Protocol.Delivery.ReliableOrdered);
+        }
+
+        private void OnRemoteLaunchNotice(LiteNetLib.Utils.NetDataReader body)
+        {
+            var msg = Shared.Protocol.Envelope.Read<Shared.Protocol.EditorLaunchMsg>(body);
+            var who = Players != null && Players.TryGet(msg.FromClientId, out var player) ? player.Name : "#" + msg.FromClientId;
+            Log.Info(who + " launched " + msg.ShipName + " from " + msg.LaunchSite);
+            KspMp.Vessels.LaunchSiteGuard.NoteRemoteLaunch(msg.LaunchSite, who);
+            if (Chat != null) Chat.AddLocal(who + " launched " + msg.ShipName + ". If your Kerbal is aboard you will join the flight.");
+            if (Editor != null) Editor.OnRemoteLaunch();
         }
 
         private void OnWelcomedForLaunchOptions(Shared.Protocol.WelcomeMsg welcome)

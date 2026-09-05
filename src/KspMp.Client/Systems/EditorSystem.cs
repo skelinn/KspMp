@@ -46,7 +46,6 @@ namespace KspMp.Systems
         {
             Net.RegisterHandler(MessageId.EditorSnapshot, OnSnapshot);
             Net.RegisterHandler(MessageId.EditorPresence, OnPresence);
-            Net.RegisterHandler(MessageId.EditorLaunch, OnLaunch);
             GameEvents.onEditorShipModified.Add(OnShipModified);
             GameEvents.onEditorRestart.Add(OnEditorRestart);
             GameEvents.onEditorLoad.Add(OnEditorLoad);
@@ -65,7 +64,6 @@ namespace KspMp.Systems
             _joined = false;
             Net.UnregisterHandler(MessageId.EditorSnapshot, OnSnapshot);
             Net.UnregisterHandler(MessageId.EditorPresence, OnPresence);
-            Net.UnregisterHandler(MessageId.EditorLaunch, OnLaunch);
             GameEvents.onEditorShipModified.Remove(OnShipModified);
             GameEvents.onEditorRestart.Remove(OnEditorRestart);
             GameEvents.onEditorLoad.Remove(OnEditorLoad);
@@ -214,11 +212,9 @@ namespace KspMp.Systems
             _others[msg.ClientId] = msg;
         }
 
-        private void OnLaunch(NetDataReader body)
+        /// <summary>The workbench was launched out from under us; start again from an empty revision.</summary>
+        public void OnRemoteLaunch()
         {
-            var msg = Envelope.Read<EditorLaunchMsg>(body);
-            Log.Info(NameOf(msg.FromClientId) + " launched " + msg.ShipName + " from " + msg.LaunchSite);
-            Addon.Chat.AddLocal(NameOf(msg.FromClientId) + " launched " + msg.ShipName + ". If your Kerbal is aboard you will join the flight.");
             _revision = 0;
             _lastSentHash = "";
         }
