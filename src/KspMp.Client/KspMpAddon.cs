@@ -127,9 +127,16 @@ namespace KspMp
             {
                 _autoConnectDone = true;
                 Log.Info("Auto-connecting to " + Launch.ConnectHost + ":" + Launch.ConnectPort);
-                Network.Password = Launch.Password ?? Settings.LastPassword ?? string.Empty;
-                if (Launch.SteamHostId != 0) Network.ConnectOverSteam(Launch.SteamHostId);
-                else Network.Connect(Launch.ConnectHost, Launch.ConnectPort, Launch.Introducer, Launch.JoinCode);
+                if (Launch.HostGame)
+                {
+                    StartHosting();
+                }
+                else
+                {
+                    Network.Password = Launch.Password ?? Settings.LastPassword ?? string.Empty;
+                    if (Launch.SteamHostId != 0) Network.ConnectOverSteam(Launch.SteamHostId);
+                    else Network.Connect(Launch.ConnectHost, Launch.ConnectPort, Launch.Introducer, Launch.JoinCode);
+                }
             }
             if (scene == GameScenes.SPACECENTER && !string.IsNullOrEmpty(Launch.LaunchCraft) && !_autoLaunchDone && Network.IsConnected)
             {
@@ -463,6 +470,30 @@ namespace KspMp
             }
         }
 
+        /// <summary>The server, when this game is the one hosting. Null when we are only a client.</summary>
+        public Net.InProcessHost Host { get; private set; }
+
+        /// <summary>
+        /// Starts hosting, then joins our own server over the loopback address like any other player. Going
+        /// through the socket rather than short-circuiting keeps the host on exactly the same code path as
+        /// everyone else, so hosting cannot quietly behave differently from joining.
+        /// </summary>
+        private void StartHosting()
+        {
+            Host = new Net.InProcessHost();
+            if (!Host.Start(Launch.HostPort, Launch.Password, Launch.AllowedSteamIds))
+            {
+                Host = null;
+                Log.Error("Could not start hosting.");
+                return;
+            }
+            if (Host.SteamId != 0)
+                Log.Info("Friends can join you over Steam with your Steam ID: " + Host.SteamId
+                         + " (you must add theirs with -kspmp-allow first).");
+            Network.Password = Launch.Password ?? string.Empty;
+            Network.Connect("127.0.0.1", Host.Port, null, null);
+        }
+
         private bool _autoEditorDone;
         private bool _editorLoadDone;
         private bool _editorWatchStarted;
@@ -613,6 +644,7 @@ namespace KspMp
 
         private void Update()
         {
+            Host?.Poll();
             Network.Poll();
             Systems.Update();
 
@@ -691,12 +723,15 @@ namespace KspMp
         private void OnApplicationQuit()
         {
             Network?.Disconnect("quit");
+            // Stop after the client, so the players still connected are told before the world is saved.
+            Host?.Stop();
         }
 
         private void OnDestroy()
         {
             GameEvents.onLevelWasLoadedGUIReady.Remove(OnLevelLoaded);
             Network?.Disconnect("unloaded");
+            Host?.Stop();
             if (Instance == this) Instance = null;
         }
     }

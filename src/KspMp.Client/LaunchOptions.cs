@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace KspMp
 {
@@ -14,6 +15,8 @@ namespace KspMp
     ///   -kspmp-debug                 show the debug window
     ///   -kspmp-steaminfo             report whether Steam P2P is usable, then carry on
     ///   -kspmp-steamjoin ID          join this Steam ID over Steam instead of an address (no port forwarding)
+    ///   -kspmp-host [port]           run the server inside this game, on UDP and over Steam at once
+    ///   -kspmp-allow "id,id"         Steam IDs allowed to join the hosted game
     ///   -kspmp-launch "Ships/VAB/Kerbal X.craft"   launch a craft (path relative to the KSP folder) once in the space center
     ///   -kspmp-site LaunchPad|Runway  launch site for -kspmp-launch (default from the craft folder)
     ///   -kspmp-fly N                 N seconds after launch: SAS on, full throttle, stage once
@@ -47,6 +50,9 @@ namespace KspMp
         public bool Debug;
         public bool SteamInfo;
         public ulong SteamHostId;
+        public bool HostGame;
+        public int HostPort = 7777;
+        public ulong[] AllowedSteamIds = new ulong[0];
         public string LaunchCraft;
         public string LaunchSite;
         public float FlyAfterSeconds = -1f;
@@ -74,7 +80,7 @@ namespace KspMp
         public float WarpAfterSeconds = 30f;
         public float WarpDurationSeconds = 30f;
 
-        public bool AutoConnect => !string.IsNullOrEmpty(ConnectHost) || SteamHostId != 0;
+        public bool AutoConnect => !string.IsNullOrEmpty(ConnectHost) || SteamHostId != 0 || HostGame;
 
         public static LaunchOptions Parse(string[] args)
         {
@@ -113,6 +119,19 @@ namespace KspMp
                     case "-kspmp-say" when i + 1 < args.Length:
                         options.Say = args[++i];
                         break;
+                    case "-kspmp-host":
+                        options.HostGame = true;
+                        // The port is optional, so only take the next argument when it looks like one.
+                        if (i + 1 < args.Length && int.TryParse(args[i + 1], out var hostPort)) { options.HostPort = hostPort; i++; }
+                        break;
+                    case "-kspmp-allow" when i + 1 < args.Length:
+                    {
+                        var parts = args[++i].Split(',');
+                        var ids = new List<ulong>();
+                        foreach (var part in parts) if (ulong.TryParse(part.Trim(), out var id)) ids.Add(id);
+                        options.AllowedSteamIds = ids.ToArray();
+                        break;
+                    }
                     case "-kspmp-steamjoin" when i + 1 < args.Length:
                         ulong.TryParse(args[++i], out options.SteamHostId);
                         break;

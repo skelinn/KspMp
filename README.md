@@ -92,6 +92,24 @@ Server files live in the universe folder: `server.cfg` (name, port, max players,
 `sharedStickDefault`, `hostControlsWarp`, `upnp`), `time.cfg` (shared UT, saved every minute and on shutdown), `players.cfg` (known players and
 their Kerbal avatars), `vessels/<id>.cfg` and `roster/<name>.cfg` (the shared world, readable KSP ConfigNode text).
 
+## Hosting from inside the game
+
+The server can run inside KSP, so hosting does not mean running a second program:
+
+    KSP_x64.exe -kspmp-host 7777 -kspmp-allow "76561198000000000"
+
+It listens two ways at once. The UDP socket takes players on the same network - and the host's own game, which
+connects to 127.0.0.1 like anyone else, so hosting cannot quietly behave differently from joining. Steam takes
+everyone else, without anybody touching a router; the log prints the Steam ID friends need. Either can fail to
+start without taking the other down, so a host with no Steam is still reachable over UDP.
+
+The world lives in `GameData/KspMp/PluginData/universe`, in the same format the dedicated server uses, so a
+game started this way can be moved to a real server later by copying the folder.
+
+Friends join with `-kspmp-steamjoin <your steam id>`, or with an address as before. Steam only delivers packets
+from a player whose session has been accepted, and without a P2PSessionRequest callback the only way to accept
+one is up front, which is why `-kspmp-allow` takes the Steam IDs you expect.
+
 ## Playing over the internet
 
 The server asks your router to forward its port over UPnP on startup, which is enough on its own for many home
@@ -133,12 +151,11 @@ join packet could replay it. Treat it as a lock on the door, not a guarantee abo
 
 Worth knowing before you play, roughly in the order you would hit them.
 
-- **Steam P2P has a client but no host yet.** Steam initialises inside KSP and the transport is written, so a
-  player can join a host's Steam ID without anyone forwarding a port. What is missing is the other half: the
-  dedicated server is a separate process with no Steam context, and a host cannot send Steam packets to
-  itself, so hosting means running the server inside KSP behind a transport that carries local and Steam
-  players at once. Until that exists, `-kspmp-steamjoin` has nothing to connect to. None of the Steam path has
-  been exercised between two machines.
+- **The Steam half of hosting is untested.** Hosting inside KSP works and serves players over UDP, and the
+  host starts a Steam listener alongside it, but no remote player has ever arrived over Steam: that needs two
+  Steam accounts on two machines. A host also has to be told a friend's Steam ID with `-kspmp-allow` before
+  Steam will deliver anything from them, because accepting a session otherwise needs a callback that is not
+  written yet.
 - **Hole punching has only been proven on one machine.** The registration, code lookup, introduction and
   connect all work, and a client whose only direct address was unroutable still reached the server through an
   introducer. But both ends were on the same machine, so LiteNetLib paired them on the internal address:
