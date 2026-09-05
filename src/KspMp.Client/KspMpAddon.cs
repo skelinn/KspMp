@@ -478,10 +478,21 @@ namespace KspMp
         /// through the socket rather than short-circuiting keeps the host on exactly the same code path as
         /// everyone else, so hosting cannot quietly behave differently from joining.
         /// </summary>
-        private void StartHosting()
+        public void StartHosting() => StartHosting(Launch.AllowedSteamIds, Launch.HostPort, Launch.Password);
+
+        public void StartHosting(System.Collections.Generic.IEnumerable<ulong> allowedSteamIds) =>
+            StartHosting(allowedSteamIds, Settings.Port, Settings.LastPassword);
+
+        /// <summary>
+        /// Starts hosting, then joins our own server over the loopback address like any other player. Going
+        /// through the socket rather than short-circuiting keeps the host on exactly the same code path as
+        /// everyone else, so hosting cannot quietly behave differently from joining.
+        /// </summary>
+        public void StartHosting(System.Collections.Generic.IEnumerable<ulong> allowedSteamIds, int port, string password)
         {
+            if (Host != null && Host.Running) return;
             Host = new Net.InProcessHost();
-            if (!Host.Start(Launch.HostPort, Launch.Password, Launch.AllowedSteamIds))
+            if (!Host.Start(port, password, allowedSteamIds))
             {
                 Host = null;
                 Log.Error("Could not start hosting.");
@@ -489,8 +500,8 @@ namespace KspMp
             }
             if (Host.SteamId != 0)
                 Log.Info("Friends can join you over Steam with your Steam ID: " + Host.SteamId
-                         + " (you must add theirs with -kspmp-allow first).");
-            Network.Password = Launch.Password ?? string.Empty;
+                         + " (their ID has to be in your friends list here first).");
+            Network.Password = password ?? string.Empty;
             Network.Connect("127.0.0.1", Host.Port, null, null);
         }
 

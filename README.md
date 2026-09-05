@@ -110,6 +110,10 @@ Friends join with `-kspmp-steamjoin <your steam id>`, or with an address as befo
 from a player whose session has been accepted, and without a P2PSessionRequest callback the only way to accept
 one is up front, which is why `-kspmp-allow` takes the Steam IDs you expect.
 
+None of that needs the command line. The Multiplayer window on the main menu shows your Steam ID to copy and
+send, a box to paste a friend's and join them, a friends list for the IDs allowed into a game you host, and a
+Host button. The whole section is hidden when Steam is not available, since none of it would work.
+
 ## Playing over the internet
 
 The server asks your router to forward its port over UPnP on startup, which is enough on its own for many home

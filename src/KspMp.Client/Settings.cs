@@ -13,6 +13,10 @@ namespace KspMp
         public string LastServer = "127.0.0.1";
         /// <summary>Password for LastServer, so it does not have to be retyped every session.</summary>
         public string LastPassword = "";
+        /// <summary>Steam ID of the last game joined over Steam.</summary>
+        public string LastSteamHost = "";
+        /// <summary>Comma-separated Steam IDs allowed into a game we host; Steam needs them up front.</summary>
+        public string AllowedSteamIds = "";
         public int Port = 7777;
         public string AvatarKerbalName = "";
         public float UiScale = 1f;
@@ -40,6 +44,8 @@ namespace KspMp
                         if (node.TryGetValue("playerId", ref id) && Guid.TryParse(id, out var guid)) settings.PlayerId = guid;
                         node.TryGetValue("lastServer", ref settings.LastServer);
                         node.TryGetValue("lastPassword", ref settings.LastPassword);
+                        node.TryGetValue("lastSteamHost", ref settings.LastSteamHost);
+                        node.TryGetValue("allowedSteamIds", ref settings.AllowedSteamIds);
                         node.TryGetValue("port", ref settings.Port);
                         node.TryGetValue("avatarKerbalName", ref settings.AvatarKerbalName);
                         node.TryGetValue("uiScale", ref settings.UiScale);
@@ -71,6 +77,8 @@ namespace KspMp
                 node.AddValue("playerId", PlayerId.ToString());
                 node.AddValue("lastServer", LastServer);
                 node.AddValue("lastPassword", LastPassword);
+                node.AddValue("lastSteamHost", LastSteamHost);
+                node.AddValue("allowedSteamIds", AllowedSteamIds);
                 node.AddValue("port", Port);
                 node.AddValue("avatarKerbalName", AvatarKerbalName);
                 node.AddValue("uiScale", UiScale);

@@ -63,6 +63,8 @@ namespace KspMp.Ui
                         net.Connect(settings.LastServer.Trim(), port);
                     }
                 }
+                DrawSteam(net, settings);
+
                 if (!string.IsNullOrEmpty(net.LastError)) GUILayout.Label("<color=#ff8080>" + net.LastError + "</color>");
                 else if (net.Status != "Not connected") GUILayout.Label(net.Status);
             }
@@ -74,6 +76,72 @@ namespace KspMp.Ui
             }
 
             GUI.DragWindow();
+        }
+
+        /// <summary>
+        /// Playing over Steam, for people who cannot forward a port and should not have to. Steam finds a
+        /// route between the two games and falls back to its own relay when it cannot make a direct one.
+        /// Hidden entirely when Steam is not there, since nothing here would work and the reason is not the
+        /// player's problem to solve at the main menu.
+        /// </summary>
+        private void DrawSteam(ClientNetwork net, Settings settings)
+        {
+            GUILayout.Space(8);
+            if (!Net.Steam.SteamP2P.TryInitialise())
+            {
+                GUILayout.Label("<i>Steam play unavailable: " + Net.Steam.SteamP2P.Unavailable + "</i>");
+                return;
+            }
+
+            GUILayout.Label("<b>Play over Steam</b>  <i>(no port forwarding)</i>");
+
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Your ID", GUILayout.Width(60));
+            // Selectable rather than a label, so it can be copied out and sent to a friend.
+            GUILayout.TextField(Net.Steam.SteamP2P.LocalSteamId.ToString());
+            GUILayout.EndHorizontal();
+
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Join", GUILayout.Width(60));
+            settings.LastSteamHost = GUILayout.TextField(settings.LastSteamHost ?? string.Empty, 20);
+            if (GUILayout.Button("Join", GUILayout.Width(70)))
+            {
+                if (ulong.TryParse((settings.LastSteamHost ?? string.Empty).Trim(), out var hostId) && hostId != 0)
+                {
+                    settings.Save();
+                    net.Password = settings.LastPassword ?? string.Empty;
+                    net.ConnectOverSteam(hostId);
+                }
+                else Log.Warn("That does not look like a Steam ID: " + settings.LastSteamHost);
+            }
+            GUILayout.EndHorizontal();
+
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Friends", GUILayout.Width(60));
+            settings.AllowedSteamIds = GUILayout.TextField(settings.AllowedSteamIds ?? string.Empty);
+            GUILayout.EndHorizontal();
+            GUILayout.Label("<i>Steam IDs allowed into a game you host, comma separated. Steam needs them "
+                            + "before it will accept anything from them.</i>");
+
+            if (_addon.Host != null && _addon.Host.Running)
+            {
+                GUILayout.Label("<b>Hosting.</b> Friends join with your ID above.");
+            }
+            else if (GUILayout.Button("Host a game"))
+            {
+                settings.Save();
+                _addon.StartHosting(ParseSteamIds(settings.AllowedSteamIds));
+            }
+        }
+
+        /// <summary>Reads the friends box, ignoring anything that is not a Steam ID rather than refusing it all.</summary>
+        private static System.Collections.Generic.List<ulong> ParseSteamIds(string text)
+        {
+            var ids = new System.Collections.Generic.List<ulong>();
+            if (string.IsNullOrEmpty(text)) return ids;
+            foreach (var part in text.Split(','))
+                if (ulong.TryParse(part.Trim(), out var id) && id != 0) ids.Add(id);
+            return ids;
         }
 
         private void DrawLobby()
