@@ -3,15 +3,17 @@
 Play KSP with your friends on one shared timeline: everyone is their own Kerbal, you can sit in the same
 rocket, share the controls, build together in the VAB/SPH, and dock.
 
-Status: **M0-M7 flown** with two clients on one machine: connect, lobby and chat; a shared clock; vessel
+Status: **M0-M7 flown, and played over Steam between two machines** with two clients on one machine: connect, lobby and chat; a shared clock; vessel
 replication with physics authority; negotiated warp; Kerbal avatars and a shared roster; shared control, where
 two players ride the same rocket and the co-pilot can stage, use action groups and steer; docking, which merges
 the two craft and leaves the other player aboard as co-pilot; and a shared VAB/SPH workbench, where both
 builders converge on one craft hash. See `docs/PLAN.md` for the plan, and the gaps below before you rely on any
 of it.
 
-Everything so far has been verified over localhost, at `rtt 0 ms`. None of the timing work - the shared clock,
-replica interpolation, shared-stick input - has ever seen real latency.
+Two players have since connected across the internet over Steam, which negotiated a direct link through a
+double NAT that neither UPnP nor port forwarding could get past. Everything before that was verified over
+localhost at `rtt 0 ms`, so the timing work - the shared clock, replica interpolation, shared-stick input - has
+still had very little exposure to real latency.
 
 ## Requirements
 
@@ -155,11 +157,10 @@ join packet could replay it. Treat it as a lock on the door, not a guarantee abo
 
 Worth knowing before you play, roughly in the order you would hit them.
 
-- **The Steam half of hosting is untested.** Hosting inside KSP works and serves players over UDP, and the
-  host starts a Steam listener alongside it, but no remote player has ever arrived over Steam: that needs two
-  Steam accounts on two machines. A host also has to be told a friend's Steam ID with `-kspmp-allow` before
-  Steam will deliver anything from them, because accepting a session otherwise needs a callback that is not
-  written yet.
+- **A host must know a joining player's Steam ID up front.** Steam discards packets from a session nobody
+  accepted, and learning that someone wants in needs a P2PSessionRequest callback that is not written, so the
+  IDs go in the Friends box or `-kspmp-allow` beforehand. The list is read when hosting starts, so adding
+  somebody means restarting the host. Fine for friends, useless for strangers.
 - **Hole punching has only been proven on one machine.** The registration, code lookup, introduction and
   connect all work, and a client whose only direct address was unroutable still reached the server through an
   introducer. But both ends were on the same machine, so LiteNetLib paired them on the internal address:
