@@ -67,6 +67,7 @@ namespace KspMp.Server
             Roster = new RosterService(this, new RosterStore(Universe, _log));
             Control = new ControlService(this);
             Editor = new EditorSessionService(this);
+            Crew = new CrewService(this);
 
             Transport.PeerConnected += OnPeerConnected;
             Transport.PeerDisconnected += OnPeerDisconnected;
@@ -85,6 +86,7 @@ namespace KspMp.Server
         public RosterService Roster { get; }
         public ControlService Control { get; }
         public EditorSessionService Editor { get; }
+        public CrewService Crew { get; }
 
         public IEnumerable<ClientSession> Clients => _clients.Values;
         public IEnumerable<ClientSession> HandshakenClients => _clients.Values.Where(c => c.IsOnline);
@@ -333,6 +335,12 @@ namespace KspMp.Server
                     break;
                 case MessageId.EditorSessionJoin:
                     Editor.HandleSessionJoin(client, Envelope.Read<EditorSessionJoinMsg>(body));
+                    break;
+                case MessageId.CrewEva:
+                    Crew.HandleEva(client, Envelope.Read<CrewEvaMsg>(body));
+                    break;
+                case MessageId.CrewBoard:
+                    Crew.HandleBoard(client, Envelope.Read<CrewBoardMsg>(body));
                     break;
                 case MessageId.DockIntent:
                     Authority.HandleDockIntent(client, Envelope.Read<DockIntentMsg>(body));

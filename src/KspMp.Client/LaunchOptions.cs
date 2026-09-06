@@ -45,6 +45,10 @@ namespace KspMp
     ///                                self-check screenshot)
     ///   -kspmp-near D                D seconds after entering flight, move next to another player's ship without
     ///                                docking, so the tags can be seen
+    ///   -kspmp-eva D                 D seconds after entering flight, send our avatar out of the airlock
+    ///   -kspmp-board D               D seconds after entering flight, climb back into the nearest craft
+    ///   -kspmp-evamode frozen|live   pose remote kerbals ourselves (default) or leave KerbalEVA running
+    ///   -kspmp-evasync off           do not load other players' kerbals on EVA at all
     ///   -kspmp-joinflight            accept a flight invite as soon as it can be accepted, without the countdown
     ///   -kspmp-givecontrol D         D seconds after entering flight, give the active vessel to the other player
     ///   -kspmp-requestcontrol D      D seconds after entering flight, ask the pilot for control
@@ -93,6 +97,11 @@ namespace KspMp
         public bool? NametagsOverride;
         public bool NametagsIncludeOwnVessel;
         public float MoveNearAfterSeconds = -1f;
+        public float EvaAfterSeconds = -1f;
+        public float BoardAfterSeconds = -1f;
+        /// <summary>null = leave the setting alone.</summary>
+        public bool? EvaSyncOverride;
+        public bool EvaLiveMode;
         public bool JoinFlightAutomatically;
         public float GiveControlAfterSeconds = -1f;
         public float RequestControlAfterSeconds = -1f;
@@ -255,6 +264,18 @@ namespace KspMp
                     }
                     case "-kspmp-near" when i + 1 < args.Length:
                         if (float.TryParse(args[++i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var nearAfter)) options.MoveNearAfterSeconds = nearAfter;
+                        break;
+                    case "-kspmp-eva" when i + 1 < args.Length:
+                        if (float.TryParse(args[++i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var evaAfter)) options.EvaAfterSeconds = evaAfter;
+                        break;
+                    case "-kspmp-board" when i + 1 < args.Length:
+                        if (float.TryParse(args[++i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var boardAfter)) options.BoardAfterSeconds = boardAfter;
+                        break;
+                    case "-kspmp-evamode" when i + 1 < args.Length:
+                        options.EvaLiveMode = args[++i] == "live";
+                        break;
+                    case "-kspmp-evasync" when i + 1 < args.Length:
+                        options.EvaSyncOverride = args[++i] != "off";
                         break;
                     case "-kspmp-joinflight":
                         options.JoinFlightAutomatically = true;

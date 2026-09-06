@@ -35,6 +35,10 @@ namespace KspMp.Systems
             Net.RegisterHandler(MessageId.VesselRemove, OnVesselRemove);
             GameEvents.onFlightReady.Add(OnFlightReady);
             GameEvents.onVesselWasModified.Add(OnVesselWasModified);
+            // A kerbal leaving or boarding does not fire onVesselWasModified, so without this the vessel they
+            // left keeps them aboard until the next periodic snapshot - up to 30 seconds of one kerbal in two
+            // places at once.
+            GameEvents.onVesselCrewWasModified.Add(OnVesselWasModified);
             GameEvents.onVesselGoOnRails.Add(OnVesselGoOnRails);
             GameEvents.onVesselCreate.Add(OnVesselCreate);
             GameEvents.onVesselWillDestroy.Add(OnVesselWillDestroy);
@@ -50,6 +54,7 @@ namespace KspMp.Systems
             Net.UnregisterHandler(MessageId.VesselRemove, OnVesselRemove);
             GameEvents.onFlightReady.Remove(OnFlightReady);
             GameEvents.onVesselWasModified.Remove(OnVesselWasModified);
+            GameEvents.onVesselCrewWasModified.Remove(OnVesselWasModified);
             GameEvents.onVesselGoOnRails.Remove(OnVesselGoOnRails);
             GameEvents.onVesselCreate.Remove(OnVesselCreate);
             GameEvents.onVesselWillDestroy.Remove(OnVesselWillDestroy);

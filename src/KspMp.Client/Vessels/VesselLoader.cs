@@ -48,9 +48,64 @@ namespace KspMp.Vessels
             }
         }
 
+        /// <summary>Who is aboard, in order, as one comparable string.</summary>
+        private static string CrewSignature(Vessel vessel)
+        {
+            if (vessel == null) return "";
+            var crew = vessel.loaded ? vessel.GetVesselCrew() : vessel.protoVessel != null ? vessel.protoVessel.GetVesselCrew() : null;
+            return CrewSignature(crew);
+        }
+
+        private static string CrewSignature(ProtoVessel proto) => proto == null ? "" : CrewSignature(proto.GetVesselCrew());
+
+        private static string CrewSignature(System.Collections.Generic.List<ProtoCrewMember> crew)
+        {
+            if (crew == null || crew.Count == 0) return "";
+            var names = new string[crew.Count];
+            for (var i = 0; i < crew.Count; i++) names[i] = crew[i] != null ? crew[i].name : "?";
+            return string.Join("|", names);
+        }
+
+        /// <summary>
+        /// A kerbal on EVA is a vessel whose one part must have a crew member: ProtoPartSnapshot.Load reads
+        /// protoModuleCrew[0] without checking, deep inside Vessel.Load() where our try/catch cannot reach it.
+        /// If the roster has not caught up with the kerbal yet, defer the snapshot rather than load it.
+        /// </summary>
+        /// <summary>Whether other players' kerbals on EVA are loaded at all (Settings.EvaSync).</summary>
+        public static bool LoadRemoteEva = true;
+
+        private static bool EvaCrewIsMissing(ProtoVessel proto, out string why)
+        {
+            why = null;
+            if (proto == null || proto.vesselType != VesselType.EVA) return false;
+            var crew = proto.GetVesselCrew();
+            if (crew == null || crew.Count == 0 || crew[0] == null || string.IsNullOrEmpty(crew[0].name))
+            {
+                why = "it carries no crew at all";
+                return true;
+            }
+            var roster = HighLogic.CurrentGame != null ? HighLogic.CurrentGame.CrewRoster : null;
+            if (roster != null && !roster.Exists(crew[0].name))
+            {
+                why = crew[0].name + " is not in our roster yet";
+                return true;
+            }
+            return false;
+        }
+
         private static Outcome LoadIntoGame(ProtoVessel proto, bool force, bool allowActiveReload)
         {
             var label = KSP.Localization.Localizer.Format(proto.vesselName) + " " + proto.vesselID.ToString().Substring(0, 8);
+            if (!LoadRemoteEva && proto.vesselType == VesselType.EVA)
+            {
+                if (SkipReported.Add(proto.vesselID)) Log.Info("Not loading the EVA kerbal " + label + ": EVA sync is off");
+                return Outcome.Skipped;
+            }
+            if (EvaCrewIsMissing(proto, out var why))
+            {
+                Log.Info("Holding the EVA snapshot of " + label + ": " + why);
+                return Outcome.Deferred;
+            }
             var existing = FlightGlobals.FindVessel(proto.vesselID);
             var hadExisting = existing != null;
             var reloadingActive = false;
@@ -69,8 +124,10 @@ namespace KspMp.Vessels
                     SkipReported.Remove(proto.vesselID);
                 }
                 var existingParts = existing.loaded ? existing.parts.Count : existing.protoVessel != null ? existing.protoVessel.protoPartSnapshots.Count : -1;
-                var existingCrew = existing.loaded ? existing.GetCrewCount() : existing.protoVessel != null ? existing.protoVessel.GetVesselCrew().Count : -1;
-                if (!force && existingParts == proto.protoPartSnapshots.Count && existingCrew == proto.GetVesselCrew().Count)
+                // Compare who is aboard, not how many: swapping one kerbal for another, which is exactly what
+                // happens around an EVA, leaves the count identical and used to be read as "nothing changed".
+                var existingCrew = CrewSignature(existing);
+                if (!force && existingParts == proto.protoPartSnapshots.Count && existingCrew == CrewSignature(proto))
                     return Outcome.Unchanged;
 
                 Log.Info("Reloading vessel " + label + " (" + existingParts + " -> " + proto.protoPartSnapshots.Count + " parts" + (reloadingActive ? ", active vessel" : "") + ")");

@@ -56,6 +56,10 @@ namespace KspMp.Shared.Protocol
         AuthorityRelease = 502,
         VesselRoles = 510,
 
+        // crew: getting in and out of other people's craft
+        CrewEva = 700,
+        CrewBoard = 701,
+
         // docking
         DockIntent = 800,
         DockCommit = 801,

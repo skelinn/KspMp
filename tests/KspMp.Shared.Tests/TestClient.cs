@@ -86,6 +86,8 @@ internal class TestClient
             MessageId.EditorPresence => Envelope.Read<EditorPresenceMsg>(body),
             MessageId.EditorLaunch => Envelope.Read<EditorLaunchMsg>(body),
             MessageId.EditorSessionList => Envelope.Read<EditorSessionListMsg>(body),
+            MessageId.CrewEva => Envelope.Read<CrewEvaMsg>(body),
+            MessageId.CrewBoard => Envelope.Read<CrewBoardMsg>(body),
             _ => throw new Xunit.Sdk.XunitException("unexpected message " + id),
         };
         if (message is WelcomeMsg welcome) ClientId = welcome.ClientId;

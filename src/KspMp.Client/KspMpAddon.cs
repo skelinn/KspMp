@@ -30,6 +30,7 @@ namespace KspMp
         public PresenceSystem Presence { get; private set; }
         public ControlSystem Control { get; private set; }
         public DockSystem Dock { get; private set; }
+        public CrewSystem Crew { get; private set; }
         public EditorSystem Editor { get; private set; }
         public NoticeSystem Notices { get; private set; }
         public BuildersSystem Builders { get; private set; }
@@ -49,6 +50,8 @@ namespace KspMp
         private float _toggleAt = -1f;
         private float _partEventAt = -1f;
         private bool _moveNearStarted;
+        private float _evaAt = -1f;
+        private float _boardAt = -1f;
         private float _giveControlAt = -1f;
         private float _requestControlAt = -1f;
         private float _sharedStickAt = -1f;
@@ -77,6 +80,9 @@ namespace KspMp
             Launch = LaunchOptions.Parse(Environment.GetCommandLineArgs());
             if (!string.IsNullOrEmpty(Launch.PlayerName)) Settings.PlayerName = Launch.PlayerName;
             if (Launch.NametagsOverride.HasValue) Settings.ShowNametags = Launch.NametagsOverride.Value;
+            if (Launch.EvaSyncOverride.HasValue) Settings.EvaSync = Launch.EvaSyncOverride.Value;
+            global::KspMp.Vessels.VesselImmortal.FreezeRemoteKerbals = !Launch.EvaLiveMode;
+            global::KspMp.Vessels.VesselLoader.LoadRemoteEva = Settings.EvaSync;
             if (Launch.SteamInfo)
             {
                 if (Net.Steam.SteamP2P.TryInitialise())
@@ -116,6 +122,7 @@ namespace KspMp
             Systems.Add(Authority = new AuthoritySystem(this));
             Systems.Add(Control = new ControlSystem(this));
             Systems.Add(Dock = new DockSystem(this));
+            Systems.Add(Crew = new CrewSystem(this));
             Systems.Add(Builders = new BuildersSystem(this));
             Systems.Add(Editor = new EditorSystem(this));
             Roster.SyncCompleted += TryAutoEnter;
@@ -201,6 +208,10 @@ namespace KspMp
                 _moveNearStarted = true;
                 StartCoroutine(AutoMoveNear(Launch.MoveNearAfterSeconds));
             }
+            if (scene == GameScenes.FLIGHT && Launch.EvaAfterSeconds >= 0 && _evaAt < 0)
+                _evaAt = Time.realtimeSinceStartup + Launch.EvaAfterSeconds;
+            if (scene == GameScenes.FLIGHT && Launch.BoardAfterSeconds >= 0 && _boardAt < 0)
+                _boardAt = Time.realtimeSinceStartup + Launch.BoardAfterSeconds;
             if (scene == GameScenes.FLIGHT && Launch.GiveControlAfterSeconds >= 0 && _giveControlAt < 0)
                 _giveControlAt = Time.realtimeSinceStartup + Launch.GiveControlAfterSeconds;
             if (scene == GameScenes.FLIGHT && Launch.RequestControlAfterSeconds >= 0 && _requestControlAt < 0)
@@ -273,6 +284,51 @@ namespace KspMp
             {
                 Log.Exception("Auto-launch", e);
             }
+        }
+
+        /// <summary>Sends our avatar out of the airlock, the way clicking EVA on the portrait does.</summary>
+        private void AutoEva()
+        {
+            var vessel = FlightGlobals.ActiveVessel;
+            var avatar = Roster != null ? Roster.AvatarName : null;
+            if (vessel == null || string.IsNullOrEmpty(avatar) || vessel.parts == null) { Log.Warn("Auto-EVA: no vessel or no avatar"); return; }
+            foreach (var part in vessel.parts)
+            {
+                if (part.protoModuleCrew == null) continue;
+                foreach (var crew in part.protoModuleCrew)
+                {
+                    if (crew == null || crew.name != avatar) continue;
+                    var airlock = part.airlock != null ? part.airlock : part.transform;
+                    Log.Info("Auto-EVA: sending " + avatar + " out of " + part.partInfo.title);
+                    FlightEVA.fetch.spawnEVA(crew, part, airlock);
+                    return;
+                }
+            }
+            Log.Warn("Auto-EVA: " + avatar + " is not aboard " + vessel.GetDisplayName());
+        }
+
+        /// <summary>Climbs back into the nearest crewable part of any loaded vessel.</summary>
+        private void AutoBoard()
+        {
+            var vessel = FlightGlobals.ActiveVessel;
+            if (vessel == null || !vessel.isEVA || vessel.evaController == null) { Log.Warn("Auto-board: we are not on EVA"); return; }
+            Part best = null;
+            var bestDistance = double.MaxValue;
+            var loaded = FlightGlobals.VesselsLoaded;
+            for (var i = 0; i < loaded.Count; i++)
+            {
+                var other = loaded[i];
+                if (other == null || other == vessel || other.parts == null) continue;
+                foreach (var part in other.parts)
+                {
+                    if (part == null || part.CrewCapacity <= 0 || part.protoModuleCrew == null || part.protoModuleCrew.Count >= part.CrewCapacity) continue;
+                    var distance = (part.transform.position - vessel.transform.position).magnitude;
+                    if (distance < bestDistance) { bestDistance = distance; best = part; }
+                }
+            }
+            if (best == null) { Log.Warn("Auto-board: found no craft with a free seat"); return; }
+            Log.Info("Auto-board: boarding " + best.vessel.GetDisplayName() + " at " + bestDistance.ToString("F0") + " m");
+            vessel.evaController.BoardPart(best);
         }
 
         /// <summary>Gives the active vessel to the first other player aboard it.</summary>
@@ -840,6 +896,16 @@ namespace KspMp
             {
                 _partEventAt = -1f;
                 AutoPartEvent();
+            }
+            if (_evaAt >= 0 && Time.realtimeSinceStartup >= _evaAt && HighLogic.LoadedSceneIsFlight && FlightGlobals.ready)
+            {
+                _evaAt = -1f;
+                AutoEva();
+            }
+            if (_boardAt >= 0 && Time.realtimeSinceStartup >= _boardAt && HighLogic.LoadedSceneIsFlight && FlightGlobals.ready)
+            {
+                _boardAt = -1f;
+                AutoBoard();
             }
             if (_giveControlAt >= 0 && Time.realtimeSinceStartup >= _giveControlAt && HighLogic.LoadedSceneIsFlight && FlightGlobals.ready)
             {
