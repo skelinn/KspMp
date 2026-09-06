@@ -90,7 +90,11 @@ namespace KspMp.Systems
         {
             if (!_joined) return;
             var now = Time.realtimeSinceStartup;
-            if (_dirtyAt >= 0 && now - _dirtyAt >= SendDebounceSeconds)
+            // Never share the bench while a part is in hand. A held part is detached from the ship, so a
+            // snapshot taken mid-drag is the craft with that part missing: the other builder watches it vanish,
+            // their own copy of it is destroyed, and when they in turn pick something up the same happens
+            // back. The drop or the delete fires onEditorShipModified again, and that is when it goes out.
+            if (_dirtyAt >= 0 && now - _dirtyAt >= SendDebounceSeconds && EditorLogic.SelectedPart == null)
             {
                 _dirtyAt = -1f;
                 SendSnapshot();
@@ -259,15 +263,22 @@ namespace KspMp.Systems
             editor.ship = ship;
             editor.rootPart = partCount > 0 ? ship.parts[0].localRoot : null;
 
+            // Whatever this player is holding is not in any ship - picking a part up detaches it - so the
+            // sweep below would destroy it out of their hand. Keep the held part and everything hanging off it;
+            // they will attach it to the new craft when they let go, and that attach is what gets shared.
+            var held = EditorLogic.SelectedPart;
+            var keep = new HashSet<Part>();
+            if (held != null) CollectSubtree(held, keep);
+
             var strays = 0;
             var all = Part.allParts.ToArray();
             for (var i = 0; i < all.Length; i++)
             {
-                if (all[i] == null || ship.Contains(all[i])) continue;
+                if (all[i] == null || ship.Contains(all[i]) || keep.Contains(all[i])) continue;
                 strays++;
                 UnityEngine.Object.Destroy(all[i].gameObject);
             }
-            editor.selectedPart = null;
+            if (held == null) editor.selectedPart = null;
             if (editor.rootPart != null) editor.rootPart.gameObject.SetLayerRecursive(0, filterTranslucent: true, ignoreLayersMask: 2097152);
 
             // The stage/dV readout is rebuilt per craft (EditorLogic.cs:1492); without it the engineer's report
@@ -284,7 +295,14 @@ namespace KspMp.Systems
             if (keptCrew) editor.RefreshCrewAssignment(ShipConstruction.ShipConfig, editor.GetPartExistsFilter());
             else editor.ResetCrewAssignment(ShipConstruction.ShipConfig, allowAutoHire: false);
 
-            Log.Info("Replaced the workbench: destroyed " + strays + " stray part(s), " + partCount + " part(s) now, crew " + (keptCrew ? "kept" : "reset"));
+            Log.Info("Replaced the workbench: destroyed " + strays + " stray part(s), " + partCount + " part(s) now, crew " + (keptCrew ? "kept" : "reset")
+                     + (held != null ? ", kept the " + keep.Count + " part(s) in hand" : ""));
+        }
+
+        private static void CollectSubtree(Part part, HashSet<Part> into)
+        {
+            if (part == null || !into.Add(part) || part.children == null) return;
+            for (var i = 0; i < part.children.Count; i++) CollectSubtree(part.children[i], into);
         }
 
         private static string HashOf(string craftText) =>
