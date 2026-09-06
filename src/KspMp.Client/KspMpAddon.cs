@@ -753,8 +753,22 @@ namespace KspMp
             }
             if (target == null) { Log.Warn("Auto-editor: every part is the root or has children; nothing safe to delete"); yield break; }
             var name = target.partInfo != null ? target.partInfo.title : target.name;
-            EditorLogic.DeletePart(target);
-            Log.Info("Auto-editor: deleted " + name + ", " + editor.ship.parts.Count + " part(s) left");
+            try
+            {
+                // DeletePart cannot be called with nothing selected: deletePartAndSymmetryParts refreshes the
+                // attach-node icons through displayAttachNodeIcons(ship.parts, selectedPart, ...), which
+                // dereferences selectedPart without checking it. In play you are always holding the part you
+                // are deleting, so selecting it first is both what stock does and what skips that branch.
+                editor.selectedPart = target;
+                EditorLogic.DeletePart(target);
+                editor.selectedPart = null;
+                Log.Info("Auto-editor: deleted " + name + ", " + editor.ship.parts.Count + " part(s) left");
+            }
+            catch (Exception e)
+            {
+                editor.selectedPart = null;
+                Log.Exception("Auto-editor: deleting " + name, e);
+            }
         }
 
         /// <summary>Joins the first other player's workbench, or goes back to our own.</summary>
