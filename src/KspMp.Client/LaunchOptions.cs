@@ -41,6 +41,10 @@ namespace KspMp
     ///                                deletion round-trip can be checked from both clients' logs
     ///   -kspmp-editorjoin D          D seconds after the editor opens, join the other player's workbench
     ///   -kspmp-editorleave D         D seconds after the editor opens, go back to our own workbench
+    ///   -kspmp-nametags on|off|all   names over other players' craft and kerbals (all also tags our own, for a
+    ///                                self-check screenshot)
+    ///   -kspmp-near D                D seconds after entering flight, move next to another player's ship without
+    ///                                docking, so the tags can be seen
     ///   -kspmp-joinflight            accept a flight invite as soon as it can be accepted, without the countdown
     ///   -kspmp-givecontrol D         D seconds after entering flight, give the active vessel to the other player
     ///   -kspmp-requestcontrol D      D seconds after entering flight, ask the pilot for control
@@ -85,6 +89,10 @@ namespace KspMp
         public float EditorDeleteAfterSeconds = -1f;
         public float EditorJoinAfterSeconds = -1f;
         public float EditorLeaveAfterSeconds = -1f;
+        /// <summary>null = leave the setting alone, otherwise force nametags on or off for this run.</summary>
+        public bool? NametagsOverride;
+        public bool NametagsIncludeOwnVessel;
+        public float MoveNearAfterSeconds = -1f;
         public bool JoinFlightAutomatically;
         public float GiveControlAfterSeconds = -1f;
         public float RequestControlAfterSeconds = -1f;
@@ -237,6 +245,16 @@ namespace KspMp
                         break;
                     case "-kspmp-editorleave" when i + 1 < args.Length:
                         if (float.TryParse(args[++i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var leaveAfter)) options.EditorLeaveAfterSeconds = leaveAfter;
+                        break;
+                    case "-kspmp-nametags" when i + 1 < args.Length:
+                    {
+                        var mode = args[++i];
+                        options.NametagsOverride = mode != "off";
+                        options.NametagsIncludeOwnVessel = mode == "all";
+                        break;
+                    }
+                    case "-kspmp-near" when i + 1 < args.Length:
+                        if (float.TryParse(args[++i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var nearAfter)) options.MoveNearAfterSeconds = nearAfter;
                         break;
                     case "-kspmp-joinflight":
                         options.JoinFlightAutomatically = true;

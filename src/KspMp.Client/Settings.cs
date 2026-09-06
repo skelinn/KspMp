@@ -28,6 +28,8 @@ namespace KspMp
         public int LogLevel = 1;
         public bool ShowDebugWindow = false;
         public bool ShowHud = true;
+        /// <summary>Names over other players' kerbals and craft in flight.</summary>
+        public bool ShowNametags = true;
 
         public static string FilePath => Path.Combine(KSPUtil.ApplicationRootPath, "GameData", "KspMp", "PluginData", "settings.cfg");
 
@@ -57,6 +59,7 @@ namespace KspMp
                         node.TryGetValue("logLevel", ref settings.LogLevel);
                         node.TryGetValue("showDebugWindow", ref settings.ShowDebugWindow);
                         node.TryGetValue("showHud", ref settings.ShowHud);
+                        node.TryGetValue("showNametags", ref settings.ShowNametags);
                     }
                 }
             }
@@ -90,6 +93,7 @@ namespace KspMp
                 node.AddValue("logLevel", LogLevel);
                 node.AddValue("showDebugWindow", ShowDebugWindow);
                 node.AddValue("showHud", ShowHud);
+                node.AddValue("showNametags", ShowNametags);
                 Directory.CreateDirectory(Path.GetDirectoryName(FilePath));
                 // Saving the node directly would write only its values, and Load looks for the node by
                 // name, so the settings would never read back. Wrap it in a root node.

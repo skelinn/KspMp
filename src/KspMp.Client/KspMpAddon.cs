@@ -48,6 +48,7 @@ namespace KspMp
         private float _stageAt = -1f;
         private float _toggleAt = -1f;
         private float _partEventAt = -1f;
+        private bool _moveNearStarted;
         private float _giveControlAt = -1f;
         private float _requestControlAt = -1f;
         private float _sharedStickAt = -1f;
@@ -75,6 +76,7 @@ namespace KspMp
             Ui.Theme.SetScale(Settings.InterfaceScale);
             Launch = LaunchOptions.Parse(Environment.GetCommandLineArgs());
             if (!string.IsNullOrEmpty(Launch.PlayerName)) Settings.PlayerName = Launch.PlayerName;
+            if (Launch.NametagsOverride.HasValue) Settings.ShowNametags = Launch.NametagsOverride.Value;
             if (Launch.SteamInfo)
             {
                 if (Net.Steam.SteamP2P.TryInitialise())
@@ -194,6 +196,11 @@ namespace KspMp
                 _toggleAt = Time.realtimeSinceStartup + Launch.ToggleAfterSeconds;
             if (scene == GameScenes.FLIGHT && Launch.PartEventAfterSeconds >= 0 && _partEventAt < 0)
                 _partEventAt = Time.realtimeSinceStartup + Launch.PartEventAfterSeconds;
+            if (scene == GameScenes.FLIGHT && Launch.MoveNearAfterSeconds >= 0 && !_moveNearStarted)
+            {
+                _moveNearStarted = true;
+                StartCoroutine(AutoMoveNear(Launch.MoveNearAfterSeconds));
+            }
             if (scene == GameScenes.FLIGHT && Launch.GiveControlAfterSeconds >= 0 && _giveControlAt < 0)
                 _giveControlAt = Time.realtimeSinceStartup + Launch.GiveControlAfterSeconds;
             if (scene == GameScenes.FLIGHT && Launch.RequestControlAfterSeconds >= 0 && _requestControlAt < 0)
@@ -356,6 +363,21 @@ namespace KspMp
         /// Test harness: rendezvous with another player's ship and let the docking magnets take over. Runs in
         /// stages because each one needs the game a few seconds to catch up (load the target, unpack physics).
         /// </summary>
+        /// <summary>
+        /// Pulls up alongside another player's ship without docking. Split out of the docking sequence because
+        /// nametags need two craft near each other and nothing else about a dock.
+        /// </summary>
+        private System.Collections.IEnumerator AutoMoveNear(float delaySeconds)
+        {
+            yield return new WaitForSeconds(Mathf.Max(delaySeconds, 0f));
+            var ours = FlightGlobals.ActiveVessel;
+            if (ours == null) { Log.Warn("Auto-near: no active vessel"); yield break; }
+            var target = Testing.TestRendezvous.FindDockingTarget(ours, id => id != ours.id && Vessels.IsKnown(id) && Vessels.OwnerOf(id) != 0);
+            if (target == null) { Log.Warn("Auto-near: found no other player's ship"); yield break; }
+            Log.Info("Auto-near: moving alongside " + target.GetDisplayName());
+            Testing.TestRendezvous.MoveNear(ours, target, 45f);
+        }
+
         private System.Collections.IEnumerator AutoDockSequence(float delaySeconds)
         {
             yield return new WaitForSeconds(delaySeconds);
@@ -881,6 +903,7 @@ namespace KspMp
         private void OnGUI()
         {
             Editor.DrawOverlay();
+            Ui.NametagOverlay.Draw(this);
             _mainMenu.Draw();
             _hud.Draw();
             _debug.Draw();

@@ -231,6 +231,9 @@ namespace KspMp.Ui
 
             Row("You", Theme.Tint(control.RoleText, Theme.Warn));
 
+            var tags = GUILayout.Toggle(_addon.Settings.ShowNametags, "  Nametags over other players");
+            if (tags != _addon.Settings.ShowNametags) { _addon.Settings.ShowNametags = tags; _addon.Settings.Save(); }
+
             var mine = _addon.Vessels.IsMine(vessel.id);
             if (mine)
             {
