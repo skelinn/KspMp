@@ -398,6 +398,37 @@ Also learned the hard way: `EditorLogic.selectedPart` is not "the part in the ha
 part after it is attached, so a send gate on "selected is null" blocked every share after the first
 placement. Held means selected *and* not in the ship.
 
+The third session found the other half of the editor story. Sharing was debounced by 0.4 s, and a snapshot
+from the other builder applied inside that window replaced the craft and destroyed the part just put down
+but not yet sent, so "the host cannot move parts" was really "whoever sends more often wins". The debounce is
+now 0.05 s, and the remaining race (two players moving parts in the same instant) is documented rather than
+solved: the snapshot model shares the craft, not the edit. And the editor is a state machine whose empty
+bench sits in `st_podSelect`, with a root-parts-only greyout filter and an input lock that only leaving that
+state lifts (`EditorLogic.cs:3140-3145`, `:3275-3280`). A craft arriving on an empty bench now runs
+`on_shipLoaded` to leave it, and an empty craft arriving runs `on_podDeleted` to enter it; without that the
+joiner was told a strut "cannot be the first part placed" on a bench with fifty parts on it.
+
+Reverting is allowed again (`RevertGuard`). Revert to launch reloads KSP's post-init backup, which holds the
+same vessel under the same id, so the next flight-ready snapshot overwrites the server record; revert to the
+editor withdraws the vessel. Both first withdraw every vessel this flight claimed as new since it became ready
+(`VesselProtoSystem._createdThisFlight`): those cease to exist locally without a destroy event, and would
+otherwise stay on the server as frozen debris. Only the owner may revert, and not with somebody else aboard.
+
+A revert reloads the world as KSP saved it at launch, which is wrong in two directions. Other players' vessels
+launched since are missing from that save, so every snapshot the registry holds is marked dirty and applied
+again as soon as the scene is back. And vessels removed for everyone since then (recovered, crashed, withdrawn
+by their own revert) are back in it; the registry now remembers every id it ever removed (`WasRemoved`), and
+the new-vessel scan discards those instead of claiming them, which would have resurrected them on the server.
+The scene reload also looked like leaving flight, releasing authority over the very vessel that was coming
+back; `_keepThroughRevert` holds it through the reload. Withdrawing "what this flight created" must not test
+ownership: landed debris has its authority released within seconds, so the test is "the server still lists it
+and nobody else has taken it over".
+
+Found while reading the revert logs: another player's rocket was being loaded afresh every thirty seconds on
+the periodic snapshot, because `Vessel.CheckKill` (from `VesselPrecalculate`) deletes any packed, non-active
+vessel in the atmosphere. For a replica of a vessel somebody else simulates that is switched off
+(`Vessel_CheckKill`); its position keeps coming from their states whether it is loaded or on rails.
+
 The same flight found why a kerbal on EVA was invisible until its owner left: the vessel's first snapshot was
 taken the frame it was born, before KSP had computed its orbit, and the loader rejected the NaN orbit and
 never retried. New vessels are now announced only once their orbit (and a kerbal's controller) is ready,

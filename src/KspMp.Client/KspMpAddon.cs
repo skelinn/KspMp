@@ -55,6 +55,8 @@ namespace KspMp
         private float _evaAt = -1f;
         private float _boardAt = -1f;
         private float _jetpackAt = -1f;
+        private float _revertAt = -1f;
+        private float _revertEditorAt = -1f;
         private float _giveControlAt = -1f;
         private float _requestControlAt = -1f;
         private float _sharedStickAt = -1f;
@@ -163,7 +165,7 @@ namespace KspMp
             if (scene == GameScenes.SPACECENTER && !string.IsNullOrEmpty(Launch.LaunchCraft) && !_autoLaunchDone && Network.IsConnected)
             {
                 _autoLaunchDone = true;
-                StartCoroutine(AutoLaunchAfterDelay(3f));
+                StartCoroutine(AutoLaunchAfterDelay(Launch.LaunchAfterSeconds));
             }
             if (scene == GameScenes.MAINMENU && Launch.ScreenshotAfterSeconds >= 0 && !_screenshotStarted)
             {
@@ -219,6 +221,10 @@ namespace KspMp
                 _boardAt = Time.realtimeSinceStartup + Launch.BoardAfterSeconds;
             if (scene == GameScenes.FLIGHT && Launch.JetpackAfterSeconds >= 0 && _jetpackAt < 0)
                 _jetpackAt = Time.realtimeSinceStartup + Launch.JetpackAfterSeconds;
+            if (scene == GameScenes.FLIGHT && Launch.RevertAfterSeconds >= 0 && _revertAt < 0)
+                _revertAt = Time.realtimeSinceStartup + Launch.RevertAfterSeconds;
+            if (scene == GameScenes.FLIGHT && Launch.RevertToEditorAfterSeconds >= 0 && _revertEditorAt < 0)
+                _revertEditorAt = Time.realtimeSinceStartup + Launch.RevertToEditorAfterSeconds;
             if (scene == GameScenes.FLIGHT && Launch.GiveControlAfterSeconds >= 0 && _giveControlAt < 0)
                 _giveControlAt = Time.realtimeSinceStartup + Launch.GiveControlAfterSeconds;
             if (scene == GameScenes.FLIGHT && Launch.RequestControlAfterSeconds >= 0 && _requestControlAt < 0)
@@ -922,6 +928,18 @@ namespace KspMp
             {
                 _evaAt = -1f;
                 AutoEva();
+            }
+            if (_revertAt >= 0 && Time.realtimeSinceStartup >= _revertAt && HighLogic.LoadedSceneIsFlight && FlightGlobals.ready)
+            {
+                _revertAt = -1f;
+                Log.Info("Auto-revert: reverting to launch (can=" + FlightDriver.CanRevertToPostInit + ")");
+                FlightDriver.RevertToLaunch();
+            }
+            if (_revertEditorAt >= 0 && Time.realtimeSinceStartup >= _revertEditorAt && HighLogic.LoadedSceneIsFlight && FlightGlobals.ready)
+            {
+                _revertEditorAt = -1f;
+                Log.Info("Auto-revert: reverting to the VAB (can=" + FlightDriver.CanRevertToPrelaunch + ")");
+                FlightDriver.RevertToPrelaunch(EditorFacility.VAB);
             }
             if (_jetpackAt >= 0 && Time.realtimeSinceStartup >= _jetpackAt && HighLogic.LoadedSceneIsFlight && FlightGlobals.ready)
             {

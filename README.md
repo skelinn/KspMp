@@ -187,6 +187,10 @@ Options added for the shared-building, shared-flight and EVA work, on top of tho
     -kspmp-board D            climb back into the nearest craft with a free seat
     -kspmp-evamode frozen|live   pose remote kerbals ourselves (default), or leave KerbalEVA running
     -kspmp-evasync off        do not load other players' kerbals on EVA at all
+    -kspmp-revert D           revert to launch D seconds into the flight
+    -kspmp-reverteditor D     revert to the VAB D seconds into the flight
+    -kspmp-launchafter D      wait D seconds at the space centre before -kspmp-launch (default 3), so one
+                              player can launch after the other's flight has begun
 
 ## Known gaps
 
@@ -224,9 +228,12 @@ Worth knowing before you play, roughly in the order you would hit them.
   player who cannot warp (in the atmosphere, moving on the ground) limits everyone.
 - **Building.** Opening the VAB or SPH gives you your own workbench. Alt+M lists everyone else's under BUILDERS,
   with a Join button; joining sets your own craft aside and hands it back when you Leave. Anyone on a bench can
-  launch it, and that ends the session for everyone on it. The bench is shared whenever it changes, but never
-  while you are holding a part - what you have in hand goes out when you let go of it - and a craft arriving
-  from the other builder leaves whatever you are holding in your hand.
+  launch it, and that ends the session for everyone on it. The bench is shared the instant it changes, but
+  never while you are holding a part - what you have in hand goes out when you let go of it - and a craft
+  arriving from the other builder leaves whatever you are holding in your hand. If you both move parts at the
+  same moment one of the moves can lose (the whole craft is shared, not the edit), so take turns on a part.
+  A craft arriving on an empty bench takes the editor out of its "pick a pod" state, so every part is
+  available to whoever joined, not just the ones KSP allows as a first part.
 - **Flying together.** The pilot simulates the craft; what they stage, toggle or press is mirrored onto every
   copy aboard, so a co-pilot sees the engines light, the chutes open and the escape tower leave at the same
   moment. The pieces that separate are theirs, and arrive as the pilot's own snapshots. The pilot's tank
@@ -247,7 +254,14 @@ Worth knowing before you play, roughly in the order you would hit them.
 - **Nametags** name other players' craft and Kerbals in each player's colour, out to 5 km (1 km for a Kerbal).
   Turn them off in Alt+M.
 - A vessel with nobody's Kerbal aboard is simulated by whoever is nearest; uncrewed probes can be flown by anyone.
-- Pause only pauses your menu; quickload and revert are disabled.
+- Another player's rocket stays in your sky all the way up. KSP deletes any vessel it is not simulating once it
+  is out of physics range and still in the atmosphere; for a vessel somebody else flies that is switched off,
+  since they stream where it is.
+- Pause only pauses your menu, and quickload is disabled. **Revert to launch** and **Revert to VAB/SPH** work
+  for the player flying a craft, as long as nobody else is aboard: everything that flight created since launch
+  (spent stages, a Kerbal on EVA, flags) is withdrawn from the server first, and with revert to launch the
+  rocket is back on the pad for everyone. A co-pilot cannot revert, and a pilot cannot revert out from under a
+  co-pilot; get them to climb out or leave first.
 
 ## Repository layout
 

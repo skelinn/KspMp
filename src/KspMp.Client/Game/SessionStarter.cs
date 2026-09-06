@@ -96,8 +96,10 @@ namespace KspMp.Game
             Log.Info("Starting multiplayer sandbox at UT " + universalTime.ToString("F1"));
             var parameters = GameParameters.GetDefaultParameters(global::Game.Modes.SANDBOX, GameParameters.Preset.Normal);
             parameters.Flight.CanQuickLoad = false;
-            parameters.Flight.CanRestart = false;
-            parameters.Flight.CanLeaveToEditor = false;
+            // Revert to launch / to the editor stay on the pause menu; RevertGuard decides per vessel whether
+            // this player may take them.
+            parameters.Flight.CanRestart = true;
+            parameters.Flight.CanLeaveToEditor = true;
 
             // Same path the stock "Start new game" button takes.
             var game = GamePersistence.CreateNewGame(SaveName, global::Game.Modes.SANDBOX, parameters, "Squad/Flags/default", GameScenes.SPACECENTER, EditorFacility.None);

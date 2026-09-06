@@ -67,11 +67,11 @@ namespace KspMp.Systems
             Registry.GetOrAdd(vesselId).OwnerClientId = 0;
         }
 
-        public void ReleaseAll(string why)
+        public void ReleaseAll(string why, Guid keep = default)
         {
             var mine = new List<Guid>();
             foreach (var remote in Registry.All)
-                if (Registry.IsMine(remote)) mine.Add(remote.Id);
+                if (Registry.IsMine(remote) && remote.Id != keep) mine.Add(remote.Id);
             if (mine.Count == 0) return;
             Log.Info("Releasing authority over " + mine.Count + " vessel(s): " + why);
             foreach (var id in mine) Release(id);

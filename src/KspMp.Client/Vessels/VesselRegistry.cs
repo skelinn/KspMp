@@ -47,8 +47,18 @@ namespace KspMp.Vessels
             return vessel;
         }
 
+        /// <summary>
+        /// Ids of vessels that were removed for good (by the server, or by us). A vessel id never comes back
+        /// legitimately - a relaunch gets a fresh one - so one that does has been dug up by a revert, which
+        /// reloads an old copy of the world, and is a zombie to be discarded rather than a new vessel to claim.
+        /// </summary>
+        private readonly HashSet<Guid> _gone = new HashSet<Guid>();
+
+        public bool WasRemoved(Guid id) => _gone.Contains(id);
+
         public bool Remove(Guid id)
         {
+            _gone.Add(id);
             if (!_vessels.TryGetValue(id, out var vessel)) return false;
             vessel.Replica?.Detach();
             vessel.Replica = null;
@@ -122,6 +132,7 @@ namespace KspMp.Vessels
             foreach (var vessel in _vessels.Values) vessel.Replica?.Detach();
             _vessels.Clear();
             _tombstones.Clear();
+            _gone.Clear();
             VesselImmortal.Reset();
         }
     }

@@ -197,6 +197,60 @@ namespace KspMp.Systems
 
         private readonly HashSet<Guid> _idsMadeUnique = new HashSet<Guid>();
 
+        /// <summary>Vessels this flight claimed as new since it became ready: what a revert makes vanish.</summary>
+        private readonly List<Guid> _createdThisFlight = new List<Guid>();
+
+        /// <summary>
+        /// The vessel a revert to launch brings straight back under the same id. The scene reload that follows
+        /// looks like leaving flight, and must not release it or snapshot its mid-flight state on the way out:
+        /// the other players saw it change hands for a second and then reload, for nothing.
+        /// </summary>
+        private Guid _keepThroughRevert;
+
+        /// <summary>
+        /// The player is about to revert (see RevertGuard). Withdraw from the server everything this flight
+        /// created, and the vessel itself unless the revert brings it back under the same id, and forget the
+        /// persistent ids we made unique so the reloaded vessel gets fresh ones again.
+        /// </summary>
+        public void OnReverting(string what, bool vesselComesBack)
+        {
+            var active = FlightGlobals.ActiveVessel;
+            var withdrawn = 0;
+            for (var i = 0; i < _createdThisFlight.Count; i++)
+            {
+                var id = _createdThisFlight[i];
+                if (vesselComesBack && active != null && id == active.id) continue;
+                // Landed debris has its authority released, so "still ours" is the wrong test: withdraw
+                // everything the server still lists that nobody else has taken over. What somebody else
+                // simulates exists in their world whatever ours reverts to.
+                if (!Registry.IsKnown(id) || Registry.IsOwnedByOther(id)) continue;
+                SendRemove(id, what.ToLowerInvariant());
+                withdrawn++;
+            }
+            if (!vesselComesBack && active != null && Registry.IsMine(active.id) && !_createdThisFlight.Contains(active.id))
+            {
+                SendRemove(active.id, what.ToLowerInvariant());
+                withdrawn++;
+            }
+            _createdThisFlight.Clear();
+            if (active != null) _idsMadeUnique.Remove(active.id);
+            _keepThroughRevert = vesselComesBack && active != null && Registry.IsMine(active.id) ? active.id : Guid.Empty;
+
+            // The revert reloads the world as KSP saved it at launch. Other players' vessels launched since
+            // are not in that save, and their copies in it are stale; every snapshot we hold is applied again
+            // once the scene is back (OnLevelLoaded -> ApplyPending), rather than waiting for the next
+            // periodic one.
+            var refreshed = 0;
+            foreach (var remote in Registry.All)
+            {
+                if (Registry.IsMine(remote) || remote.ProtoDeflated == null) continue;
+                remote.ProtoDirty = true;
+                refreshed++;
+            }
+            Log.Info(what + ": withdrew " + withdrawn + " vessel(s) this flight had created, " + refreshed + " other snapshot(s) will be applied again"
+                     + (vesselComesBack && active != null ? "; " + active.GetDisplayName() + " keeps its id and comes back on the pad" : ""));
+        }
+
         /// <summary>
         /// A launched vessel keeps the persistent ids written in its .craft file, so two players launching the same
         /// craft end up with identical ids. KSP treats a colliding persistent id as the same object and destroys one
@@ -281,7 +335,17 @@ namespace KspMp.Systems
                 _stillNew.Clear();
                 foreach (var vessel in _newVessels)
                 {
-                    if (vessel == null || vessel.id == Guid.Empty || Registry.IsKnown(vessel.id) || Registry.IsTombstoned(vessel.id) || !vessel.loaded) continue;
+                    if (vessel == null || vessel.id == Guid.Empty || Registry.IsKnown(vessel.id) || Registry.IsTombstoned(vessel.id)) continue;
+                    if (Registry.WasRemoved(vessel.id))
+                    {
+                        // A revert reloads the world as it was at launch, which can include vessels that have
+                        // since been removed for everyone (recovered, crashed, withdrawn by their own revert).
+                        // They are not new; claiming them would resurrect them on the server.
+                        Log.Info("Discarding " + vessel.GetDisplayName() + ": it was removed earlier and only came back with a revert");
+                        VesselLoader.Discard(vessel);
+                        continue;
+                    }
+                    if (!vessel.loaded) continue;
                     if (SplitOffSomebodyElses(vessel, out var from))
                     {
                         // Pieces of a vessel someone else simulates are never ours, whenever they came apart: the
@@ -297,6 +361,7 @@ namespace KspMp.Systems
                     Log.Info("New local vessel " + vessel.GetDisplayName() + ": claiming it");
                     Addon.Authority.Request(vessel.id);
                     SendProto(vessel, ProtoReason.Created);
+                    _createdThisFlight.Add(vessel.id);
                 }
                 _newVessels.Clear();
                 _newVessels.AddRange(_stillNew);
@@ -328,6 +393,7 @@ namespace KspMp.Systems
 
         private void OnFlightReady()
         {
+            _createdThisFlight.Clear();   // a new flight: what an earlier one created is not this one's to withdraw
             var active = FlightGlobals.ActiveVessel;
             if (active == null) return;
             if (Registry.IsOwnedByOther(active.id)) return;
@@ -464,14 +530,15 @@ namespace KspMp.Systems
             for (var i = 0; i < loaded.Count; i++)
             {
                 var vessel = loaded[i];
-                if (vessel != null && Registry.IsMine(vessel.id)) SendProto(vessel, ProtoReason.LeavingFlight);
+                if (vessel != null && Registry.IsMine(vessel.id) && vessel.id != _keepThroughRevert) SendProto(vessel, ProtoReason.LeavingFlight);
             }
-            Addon.Authority.ReleaseAll("leaving flight");
+            Addon.Authority.ReleaseAll("leaving flight", _keepThroughRevert);
         }
 
         private void OnLevelLoaded(GameScenes scene)
         {
             _sceneChanging = false;
+            _keepThroughRevert = Guid.Empty;
             ApplyPending();
         }
     }

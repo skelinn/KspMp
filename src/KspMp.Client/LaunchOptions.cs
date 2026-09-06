@@ -20,6 +20,7 @@ namespace KspMp
     ///   -kspmp-allow "id,id"         Steam IDs allowed to join the hosted game
     ///   -kspmp-launch "Ships/VAB/Kerbal X.craft"   launch a craft (path relative to the KSP folder) once in the space center
     ///   -kspmp-site LaunchPad|Runway  launch site for -kspmp-launch (default from the craft folder)
+    ///   -kspmp-launchafter D         wait D seconds at the space center before -kspmp-launch (default 3)
     ///   -kspmp-fly N                 N seconds after launch: SAS on, full throttle, stage once
     ///   -kspmp-warp I:D:S            D seconds after flight starts request warp index I, cancel it S seconds later
     ///   -kspmp-avatar "Name:Trait"   claim this Kerbal on first join (Trait = Pilot, Engineer or Scientist)
@@ -72,6 +73,7 @@ namespace KspMp
         public int HostPort = 7777;
         public ulong[] AllowedSteamIds = new ulong[0];
         public string LaunchCraft;
+        public float LaunchAfterSeconds = 3f;
         public string LaunchSite;
         public float FlyAfterSeconds = -1f;
         public string AvatarName;
@@ -100,6 +102,8 @@ namespace KspMp
         public float EvaAfterSeconds = -1f;
         public float BoardAfterSeconds = -1f;
         public float JetpackAfterSeconds = -1f;
+        public float RevertAfterSeconds = -1f;
+        public float RevertToEditorAfterSeconds = -1f;
         /// <summary>null = leave the setting alone.</summary>
         public bool? EvaSyncOverride;
         public bool EvaLiveMode;
@@ -178,6 +182,9 @@ namespace KspMp
                         break;
                     case "-kspmp-debug":
                         options.Debug = true;
+                        break;
+                    case "-kspmp-launchafter" when i + 1 < args.Length:
+                        if (float.TryParse(args[++i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var launchAfter)) options.LaunchAfterSeconds = launchAfter;
                         break;
                     case "-kspmp-launch" when i + 1 < args.Length:
                         options.LaunchCraft = args[++i];
@@ -274,6 +281,12 @@ namespace KspMp
                         break;
                     case "-kspmp-jetpack" when i + 1 < args.Length:
                         if (float.TryParse(args[++i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var packAfter)) options.JetpackAfterSeconds = packAfter;
+                        break;
+                    case "-kspmp-revert" when i + 1 < args.Length:
+                        if (float.TryParse(args[++i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var revertAfter)) options.RevertAfterSeconds = revertAfter;
+                        break;
+                    case "-kspmp-reverteditor" when i + 1 < args.Length:
+                        if (float.TryParse(args[++i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var revertEditorAfter)) options.RevertToEditorAfterSeconds = revertEditorAfter;
                         break;
                     case "-kspmp-evamode" when i + 1 < args.Length:
                         options.EvaLiveMode = args[++i] == "live";

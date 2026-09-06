@@ -22,7 +22,12 @@ namespace KspMp.Systems
     /// </summary>
     public sealed class EditorSystem : SystemBase
     {
-        public const float SendDebounceSeconds = 0.4f;
+        /// <summary>
+        /// How long after an edit the bench goes out. This used to be 0.4 s, and that window is where edits were
+        /// lost: a snapshot from the other builder applied inside it replaced the craft and destroyed whatever
+        /// had just been put down but not yet sent. Now a put-down part is on the wire on the next frame or so.
+        /// </summary>
+        public const float SendDebounceSeconds = 0.05f;
         public const float PresenceIntervalSeconds = 0.1f;
 
         private readonly Dictionary<int, EditorPresenceMsg> _others = new Dictionary<int, EditorPresenceMsg>();
@@ -126,6 +131,8 @@ namespace KspMp.Systems
         {
             if (Applying || !_joined) return;
             _dirtyAt = Time.realtimeSinceStartup;
+            var held = HeldPart();
+            if (held != null) Log.Info("Bench changed while holding " + held.partInfo.title + "; it goes out when that is put down");
         }
 
         private void OnEditorRestart()
@@ -151,7 +158,11 @@ namespace KspMp.Systems
                 if (node == null) return;
                 var text = ProtoCodec.ToText(node);
                 var hash = HashOf(text);
-                if (hash == _lastSentHash) return;   // nothing actually changed (KSP fires the event generously)
+                if (hash == _lastSentHash)   // nothing actually changed (KSP fires the event generously)
+                {
+                    Log.Info("Nothing new to share: the craft reads the same as what was last sent");
+                    return;
+                }
                 _lastSentHash = hash;
 
                 var raw = Encoding.UTF8.GetBytes(text);
@@ -225,7 +236,17 @@ namespace KspMp.Systems
                     Log.Warn("Could not load the shared craft (revision " + msg.Revision + ")");
                     return;
                 }
+                // An edit made but not yet sent is about to be replaced by the other builder's craft. There is
+                // no merging in a whole-craft model, so the honest thing is to say so, loudly enough to notice.
+                var pendingEdit = _dirtyAt >= 0;
                 ReplaceWorkbench(editor, ship);
+                if (pendingEdit)
+                {
+                    _dirtyAt = -1f;
+                    var who = NameOf(msg.FromClientId);
+                    Log.Warn("The bench from " + who + " arrived while our last change was still going out; that change is gone");
+                    ScreenMessages.PostScreenMessage(who + "'s change arrived on top of yours - check your last edit", 5f, ScreenMessageStyle.UPPER_CENTER);
+                }
                 // Hash what SendSnapshot would hash, not the bytes that arrived. KSP renumbers parts and
                 // reorders them as it loads a craft, so the text we received and the text we would write back
                 // out differ for the very same ship. Storing the received text here meant the guard never
@@ -303,6 +324,39 @@ namespace KspMp.Systems
             // SetBackup early-returns on an empty craft (EditorLogic.cs:7537), so ShipConfig would still hold the
             // old ship and the crew tab below would be reset against it.
             if (partCount == 0) ShipConstruction.ShipConfig = ship.SaveShip();
+
+            // The editor is a state machine, and an empty bench sits in "pick a pod": the parts list greys out
+            // everything that cannot be a root part and most of the editor is locked (EditorLogic.cs:3140-3145),
+            // and only leaving that state for idle lifts the lock and the filter (EditorLogic.cs:3275-3280).
+            // A craft arriving on an empty bench has to make that transition the way KSP's own load does, or the
+            // player who joined is told a strut "cannot be the first part placed" on a bench with fifty parts on
+            // it. The reverse holds when the other builder deletes the pod.
+            // This runs after SetBackup because on_shipLoaded resets the crew tab against ShipConfig, which an
+            // empty bench has never filled in (that was a NullReferenceException in the first test).
+            try
+            {
+                var fsm = editor.fsm;
+                if (fsm != null && fsm.Started)
+                {
+                    if (editor.rootPart != null && fsm.CurrentState == editor.st_podSelect)
+                    {
+                        fsm.RunEvent(editor.on_shipLoaded);
+                        Log.Info("Left the pick-a-pod state: the bench has a root part now");
+                    }
+                    else if (editor.rootPart == null && fsm.CurrentState == editor.st_idle)
+                    {
+                        // Only from idle: with a part in hand (st_place) the drop itself decides what happens.
+                        fsm.RunEvent(editor.on_podDeleted);
+                        Log.Info("Back in the pick-a-pod state: the bench is empty");
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                Log.Exception("Moving the editor out of or into pick-a-pod", e);
+            }
+
+
 
             var manifest = ShipConstruction.ShipManifest;
             var keptCrew = manifest != null && manifest.CrewCount > 0;
