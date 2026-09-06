@@ -42,7 +42,7 @@ namespace KspMp.Harmony
     [HarmonyPatch(typeof(StageManager), nameof(StageManager.ActivateStage), typeof(int))]
     internal static class StageManager_ActivateStage
     {
-        private static bool Prefix()
+        private static bool Prefix(int stage)
         {
             var vessel = FlightGlobals.fetch != null ? FlightGlobals.ActiveVessel : null;
             switch (ControlGate.For(vessel))
@@ -54,7 +54,9 @@ namespace KspMp.Harmony
                     ControlGate.Blocked("staging");
                     return false;
                 default:
-                    if (ControlGate.Echo(vessel)) KspMpAddon.Instance.Control.SendStage(vessel.id, quiet: true);
+                    // The index matters: a co-pilot's copy that fires "whatever is next" by its own count drifts
+                    // from the pilot's within a couple of stages, and then decouples what the pilot did not.
+                    if (ControlGate.Echo(vessel)) KspMpAddon.Instance.Control.SendStage(vessel.id, quiet: true, stage: stage);
                     return true;
             }
         }

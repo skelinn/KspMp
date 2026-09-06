@@ -145,6 +145,12 @@ namespace KspMp.Systems
             // A vessel we sit in but do not simulate is still refreshed when its parts change - see VesselLoader.
             var outcome = VesselLoader.Load(proto, false, !Registry.IsMine(remote));
             remote.ProtoDirty = outcome == VesselLoader.Outcome.Deferred;
+            if (outcome != VesselLoader.Outcome.Deferred && outcome != VesselLoader.Outcome.Failed && proto.protoPartSnapshots != null)
+            {
+                remote.PartIds = remote.PartIds ?? new HashSet<uint>();
+                remote.PartIds.Clear();
+                foreach (var part in proto.protoPartSnapshots) remote.PartIds.Add(part.flightID);
+            }
             if (outcome == VesselLoader.Outcome.Loaded || outcome == VesselLoader.Outcome.Reloaded) Applied++;
             Registry.SyncReplica(remote);
         }
@@ -276,6 +282,16 @@ namespace KspMp.Systems
                 foreach (var vessel in _newVessels)
                 {
                     if (vessel == null || vessel.id == Guid.Empty || Registry.IsKnown(vessel.id) || Registry.IsTombstoned(vessel.id) || !vessel.loaded) continue;
+                    if (SplitOffSomebodyElses(vessel, out var from))
+                    {
+                        // Pieces of a vessel someone else simulates are never ours, whenever they came apart: the
+                        // owner's copy of them arrives as its own snapshot. A timed window missed the ones that
+                        // broke off later, and each of those became a duplicate vessel in the world.
+                        Registry.Tombstone(vessel.id);
+                        Log.Info("Discarding " + vessel.GetDisplayName() + ": its parts belong to " + from.Label + ", which " + NameOf(from.OwnerClientId) + " simulates");
+                        VesselLoader.Discard(vessel);
+                        continue;
+                    }
                     if (!ReadyToAnnounce(vessel, now)) { _stillNew.Add(vessel); continue; }
                     _newSince.Remove(vessel.id);
                     Log.Info("New local vessel " + vessel.GetDisplayName() + ": claiming it");
@@ -381,6 +397,21 @@ namespace KspMp.Systems
             }
             return OrbitIsValid(vessel) && KerbalReady(vessel);
         }
+
+        private bool SplitOffSomebodyElses(Vessel vessel, out RemoteVessel from)
+        {
+            from = null;
+            if (vessel.parts == null || vessel.parts.Count == 0) return false;
+            foreach (var remote in Registry.All)
+            {
+                if (remote.PartIds == null || !Registry.IsOwnedByOther(remote)) continue;
+                for (var i = 0; i < vessel.parts.Count; i++)
+                    if (vessel.parts[i] != null && remote.PartIds.Contains(vessel.parts[i].flightID)) { from = remote; return true; }
+            }
+            return false;
+        }
+
+        private string NameOf(int clientId) => Addon.Players.TryGet(clientId, out var p) ? p.Name : "#" + clientId;
 
         private static bool OrbitIsMissing(ProtoVessel proto)
         {

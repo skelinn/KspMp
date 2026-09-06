@@ -386,6 +386,18 @@ Resources are streamed separately: once a second the owner sends the amounts tha
 fifteen seconds) as `VesselResources`, relayed to everyone aboard, who write them into their tanks
 (`ResourceSyncSystem`). Both clients log a `Fuel check` line every ten seconds for comparing.
 
+Two corrections from the second two-player session. A mirrored stage must carry the stage *index*: the
+co-pilot's copy firing "whatever is next" by its own count drifted from the pilot's within a couple of stages
+and decoupled what the pilot had not (92 parts against 117 before the safety net reloaded it). And a piece
+that splits off a vessel someone else simulates is recognised by its part ids (`RemoteVessel.PartIds`), not by
+a timing window: pieces that broke off later were being claimed as new vessels of ours. The kerbal's jetpack
+effects are streamed as `EvaFx` (flags plus six signed bytes) and lit on the frozen replica through the same
+twelve `FXGroup`s KerbalEVA uses.
+
+Also learned the hard way: `EditorLogic.selectedPart` is not "the part in the hand". It keeps pointing at a
+part after it is attached, so a send gate on "selected is null" blocked every share after the first
+placement. Held means selected *and* not in the ship.
+
 The same flight found why a kerbal on EVA was invisible until its owner left: the vessel's first snapshot was
 taken the frame it was born, before KSP had computed its orbit, and the loader rejected the NaN orbit and
 never retried. New vessels are now announced only once their orbit (and a kerbal's controller) is ready,

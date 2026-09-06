@@ -99,6 +99,7 @@ namespace KspMp
         public float MoveNearAfterSeconds = -1f;
         public float EvaAfterSeconds = -1f;
         public float BoardAfterSeconds = -1f;
+        public float JetpackAfterSeconds = -1f;
         /// <summary>null = leave the setting alone.</summary>
         public bool? EvaSyncOverride;
         public bool EvaLiveMode;
@@ -270,6 +271,9 @@ namespace KspMp
                         break;
                     case "-kspmp-board" when i + 1 < args.Length:
                         if (float.TryParse(args[++i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var boardAfter)) options.BoardAfterSeconds = boardAfter;
+                        break;
+                    case "-kspmp-jetpack" when i + 1 < args.Length:
+                        if (float.TryParse(args[++i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var packAfter)) options.JetpackAfterSeconds = packAfter;
                         break;
                     case "-kspmp-evamode" when i + 1 < args.Length:
                         options.EvaLiveMode = args[++i] == "live";

@@ -175,17 +175,21 @@ namespace KspMp.Shared.Protocol
     {
         public Guid VesselId;
         public int FromClientId;
+        /// <summary>The stage the pilot fired, so a copy fires the same one rather than whatever it thinks is next. -1 = next.</summary>
+        public int Stage;
 
         public void Serialize(NetDataWriter w)
         {
             w.PutGuidRaw(VesselId);
             w.Put(FromClientId);
+            w.Put(Stage);
         }
 
         public void Deserialize(NetDataReader r)
         {
             VesselId = r.GetGuidRaw();
             FromClientId = r.GetInt();
+            Stage = r.GetInt();
         }
     }
 

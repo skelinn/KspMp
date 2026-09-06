@@ -24,6 +24,8 @@ namespace KspMp.Vessels
         public VesselStateMsg LastState;
         /// <summary>Present while another client simulates the vessel and it exists in our game.</summary>
         public Replica Replica;
+        /// <summary>The part ids of the last snapshot loaded, for recognising pieces that split off our copy.</summary>
+        public System.Collections.Generic.HashSet<uint> PartIds;
         public float LastProtoSentAt;
         public float LastStateSentAt;
         /// <summary>Set when we are handed the vessel, cleared once we have actually sent state for it.</summary>

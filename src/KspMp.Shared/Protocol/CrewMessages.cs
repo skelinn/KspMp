@@ -64,4 +64,36 @@ namespace KspMp.Shared.Protocol
             FromClientId = r.GetInt();
         }
     }
+
+    /// <summary>
+    /// What a kerbal's jetpack is doing, from its owner, ten times a second while it is deployed. The six
+    /// numbers are the thrust the kerbal is commanding in its own frame, linear and rotational, scaled to
+    /// -127..127; the receiver lights the same plumes KSP would.
+    /// </summary>
+    public struct EvaFxMsg : INetSerializable
+    {
+        public const byte JetpackDeployed = 1;
+        public const byte HasFuel = 2;
+        public const byte Ragdoll = 4;
+
+        public Guid VesselId;
+        public byte Flags;
+        public sbyte LinX, LinY, LinZ, RotX, RotY, RotZ;
+
+        public void Serialize(NetDataWriter w)
+        {
+            w.PutGuidRaw(VesselId);
+            w.Put(Flags);
+            w.Put(LinX); w.Put(LinY); w.Put(LinZ);
+            w.Put(RotX); w.Put(RotY); w.Put(RotZ);
+        }
+
+        public void Deserialize(NetDataReader r)
+        {
+            VesselId = r.GetGuidRaw();
+            Flags = r.GetByte();
+            LinX = r.GetSByte(); LinY = r.GetSByte(); LinZ = r.GetSByte();
+            RotX = r.GetSByte(); RotY = r.GetSByte(); RotZ = r.GetSByte();
+        }
+    }
 }

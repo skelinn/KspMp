@@ -238,6 +238,13 @@ namespace KspMp.Server
                     Broadcast(MessageId.VesselState, state, Channel.State, Delivery.Sequenced, client.Peer);
                     break;
                 }
+                case MessageId.EvaFx:
+                {
+                    var fx = Envelope.Read<EvaFxMsg>(body);
+                    if (!Authority.IsOwnedBy(fx.VesselId, client.ClientId)) break;
+                    Broadcast(MessageId.EvaFx, fx, Channel.State, Delivery.Sequenced, client.Peer);
+                    break;
+                }
                 case MessageId.VesselResources:
                 {
                     var resources = Envelope.Read<VesselResourcesMsg>(body);

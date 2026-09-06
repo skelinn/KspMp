@@ -61,6 +61,8 @@ namespace KspMp.Shared.Protocol
         // crew: getting in and out of other people's craft
         CrewEva = 700,
         CrewBoard = 701,
+        /// <summary>Owner -> everyone: what a kerbal's jetpack is doing, so the plumes and sound show on other machines.</summary>
+        EvaFx = 702,
 
         // docking
         DockIntent = 800,

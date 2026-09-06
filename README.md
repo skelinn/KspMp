@@ -231,6 +231,8 @@ Worth knowing before you play, roughly in the order you would hit them.
   copy aboard, so a co-pilot sees the engines light, the chutes open and the escape tower leave at the same
   moment. The pieces that separate are theirs, and arrive as the pilot's own snapshots. The pilot's tank
   levels are streamed to everyone aboard once a second, so a co-pilot's gauges read the same as the pilot's.
+- **On EVA.** Everyone sees everyone's Kerbals, with name tags, and a jetpack's plumes and hiss show on every
+  machine: the owner streams what the pack is doing and the others light the same effects KSP would.
 - **Launching together.** Seat your friend's Kerbal in the crew tab on your side and launch. They get a notice
   saying their Kerbal is aboard, with a button to join: at the space centre it also counts down from ten and
   joins on its own; in the VAB it says "Leave the VAB and join", because nothing should drag you out of a build.

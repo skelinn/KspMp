@@ -346,9 +346,9 @@ namespace KspMp.Systems
 
         // ---- relayed discrete actions (sent by co-pilots, applied by the owner) ----
 
-        public void SendStage(Guid vesselId, bool quiet = false)
+        public void SendStage(Guid vesselId, bool quiet = false, int stage = -1)
         {
-            Net.Send(MessageId.Stage, new StageMsg { VesselId = vesselId }, Channel.Control, Delivery.ReliableOrdered);
+            Net.Send(MessageId.Stage, new StageMsg { VesselId = vesselId, Stage = stage }, Channel.Control, Delivery.ReliableOrdered);
             if (!quiet) ScreenMessages.PostScreenMessage("Staging (via " + NameOf(Addon.Vessels.OwnerOf(vesselId)) + ")", 2f, ScreenMessageStyle.UPPER_CENTER);
         }
 
@@ -427,7 +427,14 @@ namespace KspMp.Systems
             var msg = Envelope.Read<StageMsg>(body);
             var vessel = ActionTarget(msg.VesselId, msg.FromClientId, out var mirrored);
             if (vessel == null) return;
-            Apply((mirrored ? "stage fired by " : "stage by ") + NameOf(msg.FromClientId), () => KSP.UI.Screens.StageManager.ActivateNextStage());
+            var stage = msg.Stage;
+            Apply((mirrored ? "stage " + stage + " fired by " : "stage by ") + NameOf(msg.FromClientId), () =>
+            {
+                // Mirroring: fire the very stage the pilot fired. Relaying a co-pilot's press: our own next stage
+                // is the truth, since we are the one simulating this vessel.
+                if (mirrored && stage >= 0) KSP.UI.Screens.StageManager.ActivateStage(stage);
+                else KSP.UI.Screens.StageManager.ActivateNextStage();
+            });
         }
 
         private void OnActionGroup(NetDataReader body)

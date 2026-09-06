@@ -94,7 +94,7 @@ namespace KspMp.Systems
             // snapshot taken mid-drag is the craft with that part missing: the other builder watches it vanish,
             // their own copy of it is destroyed, and when they in turn pick something up the same happens
             // back. The drop or the delete fires onEditorShipModified again, and that is when it goes out.
-            if (_dirtyAt >= 0 && now - _dirtyAt >= SendDebounceSeconds && EditorLogic.SelectedPart == null)
+            if (_dirtyAt >= 0 && now - _dirtyAt >= SendDebounceSeconds && HeldPart() == null)
             {
                 _dirtyAt = -1f;
                 SendSnapshot();
@@ -104,6 +104,20 @@ namespace KspMp.Systems
                 _nextPresenceAt = now + PresenceIntervalSeconds;
                 SendPresence();
             }
+        }
+
+        /// <summary>
+        /// The part in the player's hand, or null. KSP's selectedPart is not the same thing: it keeps pointing at
+        /// a part after it has been attached, so "selected" alone would read as holding for the rest of the
+        /// session and nothing would ever be shared again after the first placement. A part in the hand is
+        /// detached from the ship; a selected part that the ship contains has been put down.
+        /// </summary>
+        internal static Part HeldPart()
+        {
+            var editor = EditorLogic.fetch;
+            var selected = EditorLogic.SelectedPart;
+            if (editor == null || selected == null) return null;
+            return editor.ship != null && editor.ship.Contains(selected) ? null : selected;
         }
 
         // ---- local changes going out ----
@@ -266,7 +280,7 @@ namespace KspMp.Systems
             // Whatever this player is holding is not in any ship - picking a part up detaches it - so the
             // sweep below would destroy it out of their hand. Keep the held part and everything hanging off it;
             // they will attach it to the new craft when they let go, and that attach is what gets shared.
-            var held = EditorLogic.SelectedPart;
+            var held = HeldPart();
             var keep = new HashSet<Part>();
             if (held != null) CollectSubtree(held, keep);
 

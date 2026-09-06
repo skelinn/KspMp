@@ -350,5 +350,19 @@ public class ServerControlTests
         Assert.Equal(123.5f, got.Parts[0].Resources[0].Amount);
         Assert.Empty(carol.Messages<VesselResourcesMsg>());
         Assert.Empty(bob.Messages<VesselResourcesMsg>());
+
+        // The stage carries its index, so the mirror fires the same one.
+        bob.Send(MessageId.Stage, new StageMsg { VesselId = VesselId, Stage = 3 });
+        TestClient.Pump(server, alice, bob, carol);
+        Assert.Equal(3, alice.Last<StageMsg>()!.Value.Stage);
+
+        // A kerbal's jetpack goes to everyone who can see it, from its owner only.
+        var fx = new EvaFxMsg { VesselId = VesselId, Flags = EvaFxMsg.JetpackDeployed | EvaFxMsg.HasFuel, LinY = 100 };
+        bob.Send(MessageId.EvaFx, fx, Channel.State, Delivery.Sequenced);
+        alice.Send(MessageId.EvaFx, fx, Channel.State, Delivery.Sequenced);
+        TestClient.Pump(server, alice, bob, carol);
+        Assert.Equal((sbyte)100, alice.Last<EvaFxMsg>()!.Value.LinY);
+        Assert.Equal((sbyte)100, carol.Last<EvaFxMsg>()!.Value.LinY);
+        Assert.Empty(bob.Messages<EvaFxMsg>());
     }
 }

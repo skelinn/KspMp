@@ -32,6 +32,7 @@ namespace KspMp
         public ResourceSyncSystem Resources { get; private set; }
         public DockSystem Dock { get; private set; }
         public CrewSystem Crew { get; private set; }
+        public EvaFxSystem EvaFx { get; private set; }
         public EditorSystem Editor { get; private set; }
         public NoticeSystem Notices { get; private set; }
         public BuildersSystem Builders { get; private set; }
@@ -53,6 +54,7 @@ namespace KspMp
         private bool _moveNearStarted;
         private float _evaAt = -1f;
         private float _boardAt = -1f;
+        private float _jetpackAt = -1f;
         private float _giveControlAt = -1f;
         private float _requestControlAt = -1f;
         private float _sharedStickAt = -1f;
@@ -125,6 +127,7 @@ namespace KspMp
             Systems.Add(Resources = new ResourceSyncSystem(this));
             Systems.Add(Dock = new DockSystem(this));
             Systems.Add(Crew = new CrewSystem(this));
+            Systems.Add(EvaFx = new EvaFxSystem(this));
             Systems.Add(Builders = new BuildersSystem(this));
             Systems.Add(Editor = new EditorSystem(this));
             Roster.SyncCompleted += TryAutoEnter;
@@ -214,6 +217,8 @@ namespace KspMp
                 _evaAt = Time.realtimeSinceStartup + Launch.EvaAfterSeconds;
             if (scene == GameScenes.FLIGHT && Launch.BoardAfterSeconds >= 0 && _boardAt < 0)
                 _boardAt = Time.realtimeSinceStartup + Launch.BoardAfterSeconds;
+            if (scene == GameScenes.FLIGHT && Launch.JetpackAfterSeconds >= 0 && _jetpackAt < 0)
+                _jetpackAt = Time.realtimeSinceStartup + Launch.JetpackAfterSeconds;
             if (scene == GameScenes.FLIGHT && Launch.GiveControlAfterSeconds >= 0 && _giveControlAt < 0)
                 _giveControlAt = Time.realtimeSinceStartup + Launch.GiveControlAfterSeconds;
             if (scene == GameScenes.FLIGHT && Launch.RequestControlAfterSeconds >= 0 && _requestControlAt < 0)
@@ -917,6 +922,17 @@ namespace KspMp
             {
                 _evaAt = -1f;
                 AutoEva();
+            }
+            if (_jetpackAt >= 0 && Time.realtimeSinceStartup >= _jetpackAt && HighLogic.LoadedSceneIsFlight && FlightGlobals.ready)
+            {
+                _jetpackAt = -1f;
+                var kerbal = FlightGlobals.ActiveVessel;
+                if (kerbal != null && kerbal.isEVA && kerbal.evaController != null)
+                {
+                    Log.Info("Auto-jetpack: deploying " + kerbal.GetDisplayName() + "'s pack");
+                    kerbal.evaController.ToggleJetpack(true);
+                }
+                else Log.Warn("Auto-jetpack: we are not on EVA");
             }
             if (_boardAt >= 0 && Time.realtimeSinceStartup >= _boardAt && HighLogic.LoadedSceneIsFlight && FlightGlobals.ready)
             {
