@@ -66,6 +66,10 @@ namespace KspMp.Shared.Protocol
         EditorSnapshot = 902,
         EditorPresence = 903,
         EditorLaunch = 904,
+        /// <summary>Server -> everyone: who is building where, and on what.</summary>
+        EditorSessionList = 905,
+        /// <summary>Client -> server: put me on this player's workbench (0 = back to my own).</summary>
+        EditorSessionJoin = 906,
 
         // shared control
         CtrlInput = 600,

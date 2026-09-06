@@ -207,7 +207,7 @@ namespace KspMp.Net
 
         private void OnReceived(PeerId from, byte[] buffer, int offset, int length, Channel channel)
         {
-            var reader = new NetDataReader(buffer, offset, length);
+            var reader = new NetDataReader(buffer, offset, offset + length);
             if (!Envelope.TryReadHeader(reader, out var id, out var flags, out _)) return;
             if (!_handlers.TryGetValue(id, out var handler))
             {

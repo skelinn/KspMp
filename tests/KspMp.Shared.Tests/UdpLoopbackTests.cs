@@ -27,7 +27,7 @@ public class UdpLoopbackTests
         };
         client.Received += (_, buffer, offset, length, _) =>
         {
-            var reader = new NetDataReader(buffer, offset, length);
+            var reader = new NetDataReader(buffer, offset, offset + length);
             Assert.True(Envelope.TryReadHeader(reader, out var id, out var flags, out _));
             var body = Envelope.OpenBody(reader, flags);
             switch (id)
@@ -77,7 +77,7 @@ public class UdpLoopbackTests
         };
         client.Received += (_, buffer, offset, length, _) =>
         {
-            var reader = new NetDataReader(buffer, offset, length);
+            var reader = new NetDataReader(buffer, offset, offset + length);
             if (Envelope.TryReadHeader(reader, out var id, out var flags, out _) && id == MessageId.Reject)
                 rejection = Envelope.Read<RejectMsg>(Envelope.OpenBody(reader, flags)).Reason;
         };

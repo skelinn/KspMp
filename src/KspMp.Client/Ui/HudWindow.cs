@@ -85,6 +85,7 @@ namespace KspMp.Ui
                 GUILayout.Label("      " + _addon.Presence.Describe(p.ClientId), Theme.Caption);
             }
 
+            DrawBuilders();
             DrawFlight();
 
             Theme.Separator();
@@ -120,6 +121,82 @@ namespace KspMp.Ui
                 GUILayout.EndHorizontal();
             }
         }
+
+        /// <summary>Every open workbench, with a Join for the ones we could actually walk over to.</summary>
+        private void DrawBuilders()
+        {
+            if (HighLogic.LoadedScene != GameScenes.EDITOR) return;
+            var builders = _addon.Builders;
+            var editor = _addon.Editor;
+            if (builders == null || editor == null || builders.Sessions.Count == 0) return;
+
+            Theme.Separator();
+            GUILayout.Label("BUILDERS", Theme.Head);
+            var me = _addon.Network.ClientId;
+            var myFacility = EditorDriver.editorFacility == EditorFacility.SPH ? Shared.Protocol.EditorFacilityKind.Sph : Shared.Protocol.EditorFacilityKind.Vab;
+
+            for (var i = 0; i < builders.Sessions.Count; i++)
+            {
+                var session = builders.Sessions[i];
+                var mine = session.OwnerClientId == me;
+                var guesting = !editor.OnOwnBench && editor.SessionOwner == session.OwnerClientId;
+                var facility = session.Facility == Shared.Protocol.EditorFacilityKind.Sph ? "SPH" : "VAB";
+                var craft = session.PartCount == 0 || string.IsNullOrEmpty(session.ShipName)
+                    ? Theme.Tint("empty", Theme.Dim)
+                    : "'" + session.ShipName + "'" + Theme.Tint("  " + session.PartCount + " parts", Theme.Dim);
+
+                GUILayout.BeginHorizontal();
+                GUILayout.Label(Theme.Dot(Theme.PlayerColour(session.OwnerClientId)) + "  " + (mine ? "your bench" : NameOf(session.OwnerClientId))
+                                + Theme.Tint("  [" + facility + "]  ", Theme.Dim) + craft, Theme.Value);
+                GUILayout.FlexibleSpace();
+                GUILayout.EndHorizontal();
+
+                if (session.BuilderClientIds != null && session.BuilderClientIds.Length > 1)
+                {
+                    GUILayout.BeginHorizontal();
+                    GUILayout.Space(18);
+                    for (var b = 0; b < session.BuilderClientIds.Length; b++)
+                    {
+                        var id = session.BuilderClientIds[b];
+                        if (id == session.OwnerClientId) continue;
+                        GUILayout.Label(Theme.Dot(Theme.PlayerColour(id)) + " " + NameOf(id), Theme.Chip);
+                    }
+                    GUILayout.FlexibleSpace();
+                    GUILayout.EndHorizontal();
+                }
+
+                GUILayout.BeginHorizontal();
+                GUILayout.Space(18);
+                if (guesting)
+                {
+                    if (GUILayout.Button("Leave", GUILayout.Height(Theme.ControlHeight))) editor.LeaveSession();
+                }
+                else if (mine)
+                {
+                    // Nothing to click on your own bench; the row is there so you can see it exists.
+                }
+                else if (session.Facility != myFacility)
+                {
+                    GUILayout.Label(Theme.Tint("in the " + facility, Theme.Dim), Theme.Chip);
+                }
+                else if (_confirmJoin == session.OwnerClientId)
+                {
+                    GUILayout.Label(Theme.Tint("your craft will be set aside", Theme.Warn), Theme.Chip);
+                    if (GUILayout.Button("Join anyway", Theme.Primary, GUILayout.Height(Theme.ControlHeight))) { editor.JoinSession(session.OwnerClientId); _confirmJoin = 0; }
+                    if (GUILayout.Button("Cancel", GUILayout.Height(Theme.ControlHeight))) _confirmJoin = 0;
+                }
+                else if (GUILayout.Button("Join", GUILayout.Height(Theme.ControlHeight)))
+                {
+                    // Joining replaces what is on your bench, so say so when there is something to lose.
+                    if (editor.OnOwnBench && editor.OwnBenchHasParts()) _confirmJoin = session.OwnerClientId;
+                    else editor.JoinSession(session.OwnerClientId);
+                }
+                GUILayout.FlexibleSpace();
+                GUILayout.EndHorizontal();
+            }
+        }
+
+        private int _confirmJoin;
 
         /// <summary>Who is flying what, and the buttons that move that around.</summary>
         private void DrawFlight()

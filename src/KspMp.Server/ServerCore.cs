@@ -179,7 +179,10 @@ namespace KspMp.Server
         private void OnReceived(PeerId from, byte[] buffer, int offset, int length, Channel channel)
         {
             if (!_clients.TryGetValue(from, out var client) || client.Rejected) return;
-            var reader = new NetDataReader(buffer, offset, length);
+            // LiteNetLib's third argument is the end position, not a length. It merges several small messages
+            // into one datagram, so every message after the first arrives at a non-zero offset - and passing the
+            // length there would cut it short by exactly that offset.
+            var reader = new NetDataReader(buffer, offset, offset + length);
             if (!Envelope.TryReadHeader(reader, out var id, out var flags, out _)) return;
             try
             {
@@ -328,6 +331,9 @@ namespace KspMp.Server
                 case MessageId.EditorLaunch:
                     Editor.HandleLaunch(client, Envelope.Read<EditorLaunchMsg>(body));
                     break;
+                case MessageId.EditorSessionJoin:
+                    Editor.HandleSessionJoin(client, Envelope.Read<EditorSessionJoinMsg>(body));
+                    break;
                 case MessageId.DockIntent:
                     Authority.HandleDockIntent(client, Envelope.Read<DockIntentMsg>(body));
                     break;
@@ -413,6 +419,7 @@ namespace KspMp.Server
                     Send(client.Peer, MessageId.Presence, other.Presence, Channel.Control, Delivery.ReliableOrdered);
             Control.OnClientsChanged();
             Control.SendRolesTo(client);
+            Editor.SendListTo(client);
             Send(client.Peer, MessageId.SyncComplete, new SyncCompleteMsg { Kerbals = Roster.Store.Count, Vessels = Vessels.Count }, Channel.Bulk, Delivery.ReliableOrdered);
             if (!string.IsNullOrEmpty(Config.MessageOfTheDay))
                 Send(client.Peer, MessageId.Chat, new ChatMsg { FromClientId = 0, FromName = "Server", Text = Config.MessageOfTheDay }, Channel.ChatMod, Delivery.ReliableOrdered);

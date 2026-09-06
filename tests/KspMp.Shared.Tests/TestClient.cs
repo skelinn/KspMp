@@ -48,7 +48,7 @@ internal class TestClient
 
     private void OnReceived(PeerId from, byte[] buffer, int offset, int length, Channel channel)
     {
-        var reader = new NetDataReader(buffer, offset, length);
+        var reader = new NetDataReader(buffer, offset, offset + length);
         Assert.True(Envelope.TryReadHeader(reader, out var id, out var flags, out _));
         var body = Envelope.OpenBody(reader, flags);
         object message = id switch
@@ -85,6 +85,7 @@ internal class TestClient
             MessageId.EditorSnapshot => Envelope.Read<EditorSnapshotMsg>(body),
             MessageId.EditorPresence => Envelope.Read<EditorPresenceMsg>(body),
             MessageId.EditorLaunch => Envelope.Read<EditorLaunchMsg>(body),
+            MessageId.EditorSessionList => Envelope.Read<EditorSessionListMsg>(body),
             _ => throw new Xunit.Sdk.XunitException("unexpected message " + id),
         };
         if (message is WelcomeMsg welcome) ClientId = welcome.ClientId;

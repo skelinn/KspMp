@@ -32,6 +32,7 @@ namespace KspMp
         public DockSystem Dock { get; private set; }
         public EditorSystem Editor { get; private set; }
         public NoticeSystem Notices { get; private set; }
+        public BuildersSystem Builders { get; private set; }
         public VesselRegistry Vessels { get; private set; }
         public VesselProtoSystem VesselProto { get; private set; }
         public VesselStateSystem VesselState { get; private set; }
@@ -113,6 +114,7 @@ namespace KspMp
             Systems.Add(Authority = new AuthoritySystem(this));
             Systems.Add(Control = new ControlSystem(this));
             Systems.Add(Dock = new DockSystem(this));
+            Systems.Add(Builders = new BuildersSystem(this));
             Systems.Add(Editor = new EditorSystem(this));
             Roster.SyncCompleted += TryAutoEnter;
             Roster.AvatarChanged += TryAutoEnter;
@@ -163,6 +165,16 @@ namespace KspMp
             {
                 _editorLoadDone = true;
                 StartCoroutine(AutoLoadCraft(Launch.EditorLoadAfterSeconds));
+            }
+            if (scene == GameScenes.EDITOR && Launch.EditorJoinAfterSeconds >= 0 && !_editorJoinDone)
+            {
+                _editorJoinDone = true;
+                StartCoroutine(AutoEditorSession(Launch.EditorJoinAfterSeconds, join: true));
+            }
+            if (scene == GameScenes.EDITOR && Launch.EditorLeaveAfterSeconds >= 0 && !_editorLeaveDone)
+            {
+                _editorLeaveDone = true;
+                StartCoroutine(AutoEditorSession(Launch.EditorLeaveAfterSeconds, join: false));
             }
             if (scene == GameScenes.EDITOR && Launch.EditorDeleteAfterSeconds >= 0 && !_editorDeleteDone)
             {
@@ -587,6 +599,8 @@ namespace KspMp
         private bool _autoEditorDone;
         private bool _editorLoadDone;
         private bool _editorDeleteDone;
+        private bool _editorJoinDone;
+        private bool _editorLeaveDone;
         private bool _editorWatchStarted;
 
         /// <summary>Test harness: open the VAB or SPH so two clients end up on one shared workbench.</summary>
@@ -665,6 +679,22 @@ namespace KspMp
             Log.Info("Auto-editor: deleted " + name + ", " + editor.ship.parts.Count + " part(s) left");
         }
 
+        /// <summary>Joins the first other player's workbench, or goes back to our own.</summary>
+        private System.Collections.IEnumerator AutoEditorSession(float delaySeconds, bool join)
+        {
+            yield return new WaitForSeconds(Mathf.Max(delaySeconds, 0f));
+            if (Editor == null || !Editor.Active) { Log.Warn("Auto-editor: not in an editor session"); yield break; }
+            if (!join) { Log.Info("Auto-editor: leaving the shared workbench"); Editor.LeaveSession(); yield break; }
+            foreach (var session in Builders.Sessions)
+            {
+                if (session.OwnerClientId == Network.ClientId) continue;
+                Log.Info("Auto-editor: joining #" + session.OwnerClientId + "'s workbench");
+                Editor.JoinSession(session.OwnerClientId);
+                yield break;
+            }
+            Log.Warn("Auto-editor: nobody else has a workbench open");
+        }
+
         private System.Collections.IEnumerator EditorWatch(float everySeconds)
         {
             while (HighLogic.LoadedScene == GameScenes.EDITOR)
@@ -692,6 +722,7 @@ namespace KspMp
             }
             catch (Exception e) { hash = "threw " + e.GetBaseException().GetType().Name; }
             Log.Info("Auto-editor: workbench '" + editor.ship.shipName + "' parts=" + parts + " hash=" + hash
+                     + " bench=" + (Editor == null ? "?" : Editor.OnOwnBench ? "own" : "#" + Editor.SessionOwner)
                      + " builders=" + (Editor != null ? Editor.BuilderCount : 0)
                      + " revision=" + (Editor != null ? Editor.Revision : -1)
                      + " sent=" + (Editor != null ? Editor.SnapshotsSent : -1)

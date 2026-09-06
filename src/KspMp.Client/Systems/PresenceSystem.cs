@@ -205,8 +205,14 @@ namespace KspMp.Systems
 
         public string Describe(int clientId)
         {
-            if (clientId == Net.ClientId) return Describe(_mine);
-            return _others.TryGetValue(clientId, out var p) ? Describe(p) : "";
+            var state = clientId == Net.ClientId ? _mine : _others.TryGetValue(clientId, out var p) ? p : default(PresenceMsg);
+            // "in the editor" is true but useless; the builders list knows which bench and what is on it.
+            if (state.State == PresenceState.Editor && Addon.Builders != null)
+            {
+                var built = Addon.Builders.Describe(clientId);
+                if (!string.IsNullOrEmpty(built)) return built;
+            }
+            return Describe(state);
         }
 
         public static string Describe(PresenceMsg p)

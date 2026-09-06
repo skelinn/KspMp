@@ -11,9 +11,14 @@ using UnityEngine;
 namespace KspMp.Systems
 {
     /// <summary>
-    /// Building together in the VAB and SPH. Everyone in the same facility works on one craft: after any local
-    /// change the craft is sent up as a snapshot, and snapshots from the others are loaded into the local editor.
-    /// A change built on a stale revision is refused by the server, which sends the current craft back instead.
+    /// Building together in the VAB and SPH.
+    ///
+    /// Opening an editor opens your own workbench, private until somebody joins it. The Builders list in the HUD
+    /// shows every open bench and offers a Join button; joining stashes whatever you were building and puts the
+    /// other player's craft in front of you, and leaving gives you yours back. Everyone in one session works on
+    /// one craft: after any local change it is sent up as a snapshot, and snapshots from the others are loaded
+    /// into the local editor. A change built on a stale revision is refused by the server, which sends the
+    /// current craft back instead.
     /// </summary>
     public sealed class EditorSystem : SystemBase
     {
@@ -22,6 +27,10 @@ namespace KspMp.Systems
 
         private readonly Dictionary<int, EditorPresenceMsg> _others = new Dictionary<int, EditorPresenceMsg>();
         private EditorFacilityKind _facility;
+        /// <summary>Whose bench we are on: 0 (or our own client id) while we are on our own.</summary>
+        private int _sessionOwner;
+        /// <summary>What we were building before joining somebody else's bench, restored when we leave.</summary>
+        private ConfigNode _stash;
         private bool _joined;
         private int _revision;
         private float _dirtyAt = -1f;
@@ -36,6 +45,9 @@ namespace KspMp.Systems
         public bool Applying { get; private set; }
         public int Revision => _revision;
         public int BuilderCount => _others.Count + 1;
+        /// <summary>Whose bench we are on (0 = our own).</summary>
+        public int SessionOwner => _sessionOwner;
+        public bool OnOwnBench => _sessionOwner == 0 || _sessionOwner == Net.ClientId;
         public int SnapshotsSent { get; private set; }
         public int SnapshotsApplied { get; private set; }
         public IReadOnlyDictionary<int, EditorPresenceMsg> Others => _others;
@@ -51,11 +63,13 @@ namespace KspMp.Systems
             GameEvents.onEditorLoad.Add(OnEditorLoad);
             _facility = EditorDriver.editorFacility == EditorFacility.SPH ? EditorFacilityKind.Sph : EditorFacilityKind.Vab;
             _revision = 0;
+            _sessionOwner = 0;
+            _stash = null;
             _others.Clear();
             _lastSentHash = "";
             Net.Send(MessageId.EditorJoin, new EditorJoinMsg { Facility = _facility }, Channel.Control, Delivery.ReliableOrdered);
             _joined = true;
-            Log.Info("Joined the shared " + _facility + " workbench");
+            Log.Info("Opened our own " + _facility + " workbench");
         }
 
         protected override void OnDeactivate()
@@ -68,6 +82,8 @@ namespace KspMp.Systems
             GameEvents.onEditorRestart.Remove(OnEditorRestart);
             GameEvents.onEditorLoad.Remove(OnEditorLoad);
             _others.Clear();
+            _sessionOwner = 0;
+            _stash = null;
         }
 
         public override void Update()
@@ -130,6 +146,7 @@ namespace KspMp.Systems
                     PartCount = editor.ship.parts != null ? editor.ship.parts.Count : 0,
                     CraftDeflated = craft,
                     ManifestDeflated = Array.Empty<byte>(),
+                    SessionOwnerClientId = _sessionOwner,
                 }, Channel.Bulk, Delivery.ReliableOrdered);
                 SnapshotsSent++;
                 Log.Info("Shared the craft: " + editor.ship.shipName + ", " + (editor.ship.parts != null ? editor.ship.parts.Count : 0) + " part(s), revision " + _revision + " (" + craft.Length + " bytes)");
@@ -152,6 +169,7 @@ namespace KspMp.Systems
                 Holding = held != null,
                 HeldPartName = held != null && held.partInfo != null ? held.partInfo.title : string.Empty,
                 CursorX = cursor.x, CursorY = cursor.y, CursorZ = cursor.z,
+                SessionOwnerClientId = _sessionOwner,
             }, Channel.State, Delivery.Sequenced);
         }
 
@@ -160,7 +178,7 @@ namespace KspMp.Systems
         public void AnnounceLaunch(string shipName, string site, string[] aboardKerbals)
         {
             if (!_joined) return;
-            Net.Send(MessageId.EditorLaunch, new EditorLaunchMsg { Facility = _facility, ShipName = shipName, LaunchSite = site, AboardKerbals = aboardKerbals }, Channel.Control, Delivery.ReliableOrdered);
+            Net.Send(MessageId.EditorLaunch, new EditorLaunchMsg { Facility = _facility, ShipName = shipName, LaunchSite = site, AboardKerbals = aboardKerbals, SessionOwnerClientId = _sessionOwner }, Channel.Control, Delivery.ReliableOrdered);
             Log.Info("Announced the launch of " + shipName + " from " + site + " with " + (aboardKerbals != null ? aboardKerbals.Length : 0) + " kerbal(s) aboard");
         }
 
@@ -169,6 +187,7 @@ namespace KspMp.Systems
         private void OnSnapshot(NetDataReader body)
         {
             var msg = Envelope.Read<EditorSnapshotMsg>(body);
+            if (!IsOurSession(msg.SessionOwnerClientId)) return;
             _revision = msg.Revision;
             if (msg.CraftDeflated == null || msg.CraftDeflated.Length == 0) return;   // our own accepted revision
             var editor = EditorLogic.fetch;
@@ -291,8 +310,110 @@ namespace KspMp.Systems
         private void OnPresence(NetDataReader body)
         {
             var msg = Envelope.Read<EditorPresenceMsg>(body);
-            if (msg.ClientId == 0 || msg.ClientId == Net.ClientId) return;
+            if (msg.ClientId == 0 || msg.ClientId == Net.ClientId || !IsOurSession(msg.SessionOwnerClientId)) return;
             _others[msg.ClientId] = msg;
+        }
+
+        /// <summary>A message addressed to bench <paramref name="owner"/>: is that the bench we are standing at?</summary>
+        private bool IsOurSession(int owner) =>
+            owner == _sessionOwner || (OnOwnBench && (owner == 0 || owner == Net.ClientId));
+
+        /// <summary>
+        /// Go and build on somebody else's bench. Whatever is on ours is stashed rather than thrown away, and
+        /// comes back when we leave; the craft we are joining arrives as an ordinary snapshot.
+        /// </summary>
+        public void JoinSession(int ownerClientId)
+        {
+            if (!_joined || ownerClientId == Net.ClientId || ownerClientId == _sessionOwner) return;
+            _stash = StashWorkbench();
+            _sessionOwner = ownerClientId;
+            _revision = 0;
+            _lastSentHash = "";
+            _others.Clear();
+            Net.Send(MessageId.EditorSessionJoin, new EditorSessionJoinMsg { OwnerClientId = ownerClientId }, Channel.Control, Delivery.ReliableOrdered);
+            Log.Info("Joining " + NameOf(ownerClientId) + "'s workbench" + (_stash != null ? " (ours is stashed)" : ""));
+        }
+
+        /// <summary>Back to our own bench, with whatever we had stashed when we left it.</summary>
+        public void LeaveSession()
+        {
+            if (!_joined || OnOwnBench) return;
+            Log.Info("Leaving " + NameOf(_sessionOwner) + "'s workbench");
+            _sessionOwner = 0;
+            _revision = 0;
+            _lastSentHash = "";
+            _others.Clear();
+            Net.Send(MessageId.EditorSessionJoin, new EditorSessionJoinMsg { OwnerClientId = 0 }, Channel.Control, Delivery.ReliableOrdered);
+            RestoreStash();
+        }
+
+        /// <summary>True when leaving our bench would lose work, so the UI can ask first.</summary>
+        public bool OwnBenchHasParts()
+        {
+            var editor = EditorLogic.fetch;
+            return editor != null && editor.ship != null && editor.ship.parts != null && editor.ship.parts.Count > 0;
+        }
+
+        private ConfigNode StashWorkbench()
+        {
+            var editor = EditorLogic.fetch;
+            if (editor == null || editor.ship == null || editor.ship.parts == null || editor.ship.parts.Count == 0) return null;
+            try
+            {
+                return editor.ship.SaveShip();
+            }
+            catch (Exception e)
+            {
+                Log.Exception("Stashing our craft", e);
+                return null;
+            }
+        }
+
+        private void RestoreStash()
+        {
+            var editor = EditorLogic.fetch;
+            if (editor == null) return;
+            try
+            {
+                Applying = true;
+                var ship = new ShipConstruct();
+                if (_stash != null && ship.LoadShip(_stash.GetNode("ShipConstruct") ?? _stash))
+                {
+                    ReplaceWorkbench(editor, ship);
+                    Log.Info("Restored our own craft: " + ship.shipName + ", " + (ship.parts != null ? ship.parts.Count : 0) + " part(s)");
+                }
+                else
+                {
+                    ReplaceWorkbench(editor, new ShipConstruct());
+                    Log.Info("Back on our own empty workbench");
+                }
+                _lastSentHash = LocalCraftHash();
+            }
+            catch (Exception e)
+            {
+                Log.Exception("Restoring our craft", e);
+            }
+            finally
+            {
+                Applying = false;
+                _stash = null;
+            }
+            // Our bench is ours again and the server has nothing on it, so send what is there now.
+            _dirtyAt = Time.realtimeSinceStartup;
+        }
+
+        /// <summary>The bench we were visiting is gone (its owner left the editor): keep the craft, on our own.</summary>
+        public void OnSessionLost()
+        {
+            if (OnOwnBench) return;
+            var who = NameOf(_sessionOwner);
+            _sessionOwner = 0;
+            _revision = 0;
+            _lastSentHash = "";
+            _others.Clear();
+            _stash = null;
+            Addon.Notices.Post("bench-lost", who + " left the editor; you kept the craft on your own workbench", Ui.Theme.Warn);
+            _dirtyAt = Time.realtimeSinceStartup;
         }
 
         /// <summary>The workbench was launched out from under us; start again from an empty revision.</summary>
