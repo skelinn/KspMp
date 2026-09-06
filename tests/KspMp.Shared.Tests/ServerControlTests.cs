@@ -307,4 +307,32 @@ public class ServerControlTests
         TestClient.Pump(server, alice, bob);
         Assert.False(alice.Messages<VesselRolesMsg>().Last().SharedStick);
     }
+
+    [Fact]
+    public void ThePilotsOwnActionsReachEveryoneAboardAndNobodyElse()
+    {
+        var hub = new LoopbackHub();
+        using var server = NewServer(hub);
+        var alice = JoinWithAvatar(hub, server, "Alice", "Alice Kerman");
+        var bob = JoinWithAvatar(hub, server, "Bob", "Bob Kerman", alice);
+        var carol = JoinWithAvatar(hub, server, "Carol", "Carol Kerman", alice, bob);
+
+        // Bob launches with Alice aboard; Carol is elsewhere.
+        bob.Send(MessageId.VesselProto, Proto(VesselText((10, true, new[] { "Bob Kerman", "Alice Kerman" }))), Channel.Bulk);
+        TestClient.Pump(server, alice, bob, carol);
+        Assert.Equal(bob.ClientId, server.Authority.OwnerOf(VesselId));
+
+        // The pilot stages, presses a part button and toggles a group: Alice mirrors all three, Carol hears nothing,
+        // and nothing comes back to Bob himself.
+        bob.Send(MessageId.Stage, new StageMsg { VesselId = VesselId });
+        bob.Send(MessageId.PartEvent, new PartEventMsg { VesselId = VesselId, PartFlightId = 10, ModuleIndex = 0, EventName = "Deploy" });
+        bob.Send(MessageId.ActionGroup, new ActionGroupMsg { VesselId = VesselId, Group = 1, Toggle = true });
+        TestClient.Pump(server, alice, bob, carol);
+        Assert.Equal(bob.ClientId, alice.Last<StageMsg>()!.Value.FromClientId);
+        Assert.Equal("Deploy", alice.Last<PartEventMsg>()!.Value.EventName);
+        Assert.Equal(1, alice.Last<ActionGroupMsg>()!.Value.Group);
+        Assert.Empty(carol.Messages<StageMsg>());
+        Assert.Empty(carol.Messages<PartEventMsg>());
+        Assert.Empty(bob.Messages<StageMsg>());
+    }
 }

@@ -18,6 +18,8 @@ namespace KspMp.Vessels
         public byte[] ProtoDeflated;
         /// <summary>A snapshot arrived that is not applied to the game yet.</summary>
         public bool ProtoDirty;
+        /// <summary>Do not try to apply the snapshot again before this (realtime); 0 = whenever.</summary>
+        public float NextApplyAt;
         public bool HasState;
         public VesselStateMsg LastState;
         /// <summary>Present while another client simulates the vessel and it exists in our game.</summary>

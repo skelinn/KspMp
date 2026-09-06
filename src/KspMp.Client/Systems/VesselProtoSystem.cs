@@ -19,6 +19,12 @@ namespace KspMp.Systems
 
         private readonly Dictionary<Guid, float> _modifiedAt = new Dictionary<Guid, float>();
         private readonly List<Vessel> _newVessels = new List<Vessel>();
+        private readonly List<Vessel> _stillNew = new List<Vessel>();
+        private readonly List<Vessel> _splitOff = new List<Vessel>();
+        private float _splitOffUntil = -1f;
+        private readonly Dictionary<Guid, float> _newSince = new Dictionary<Guid, float>();
+        /// <summary>How long a new vessel may keep us waiting for a valid orbit before it is announced anyway.</summary>
+        public const float AnnounceGraceSeconds = 3f;
         private bool _sceneChanging;
         private bool _loggedSample;
 
@@ -118,7 +124,26 @@ namespace KspMp.Systems
                 remote.ProtoDirty = false;
                 return;
             }
-            var outcome = VesselLoader.Load(proto, false);
+            if (OrbitIsMissing(proto))
+            {
+                // Announced before KSP had given it an orbit - a kerbal stepping out of a hatch does that. The
+                // owner's state stream carries a good one within half a second, so use that rather than let the
+                // loader reject the vessel, which is how a kerbal on EVA stayed invisible until its owner left.
+                if (remote.HasState)
+                {
+                    FillOrbitFrom(proto, remote.LastState);
+                    Log.Info("Snapshot of " + remote.Label + " has no orbit; took the one from its latest state");
+                }
+                else
+                {
+                    if (remote.NextApplyAt <= 0f) Log.Info("Snapshot of " + remote.Label + " has no orbit yet; waiting for a state");
+                    remote.NextApplyAt = Time.realtimeSinceStartup + 0.5f;
+                    return;
+                }
+            }
+            remote.NextApplyAt = 0f;
+            // A vessel we sit in but do not simulate is still refreshed when its parts change - see VesselLoader.
+            var outcome = VesselLoader.Load(proto, false, !Registry.IsMine(remote));
             remote.ProtoDirty = outcome == VesselLoader.Outcome.Deferred;
             if (outcome == VesselLoader.Outcome.Loaded || outcome == VesselLoader.Outcome.Reloaded) Applied++;
             Registry.SyncReplica(remote);
@@ -129,10 +154,11 @@ namespace KspMp.Systems
         {
             if (!VesselLoader.GameReady) return;
             var budget = MaxLoadsPerFrame;
+            var now = Time.realtimeSinceStartup;
             foreach (var remote in Registry.All)
             {
                 if (budget == 0) break;
-                if (!remote.ProtoDirty || Registry.IsMine(remote)) continue;
+                if (!remote.ProtoDirty || Registry.IsMine(remote) || remote.NextApplyAt > now) continue;
                 TryApply(remote);
                 budget--;
             }
@@ -242,17 +268,22 @@ namespace KspMp.Systems
             ApplyPending();
             if (!HighLogic.LoadedSceneIsFlight || !FlightGlobals.ready) return;
             var now = Time.realtimeSinceStartup;
+            DiscardSplitOff();
 
             if (_newVessels.Count > 0)
             {
+                _stillNew.Clear();
                 foreach (var vessel in _newVessels)
                 {
                     if (vessel == null || vessel.id == Guid.Empty || Registry.IsKnown(vessel.id) || Registry.IsTombstoned(vessel.id) || !vessel.loaded) continue;
+                    if (!ReadyToAnnounce(vessel, now)) { _stillNew.Add(vessel); continue; }
+                    _newSince.Remove(vessel.id);
                     Log.Info("New local vessel " + vessel.GetDisplayName() + ": claiming it");
                     Addon.Authority.Request(vessel.id);
                     SendProto(vessel, ProtoReason.Created);
                 }
                 _newVessels.Clear();
+                _newVessels.AddRange(_stillNew);
             }
 
             if (_modifiedAt.Count > 0)
@@ -302,8 +333,81 @@ namespace KspMp.Systems
         private void OnVesselCreate(Vessel vessel)
         {
             if (vessel == null || VesselLoader.IsLoadingRemote || !HighLogic.LoadedSceneIsFlight || !FlightGlobals.ready) return;
+            if (Time.realtimeSinceStartup < _splitOffUntil)
+            {
+                Registry.Tombstone(vessel.id);
+                _splitOff.Add(vessel);
+                return;
+            }
             _newVessels.Add(vessel);
         }
+
+        /// <summary>
+        /// We are about to mirror a stage, a decoupler or a jettison on a vessel somebody else simulates, and
+        /// KSP will split pieces off our copy of it. Those pieces are not ours to announce: the owner's real ones
+        /// arrive as their own snapshots, and claiming ours would put every spent stage in the world twice. For
+        /// the next moment, anything KSP creates locally is discarded instead.
+        /// </summary>
+        public void ExpectSplitOff(float seconds) => _splitOffUntil = Time.realtimeSinceStartup + seconds;
+
+        private void DiscardSplitOff()
+        {
+            if (_splitOff.Count == 0) return;
+            foreach (var vessel in _splitOff)
+            {
+                if (vessel == null) continue;
+                if (vessel.isActiveVessel) { Log.Warn("Not discarding " + vessel.GetDisplayName() + ": it became the active vessel"); continue; }
+                Log.Info("Discarding " + vessel.GetDisplayName() + ": it split off a vessel someone else simulates, and their copy of it arrives as its own snapshot");
+                VesselLoader.Discard(vessel);
+            }
+            _splitOff.Clear();
+        }
+
+        /// <summary>
+        /// A vessel is announced with a snapshot, and a snapshot taken the frame a vessel is born is not worth
+        /// having. A kerbal stepping out of a hatch is a vessel whose orbit KSP has not computed yet, so the
+        /// snapshot said NaN where the orbit should be, and everyone else's loader rejected it as invalid - and
+        /// then never saw that kerbal until its owner left the flight. Wait for the orbit, and for a kerbal's
+        /// controller to say it is ready, but not forever: a vessel that never gets there is still announced.
+        /// </summary>
+        private bool ReadyToAnnounce(Vessel vessel, float now)
+        {
+            if (!_newSince.TryGetValue(vessel.id, out var since)) _newSince[vessel.id] = since = now;
+            if (now - since >= AnnounceGraceSeconds)
+            {
+                Log.Warn("Announcing " + vessel.GetDisplayName() + " although it never settled: orbit "
+                         + (OrbitIsValid(vessel) ? "ok" : "invalid") + (vessel.isEVA ? ", kerbal " + (KerbalReady(vessel) ? "ready" : "not ready") : ""));
+                return true;
+            }
+            return OrbitIsValid(vessel) && KerbalReady(vessel);
+        }
+
+        private static bool OrbitIsMissing(ProtoVessel proto)
+        {
+            var o = proto.orbitSnapShot;
+            return o == null || double.IsNaN(o.semiMajorAxis) || double.IsNaN(o.eccentricity) || double.IsNaN(o.inclination)
+                   || double.IsNaN(o.meanAnomalyAtEpoch) || double.IsNaN(o.epoch) || double.IsInfinity(o.semiMajorAxis);
+        }
+
+        private static void FillOrbitFrom(ProtoVessel proto, VesselStateMsg state)
+        {
+            var bodies = FlightGlobals.Bodies;
+            var body = bodies != null && state.BodyIndex < bodies.Count ? bodies[state.BodyIndex] : null;
+            if (body == null) return;
+            var orbit = new Orbit();
+            orbit.SetOrbit(state.Inclination, state.Eccentricity, state.SemiMajorAxis, state.Lan, state.ArgumentOfPeriapsis, state.MeanAnomalyAtEpoch, state.Epoch, body);
+            proto.orbitSnapShot = new OrbitSnapshot(orbit);
+        }
+
+        private static bool OrbitIsValid(Vessel vessel)
+        {
+            var orbit = vessel.orbitDriver != null ? vessel.orbitDriver.orbit : null;
+            return orbit != null && orbit.referenceBody != null
+                   && !double.IsNaN(orbit.semiMajorAxis) && !double.IsNaN(orbit.eccentricity) && !double.IsNaN(orbit.inclination)
+                   && !double.IsNaN(orbit.meanAnomalyAtEpoch) && !double.IsNaN(orbit.epoch) && !double.IsInfinity(orbit.semiMajorAxis);
+        }
+
+        private static bool KerbalReady(Vessel vessel) => !vessel.isEVA || vessel.evaController == null || vessel.evaController.Ready;
 
         private void OnVesselWillDestroy(Vessel vessel)
         {

@@ -23,6 +23,20 @@ namespace KspMp.Harmony
         {
             ScreenMessages.PostScreenMessage("You are not aboard this vessel (" + what + ")", 2f, ScreenMessageStyle.UPPER_CENTER);
         }
+
+        /// <summary>
+        /// We fly this vessel and somebody else is aboard. They see the throttle we stream, but a stage, an
+        /// action group or a part button only ever changed our copy: a rocket whose engines never lit, whose
+        /// chutes never opened and whose escape tower never left is what a co-pilot had been looking at. So the
+        /// action runs here and is also sent, for them to mirror on theirs.
+        /// </summary>
+        public static bool Echo(Vessel vessel)
+        {
+            var addon = KspMpAddon.Instance;
+            if (addon == null || vessel == null || addon.Network == null || !addon.Network.IsConnected || addon.Control == null) return false;
+            if (ControlSystem.ApplyingRemoteAction) return false;
+            return addon.Vessels.IsMine(vessel.id) && addon.Control.OthersAboard(vessel.id);
+        }
     }
 
     [HarmonyPatch(typeof(StageManager), nameof(StageManager.ActivateStage), typeof(int))]
@@ -40,6 +54,7 @@ namespace KspMp.Harmony
                     ControlGate.Blocked("staging");
                     return false;
                 default:
+                    if (ControlGate.Echo(vessel)) KspMpAddon.Instance.Control.SendStage(vessel.id, quiet: true);
                     return true;
             }
         }
@@ -60,6 +75,7 @@ namespace KspMp.Harmony
                     ControlGate.Blocked(group.ToString());
                     return false;
                 default:
+                    if (ControlGate.Echo(vessel)) KspMpAddon.Instance.Control.SendActionGroup(vessel.id, group, true, false);
                     return true;
             }
         }
@@ -79,6 +95,7 @@ namespace KspMp.Harmony
                 case ControlGate.Verdict.Blocked:
                     return false;
                 default:
+                    if (ControlGate.Echo(vessel)) KspMpAddon.Instance.Control.SendSasMode(vessel.id, (int)mode, true);
                     return true;
             }
         }
@@ -106,6 +123,13 @@ namespace KspMp.Harmony
                     ControlGate.Blocked("part action");
                     return false;
                 default:
+                    if (ControlGate.Echo(vessel))
+                    {
+                        var module = __instance.partModule;
+                        var index = module != null ? part.Modules.IndexOf(module) : -1;
+                        var evt = __instance.evt;
+                        if (evt != null) KspMpAddon.Instance.Control.SendPartEvent(vessel.id, part.flightID, index, evt.name, quiet: true);
+                    }
                     return true;
             }
         }

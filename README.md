@@ -212,9 +212,10 @@ Worth knowing before you play, roughly in the order you would hit them.
   is also why neither side can undock.
 - **Crew manifests are local.** Only the launcher's seating counts: the manifest is not synced, so seat your
   friend's Kerbal on your side before you launch, not theirs.
-- **A co-pilot's own copy of the craft is not reloaded while they fly it.** Snapshots of the active vessel are
-  ignored, so after the pilot stages, a co-pilot may still see the spent stage attached until they leave the
-  flight. Everything else about the craft stays in step.
+- **A co-pilot's copy of the craft keeps its own fuel.** The pilot's staging, action groups, SAS and part
+  buttons are mirrored onto everyone aboard, and the copy is reloaded if its parts ever differ from the
+  pilot's, but resources are not synced onto the vessel you sit in: a co-pilot's gauges drain at their own
+  rate and can disagree with the pilot's.
 - **Stock docking magnets do not fire on a teleported approach.** The test harness closes the last centimetres
   itself, through `ModuleDockingNode.DockToVessel`, which is what the mod patches. A hand-flown dock has not been
   tried, so it is not known whether this affects normal play or only the harness.
@@ -227,7 +228,12 @@ Worth knowing before you play, roughly in the order you would hit them.
   player who cannot warp (in the atmosphere, moving on the ground) limits everyone.
 - **Building.** Opening the VAB or SPH gives you your own workbench. Alt+M lists everyone else's under BUILDERS,
   with a Join button; joining sets your own craft aside and hands it back when you Leave. Anyone on a bench can
-  launch it, and that ends the session for everyone on it.
+  launch it, and that ends the session for everyone on it. The bench is shared whenever it changes, but never
+  while you are holding a part - what you have in hand goes out when you let go of it - and a craft arriving
+  from the other builder leaves whatever you are holding in your hand.
+- **Flying together.** The pilot simulates the craft; what they stage, toggle or press is mirrored onto every
+  copy aboard, so a co-pilot sees the engines light, the chutes open and the escape tower leave at the same
+  moment. The pieces that separate are theirs, and arrive as the pilot's own snapshots.
 - **Launching together.** Seat your friend's Kerbal in the crew tab on your side and launch. They get a notice
   saying their Kerbal is aboard, with a button to join: at the space centre it also counts down from ten and
   joins on its own; in the VAB it says "Leave the VAB and join", because nothing should drag you out of a build.

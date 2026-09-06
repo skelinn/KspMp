@@ -73,6 +73,14 @@ namespace KspMp.Systems
         }
 
         public bool IAmAboard(Guid vesselId) => IsAboard(vesselId, Net.ClientId);
+
+        /// <summary>Is anyone besides us aboard? Then our actions on the vessel are worth echoing to them.</summary>
+        public bool OthersAboard(Guid vesselId)
+        {
+            if (!_roles.TryGetValue(vesselId, out var r) || r.AboardClientIds == null) return false;
+            for (var i = 0; i < r.AboardClientIds.Length; i++) if (r.AboardClientIds[i] != Net.ClientId) return true;
+            return false;
+        }
         public bool IAmPilot(Guid vesselId) => Net.ClientId != 0 && PilotOf(vesselId) == Net.ClientId;
 
         /// <summary>What we may do with the active vessel: owner, co-pilot, or spectator.</summary>
@@ -338,10 +346,10 @@ namespace KspMp.Systems
 
         // ---- relayed discrete actions (sent by co-pilots, applied by the owner) ----
 
-        public void SendStage(Guid vesselId)
+        public void SendStage(Guid vesselId, bool quiet = false)
         {
             Net.Send(MessageId.Stage, new StageMsg { VesselId = vesselId }, Channel.Control, Delivery.ReliableOrdered);
-            ScreenMessages.PostScreenMessage("Staging (via " + NameOf(Addon.Vessels.OwnerOf(vesselId)) + ")", 2f, ScreenMessageStyle.UPPER_CENTER);
+            if (!quiet) ScreenMessages.PostScreenMessage("Staging (via " + NameOf(Addon.Vessels.OwnerOf(vesselId)) + ")", 2f, ScreenMessageStyle.UPPER_CENTER);
         }
 
         public void SendActionGroup(Guid vesselId, KSPActionGroup group, bool toggle, bool value)
@@ -354,10 +362,10 @@ namespace KspMp.Systems
             Net.Send(MessageId.SasMode, new SasModeMsg { VesselId = vesselId, Mode = mode, Enabled = enabled }, Channel.Control, Delivery.ReliableOrdered);
         }
 
-        public void SendPartEvent(Guid vesselId, uint partFlightId, int moduleIndex, string eventName)
+        public void SendPartEvent(Guid vesselId, uint partFlightId, int moduleIndex, string eventName, bool quiet = false)
         {
             Net.Send(MessageId.PartEvent, new PartEventMsg { VesselId = vesselId, PartFlightId = partFlightId, ModuleIndex = moduleIndex, EventName = eventName }, Channel.Control, Delivery.ReliableOrdered);
-            ScreenMessages.PostScreenMessage(eventName + " (via " + NameOf(Addon.Vessels.OwnerOf(vesselId)) + ")", 2f, ScreenMessageStyle.UPPER_CENTER);
+            if (!quiet) ScreenMessages.PostScreenMessage(eventName + " (via " + NameOf(Addon.Vessels.OwnerOf(vesselId)) + ")", 2f, ScreenMessageStyle.UPPER_CENTER);
         }
 
         private void OnRoles(NetDataReader body)
@@ -390,11 +398,26 @@ namespace KspMp.Systems
             _ownerStateAt = Time.realtimeSinceStartup;
         }
 
-        private Vessel OwnedActiveVessel(Guid vesselId)
+        /// <summary>
+        /// The vessel an incoming action applies to, or null. Two directions come through here. A co-pilot's
+        /// action on a vessel we simulate: we apply it, and the result streams back to them. And the pilot's own
+        /// action on the vessel we sit in as co-pilot: we mirror it, so our copy of the rocket does what theirs
+        /// just did. In the second case KSP may split pieces off our copy - a spent stage, an escape tower - and
+        /// those are discarded rather than announced, because the owner's real ones arrive as snapshots.
+        /// </summary>
+        private Vessel ActionTarget(Guid vesselId, int fromClientId, out bool mirrored)
         {
+            mirrored = false;
             var vessel = ActiveVesselOrNull;
-            if (vessel == null || vessel.id != vesselId || !Addon.Vessels.IsMine(vesselId)) return null;
-            return vessel;
+            if (vessel == null || vessel.id != vesselId) return null;
+            if (Addon.Vessels.IsMine(vesselId)) return vessel;
+            if (fromClientId != 0 && Addon.Vessels.OwnerOf(vesselId) == fromClientId)
+            {
+                mirrored = true;
+                Addon.VesselProto.ExpectSplitOff(1f);
+                return vessel;
+            }
+            return null;
         }
 
         private Vessel ActiveVesselOrNull => HighLogic.LoadedSceneIsFlight && FlightGlobals.fetch != null ? FlightGlobals.ActiveVessel : null;
@@ -402,15 +425,15 @@ namespace KspMp.Systems
         private void OnStage(NetDataReader body)
         {
             var msg = Envelope.Read<StageMsg>(body);
-            var vessel = OwnedActiveVessel(msg.VesselId);
+            var vessel = ActionTarget(msg.VesselId, msg.FromClientId, out var mirrored);
             if (vessel == null) return;
-            Apply("stage by " + NameOf(msg.FromClientId), () => KSP.UI.Screens.StageManager.ActivateNextStage());
+            Apply((mirrored ? "stage fired by " : "stage by ") + NameOf(msg.FromClientId), () => KSP.UI.Screens.StageManager.ActivateNextStage());
         }
 
         private void OnActionGroup(NetDataReader body)
         {
             var msg = Envelope.Read<ActionGroupMsg>(body);
-            var vessel = OwnedActiveVessel(msg.VesselId);
+            var vessel = ActionTarget(msg.VesselId, msg.FromClientId, out _);
             if (vessel == null) return;
             var group = (KSPActionGroup)msg.Group;
             Apply("action group " + group + " by " + NameOf(msg.FromClientId), () =>
@@ -423,7 +446,7 @@ namespace KspMp.Systems
         private void OnSasMode(NetDataReader body)
         {
             var msg = Envelope.Read<SasModeMsg>(body);
-            var vessel = OwnedActiveVessel(msg.VesselId);
+            var vessel = ActionTarget(msg.VesselId, msg.FromClientId, out _);
             if (vessel == null || vessel.Autopilot == null) return;
             Apply("SAS mode " + (VesselAutopilot.AutopilotMode)msg.Mode + " by " + NameOf(msg.FromClientId), () =>
             {
@@ -435,7 +458,7 @@ namespace KspMp.Systems
         private void OnPartEvent(NetDataReader body)
         {
             var msg = Envelope.Read<PartEventMsg>(body);
-            var vessel = OwnedActiveVessel(msg.VesselId);
+            var vessel = ActionTarget(msg.VesselId, msg.FromClientId, out _);
             if (vessel == null) return;
             Part part = null;
             for (var i = 0; i < vessel.parts.Count; i++)

@@ -50,6 +50,10 @@ namespace KspMp.Systems
         /// </summary>
         public Notice Post(string key, string text, Color colour, Action[] actions = null, float ttlSeconds = 15f)
         {
+            // The same notice re-posted with the same words (its buttons refreshed, say) is not news: it is
+            // replaced without being announced again in the log, on screen and in chat.
+            var repeat = false;
+            for (var i = 0; i < _notices.Count && !repeat; i++) repeat = _notices[i].Key == key && _notices[i].Text == text;
             Dismiss(key);
             var notice = new Notice
             {
@@ -60,6 +64,7 @@ namespace KspMp.Systems
                 ExpiresAt = ttlSeconds > 0 ? Time.realtimeSinceStartup + ttlSeconds : float.MaxValue,
             };
             _notices.Add(notice);
+            if (repeat) return notice;
             Log.Info("Notice: " + text);
             try
             {

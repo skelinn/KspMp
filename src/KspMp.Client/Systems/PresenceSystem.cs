@@ -149,7 +149,9 @@ namespace KspMp.Systems
             // countdown would interrupt something they were doing on purpose.
             if (ready && idleAtBase && Time.realtimeSinceStartup - _sceneEnteredAt >= 3f)
             {
-                invite.AutoAt = Time.realtimeSinceStartup + AutoJoinSeconds;
+                // Re-raising the notice (the craft arriving, a scene settling) must not restart a countdown
+                // that is already running, or a player idle at the space centre would never actually get pulled in.
+                if (invite.AutoAt < 0f) invite.AutoAt = Time.realtimeSinceStartup + AutoJoinSeconds;
                 notice.CountdownUntil = invite.AutoAt;
                 notice.CountdownText = "joining";
                 notice.OnCountdown = () => JoinFlight(invite.VesselId);
@@ -255,8 +257,11 @@ namespace KspMp.Systems
                 if (Invite != null && Invite.VesselId != Guid.Empty && Addon.Launch != null && Addon.Launch.JoinFlightAutomatically) JoinFlight(Invite.VesselId);
             }
 
-            // The camera follows our Kerbal: if they sit in a loaded vessel that is not active, switch to it.
-            if (HighLogic.LoadedSceneIsFlight && FlightGlobals.ready && avatarVessel != null && avatarVessel.loaded && FlightGlobals.ActiveVessel != avatarVessel && _lastSnappedTo != avatarVessel.id)
+            // The camera follows our Kerbal: if they sit in a loaded vessel that is not active, switch to it -
+            // unless what we are flying is ours. Taking Jeb out for a walk is flying a vessel we own, and being
+            // yanked back into the pod one second later because "our Kerbal is aboard" is not following anyone.
+            var flyingOurOwn = HighLogic.LoadedSceneIsFlight && FlightGlobals.ActiveVessel != null && Addon.Vessels.IsMine(FlightGlobals.ActiveVessel.id);
+            if (HighLogic.LoadedSceneIsFlight && FlightGlobals.ready && avatarVessel != null && avatarVessel.loaded && FlightGlobals.ActiveVessel != avatarVessel && !flyingOurOwn && _lastSnappedTo != avatarVessel.id)
             {
                 _lastSnappedTo = avatarVessel.id;
                 Log.Info("Switching to " + avatarVessel.GetDisplayName() + " because our Kerbal is aboard");

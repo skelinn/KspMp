@@ -122,6 +122,7 @@ namespace KspMp.Vessels
             foreach (var vessel in _vessels.Values) vessel.Replica?.Detach();
             _vessels.Clear();
             _tombstones.Clear();
+            VesselImmortal.Reset();
         }
     }
 }

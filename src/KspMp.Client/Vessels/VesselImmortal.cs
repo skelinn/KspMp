@@ -16,8 +16,21 @@ namespace KspMp.Vessels
         }
 
         private static readonly Dictionary<Part, Saved> SavedValues = new Dictionary<Part, Saved>();
+        /// <summary>
+        /// Which vessels are replicas right now, by id. This used to be read back off the root part's crash
+        /// tolerance, and for a packed piece of debris that probe never agreed with what had been set: the replica
+        /// re-immortalised it every physics step and said so in the log - 5,666 times in one 85-second flight.
+        /// </summary>
+        private static readonly HashSet<System.Guid> Immortal = new HashSet<System.Guid>();
 
-        public static bool IsImmortal(Vessel vessel) => vessel != null && vessel.rootPart != null && float.IsPositiveInfinity(vessel.rootPart.crashTolerance);
+        public static bool IsImmortal(Vessel vessel) => vessel != null && Immortal.Contains(vessel.id);
+
+        /// <summary>The registry was wiped (scene change, disconnect): nothing is a replica any more.</summary>
+        public static void Reset()
+        {
+            Immortal.Clear();
+            SavedValues.Clear();
+        }
 
         /// <summary>
         /// A kerbal is not a rocket: KerbalEVA runs its own state machine every frame, so a replica kerbal
@@ -47,7 +60,14 @@ namespace KspMp.Vessels
         public static void Set(Vessel vessel, bool immortal)
         {
             if (vessel == null) return;
-            if (vessel.rootPart != null && float.IsPositiveInfinity(vessel.rootPart.crashTolerance) == immortal) return;
+            if (Immortal.Contains(vessel.id) == immortal)
+            {
+                // Already so. KSP can still hand a part fresh numbers (a packed vessel unpacking, a part
+                // re-initialised), so keep them topped up - quietly, this runs every physics step.
+                if (immortal && vessel.loaded && vessel.parts != null) Harden(vessel);
+                return;
+            }
+            if (immortal) Immortal.Add(vessel.id); else Immortal.Remove(vessel.id);
 
             var buoyancy = vessel.GetComponent<PartBuoyancy>();
             if (buoyancy) buoyancy.enabled = !immortal;
@@ -59,17 +79,11 @@ namespace KspMp.Vessels
 
             if (!vessel.loaded || vessel.parts == null) return;
             Log.Info("Vessel " + vessel.GetDisplayName() + " is now " + (immortal ? "immortal (replica)" : "mortal (ours)"));
+            if (immortal) { Harden(vessel); return; }
             foreach (var part in vessel.parts)
             {
                 if (part == null) continue;
-                if (immortal)
-                {
-                    if (!SavedValues.ContainsKey(part))
-                        SavedValues[part] = new Saved { CrashTolerance = part.crashTolerance, MaxPressure = part.maxPressure };
-                    part.crashTolerance = float.PositiveInfinity;
-                    part.maxPressure = double.PositiveInfinity;
-                }
-                else if (SavedValues.TryGetValue(part, out var saved))
+                if (SavedValues.TryGetValue(part, out var saved))
                 {
                     part.crashTolerance = saved.CrashTolerance;
                     part.maxPressure = saved.MaxPressure;
@@ -80,6 +94,18 @@ namespace KspMp.Vessels
                     part.crashTolerance = part.partInfo != null && part.partInfo.partPrefab != null ? part.partInfo.partPrefab.crashTolerance : 9f;
                     part.maxPressure = part.partInfo != null && part.partInfo.partPrefab != null ? part.partInfo.partPrefab.maxPressure : 4000.0;
                 }
+            }
+        }
+
+        private static void Harden(Vessel vessel)
+        {
+            foreach (var part in vessel.parts)
+            {
+                if (part == null || float.IsPositiveInfinity(part.crashTolerance)) continue;
+                if (!SavedValues.ContainsKey(part))
+                    SavedValues[part] = new Saved { CrashTolerance = part.crashTolerance, MaxPressure = part.maxPressure };
+                part.crashTolerance = float.PositiveInfinity;
+                part.maxPressure = double.PositiveInfinity;
             }
         }
     }

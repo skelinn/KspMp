@@ -366,3 +366,25 @@ cannot exercise P2P against each other, so none of this can be verified the way 
 - Publicizer pinned to 2.2.1 (known good with KSP); bump later.
 - ~~Steam transport bundles Steamworks.NET rather than reusing KSP's Steam controller plugin.~~ Wrong on both counts; see the Steam findings below.
 - Science/career sync, tourist/rescue contract handling and mod-control manifests are all M8+.
+
+## A co-pilot's copy of the rocket (investigated 2026-09-06)
+
+The first two-player flight showed a co-pilot whose engines never lit and whose escape tower never left,
+while the physics were right. The active vessel is never reloaded from snapshots (it is the seat the player
+is in), and a stage, a chute or an engine ignition does not fire `onVesselWasModified` anyway, so nothing
+about the pilot's actions ever reached the copy the co-pilot was looking at.
+
+What ships: the pilot's discrete actions - `Stage`, `ActionGroup`, `SasMode`, `PartEvent` - are echoed by
+the Harmony prefixes when we own the vessel and someone else is aboard (`ControlGate.Echo`), relayed by the
+server to everyone aboard (`ControlService.RelayActionToAboard`), and applied on their copy by the same
+handlers that apply a co-pilot's relayed action on the owner (`ControlSystem.ActionTarget`, mirrored mode).
+A mirrored stage splits pieces off the local copy that are not ours to announce, so for a second afterwards
+anything KSP creates locally is discarded (`VesselProtoSystem.ExpectSplitOff`) and the owner's real debris
+arrives as its own snapshots. As a safety net, a snapshot of the vessel we sit in that has a different set of
+parts (or crew) reloads it through the docking merge's `allowActiveReload` path (`VesselLoader.SamePartIds`).
+Resources are not mirrored, which is the one visible difference left.
+
+The same flight found why a kerbal on EVA was invisible until its owner left: the vessel's first snapshot was
+taken the frame it was born, before KSP had computed its orbit, and the loader rejected the NaN orbit and
+never retried. New vessels are now announced only once their orbit (and a kerbal's controller) is ready,
+with a three-second grace; a snapshot that still has no orbit takes the one from the vessel's latest state.

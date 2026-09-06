@@ -284,6 +284,25 @@ namespace KspMp.Server.Vessels
             return true;
         }
 
+        /// <summary>
+        /// The owner staged, toggled a group or pressed a part button on their own vessel: everyone else aboard
+        /// mirrors it on their copy. Without this a co-pilot's rocket never lit its engines or opened its chutes.
+        /// </summary>
+        public int RelayActionToAboard<T>(ClientSession from, Guid vesselId, MessageId id, T message, Channel channel, Delivery delivery) where T : INetSerializable
+        {
+            if (!_server.Authority.IsOwnedBy(vesselId, from.ClientId) || !_roles.TryGetValue(vesselId, out var roles)) return 0;
+            var sent = 0;
+            foreach (var clientId in roles.Aboard)
+            {
+                if (clientId == from.ClientId) continue;
+                var target = _server.HandshakenClients.FirstOrDefault(c => c.ClientId == clientId);
+                if (target == null) continue;
+                _server.Send(target.Peer, id, message, channel, delivery);
+                sent++;
+            }
+            return sent;
+        }
+
         /// <summary>The owner's merged control state goes to everyone else aboard.</summary>
         public void RelayStateToAboard(ClientSession from, Guid vesselId, CtrlInputMsg state)
         {

@@ -119,9 +119,16 @@ namespace KspMp.Vessels
                             Log.Info("Keeping the active vessel " + label + " as it is; snapshots of it are ignored while we fly it");
                         return Outcome.Skipped;
                     }
+                    // Sitting in a vessel somebody else flies: its parts are theirs to change, and a snapshot with a
+                    // different set of them - a stage they fired, a fairing they dropped, an escape tower they
+                    // jettisoned - is how our copy finds out. The same parts and crew are not worth tearing our own
+                    // seat out from under us for, which is what a reload does.
+                    if (!force && SamePartIds(existing, proto) && CrewSignature(existing) == CrewSignature(proto))
+                        return Outcome.Unchanged;
                     reloadingActive = true;
                     force = true;
                     SkipReported.Remove(proto.vesselID);
+                    Log.Info("Refreshing " + label + ", the vessel we are aboard: its parts or crew changed");
                 }
                 var existingParts = existing.loaded ? existing.parts.Count : existing.protoVessel != null ? existing.protoVessel.protoPartSnapshots.Count : -1;
                 // Compare who is aboard, not how many: swapping one kerbal for another, which is exactly what
@@ -175,6 +182,39 @@ namespace KspMp.Vessels
             }
             RefreshMarkers();
             return hadExisting ? Outcome.Reloaded : Outcome.Loaded;
+        }
+
+        private static bool SamePartIds(Vessel existing, ProtoVessel proto)
+        {
+            var ids = new HashSet<uint>();
+            if (existing.loaded && existing.parts != null) foreach (var part in existing.parts) ids.Add(part.flightID);
+            else if (existing.protoVessel != null) foreach (var part in existing.protoVessel.protoPartSnapshots) ids.Add(part.flightID);
+            else return false;
+            if (ids.Count != proto.protoPartSnapshots.Count) return false;
+            foreach (var part in proto.protoPartSnapshots) if (!ids.Contains(part.flightID)) return false;
+            return true;
+        }
+
+        /// <summary>Takes a vessel out of the game without telling anyone. The caller has said why.</summary>
+        public static void Discard(Vessel vessel)
+        {
+            if (vessel == null) return;
+            try
+            {
+                var id = vessel.id;
+                if (vessel.loaded) vessel.Unload();
+                FlightGlobals.RemoveVessel(vessel);
+                HighLogic.CurrentGame?.flightState?.protoVessels.RemoveAll(p => p == null || p.vesselID == id);
+                if (vessel.parts != null)
+                    foreach (var part in vessel.parts)
+                        if (part != null) UnityEngine.Object.Destroy(part.gameObject);
+                UnityEngine.Object.Destroy(vessel.gameObject);
+                RefreshMarkers();
+            }
+            catch (Exception e)
+            {
+                Log.Exception("Discarding vessel " + vessel.id, e);
+            }
         }
 
         public static void Remove(Guid vesselId, string why)

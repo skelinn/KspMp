@@ -294,28 +294,32 @@ namespace KspMp.Server
                 {
                     var stage = Envelope.Read<StageMsg>(body);
                     stage.FromClientId = client.ClientId;
-                    if (Control.ForwardToOwner(client, stage.VesselId, MessageId.Stage, stage, Channel.Control, Delivery.ReliableOrdered)) _log(client.DisplayName + " staged vessel " + stage.VesselId.ToString().Substring(0, 8));
+                    if (Authority.IsOwnedBy(stage.VesselId, client.ClientId)) Control.RelayActionToAboard(client, stage.VesselId, MessageId.Stage, stage, Channel.Control, Delivery.ReliableOrdered);
+                    else if (Control.ForwardToOwner(client, stage.VesselId, MessageId.Stage, stage, Channel.Control, Delivery.ReliableOrdered)) _log(client.DisplayName + " staged vessel " + stage.VesselId.ToString().Substring(0, 8));
                     break;
                 }
                 case MessageId.ActionGroup:
                 {
                     var ag = Envelope.Read<ActionGroupMsg>(body);
                     ag.FromClientId = client.ClientId;
-                    Control.ForwardToOwner(client, ag.VesselId, MessageId.ActionGroup, ag, Channel.Control, Delivery.ReliableOrdered);
+                    if (Authority.IsOwnedBy(ag.VesselId, client.ClientId)) Control.RelayActionToAboard(client, ag.VesselId, MessageId.ActionGroup, ag, Channel.Control, Delivery.ReliableOrdered);
+                    else Control.ForwardToOwner(client, ag.VesselId, MessageId.ActionGroup, ag, Channel.Control, Delivery.ReliableOrdered);
                     break;
                 }
                 case MessageId.SasMode:
                 {
                     var sas = Envelope.Read<SasModeMsg>(body);
                     sas.FromClientId = client.ClientId;
-                    Control.ForwardToOwner(client, sas.VesselId, MessageId.SasMode, sas, Channel.Control, Delivery.ReliableOrdered);
+                    if (Authority.IsOwnedBy(sas.VesselId, client.ClientId)) Control.RelayActionToAboard(client, sas.VesselId, MessageId.SasMode, sas, Channel.Control, Delivery.ReliableOrdered);
+                    else Control.ForwardToOwner(client, sas.VesselId, MessageId.SasMode, sas, Channel.Control, Delivery.ReliableOrdered);
                     break;
                 }
                 case MessageId.PartEvent:
                 {
                     var ev = Envelope.Read<PartEventMsg>(body);
                     ev.FromClientId = client.ClientId;
-                    if (Control.ForwardToOwner(client, ev.VesselId, MessageId.PartEvent, ev, Channel.Control, Delivery.ReliableOrdered)) _log(client.DisplayName + " pressed " + ev.EventName + " on vessel " + ev.VesselId.ToString().Substring(0, 8));
+                    if (Authority.IsOwnedBy(ev.VesselId, client.ClientId)) Control.RelayActionToAboard(client, ev.VesselId, MessageId.PartEvent, ev, Channel.Control, Delivery.ReliableOrdered);
+                    else if (Control.ForwardToOwner(client, ev.VesselId, MessageId.PartEvent, ev, Channel.Control, Delivery.ReliableOrdered)) _log(client.DisplayName + " pressed " + ev.EventName + " on vessel " + ev.VesselId.ToString().Substring(0, 8));
                     break;
                 }
                 case MessageId.EditorJoin:
