@@ -151,11 +151,39 @@ GameData/KspMp/KspMp.version (KSP-AVC), Plugins/ (build output), PluginData/sett
 - Physics warp (2–4×) only when every loaded vessel in the requester's bubble is owned by the requester. After any warp ends: fresh `TimeSync`, owners send protos, replicas resync from state.
 - Replacing LMP's "no pause/quickload/revert": pause is local UI only (`FlightDriver.SetPause` prefix returns false, time keeps flowing); quicksave allowed; quickload blocked (`QuickSaveLoad.quickLoad` prefix); revert blocked (`FlightDriver.RevertToLaunch/RevertToPrelaunch/ReturnToEditor` prefixes, `PauseMenu.drawStockRevertOptions` postfix); "Recover vessel" only for owners with no other player aboard.
 
-### Seat-based shared control ("same rocket")
-- Roles per vessel: **Pilot** = player whose avatar sits in seat 0 of the reference command part (`ProtoCrewMember.seatIdx == 0` in `Vessel.GetReferenceTransformPart()` with a `ModuleCommand`), else the first avatar in any `ModuleCommand` part; **Co-pilot** = any other player aboard; uncrewed → the Mission Control controller. Server recomputes on every proto/seat change and broadcasts `PilotAssign`; handover via `PilotRequest → PilotOffer → PilotAccept`, automatic when the pilot disconnects, EVAs or changes seats. Physics authority follows the pilot.
-- Input path: the pilot's `Vessel.OnFlyByWire` callback merges co-pilot/controller `CtrlInput`s (LMP `VesselFlightStateSystem` hooks the same callback). Per axis: "last active input wins with a 300 ms hold" when `SharedStick` is on; otherwise only the pilot's axes count. Co-pilot clients capture their own `FlightCtrlState` in the replica's `OnFlyByWire`, send `CtrlInput` at 30 Hz, then overwrite it with the owner's merged state so plumes and control surfaces match; when `SharedStick` is off they get `ControlTypes.ALL_SHIP_CONTROLS` locked while staging and action groups stay free.
-- Discrete actions (anyone aboard, and the controller): staging via prefix on `StageManager.ActivateNextStage/ActivateStage` (non-owners send `Stage`, owner applies); action groups via postfix `ActionGroupList.ToggleGroup` (LMP `ActionGroupList_ToggleGroup.cs`) → `vessel.ActionGroups.SetGroup` under a guard; SAS via prefix `VesselAutopilot.SetMode/Enable/Disable`; part buttons via prefix `UIPartActionButton.OnClick` (LMP `UIPartActionButton_OnClick.cs`) → `PartEvent` → `part.Modules[i].Events[name].Invoke()` guarded; tweakables via `BaseField.OnValueModified`/`UI_Control.onFieldChanged` first, LMP's `FieldChangeTranspiler` later, periodic proto as the safety net. Science, resources: proto-driven.
-- Sitting in a remote vessel: `SetActiveVessel(replica)` plus IVA work normally; G-force/heat effects come later via `VesselState.Flags`; maneuver nodes are shared through the proto's `FLIGHTPLAN` node.
+### Shared control ("same rocket") - as built
+
+The design below said the command seat decides who pilots, and who pilots decides who simulates. Built that
+way, it gave a rocket to whoever's kerbal sat in the front seat - including a player who was still standing in
+the VAB, having been seated by the host before launch. Nobody simulated the craft, and the host who launched it
+was locked out of his own controls as a "spectator". The rules that replaced it are on `ControlService`:
+
+- **R1** Whoever sends a vessel's first snapshot owns it (it is their launch) and keeps it. The pilot is the
+  owner, and only while their own kerbal is aboard; a player flying an uncrewed probe owns it but is nobody's
+  pilot. The command seat decides nothing.
+- **R2** The owner may `ControlGive` it to a player whose presence says they are in flight on that same vessel.
+  To anyone else the server answers `NotInFlight` and changes nothing.
+- **R3** Someone aboard and in flight may `ControlRequest` it. Granted at once when the owner is gone, offline
+  or no longer aboard; otherwise relayed to the owner, who may `ControlDecline`.
+- **R4** When the owner's avatar leaves the vessel, or they release it or disconnect, it goes to the first
+  player aboard who is in flight on it (the command seat only breaks a tie). With nobody, an owner who merely
+  left the vessel keeps it - a pilot on EVA still simulates the rocket beside them - and one who released or
+  disconnected leaves it unowned for the volunteer path.
+- **R5** Otherwise authority does not move, and the server never assigns a vessel to a client that is not in
+  flight on it. The exceptions are R1, a client's own `AuthorityRequest`, and the docking hand-off.
+
+Input path unchanged: the owner's `Vessel.OnFlyByWire` merges co-pilot `CtrlInput`s and streams the merged
+state back. Co-pilots are locked out of the flight axes by default (`PITCH|YAW|ROLL|THROTTLE|LINEAR|
+WHEEL_STEER|WHEEL_THROTTLE|THROTTLE_CUT_MAX`, deliberately not `ALL_SHIP_CONTROLS`, which would also swallow
+the staging and action-group keys the co-pilot is meant to keep) until the pilot turns on shared stick for that
+vessel. Discrete actions - staging, action groups, SAS, part buttons - relay to the owner as before.
+
+Joining a flight: a launch says who was seated, so the invite is raised before the craft exists on the other
+machine. A player idle at the space centre gets a ten-second countdown; one in an editor gets a button that
+says it will cost them the editor; nobody is ever pulled out of a build. The join goes through
+`GamePersistence.SaveGame` + `HighLogic.CurrentGame.Updated()` + `FlightDriver.StartAndFocusVessel`, because
+`flightState.protoVessels` is written from the save file and never contains a vessel that arrived over the
+network - which is why the original join path could not have worked even in the right scene.
 
 ### Boarding, EVA, death
 - EVA: stock hatch → `FlightEVA.fetch.spawnEVA(...)`; `onCrewOnEva` gives the new EVA vessel (`vessel.isEVA`). Client sends `CrewEva` + the EVA vessel's proto once the EVA FSM is ready (LMP waits for it). Only the avatar's owner may EVA their avatar (`onAttemptEva` handler + `ControlTypes.EVA_INPUT` lock). Presence → `OnEva`; source vessel roles recomputed (pilot EVA → handover).
@@ -170,6 +198,21 @@ GameData/KspMp/KspMp.version (KSP-AVC), Plugins/ (build output), PluginData/sett
 - Undock/decouple (owner only): prefix/postfix `Part.Undock`, `ModuleDockingNode.Undock`, `Part.decouple` (LMP `Part_Undock.cs`, `Part_Decouple.cs`) → `Undock`/`Decouple` with `NewVesselId` + both protos; receivers (LMP `VesselUndock.ProcessUndock`) undock locally then set `vessel.id = NewVesselId`; server recomputes roles/authority.
 
 ### Collaborative VAB/SPH
+- **Per-player benches (as built)**: a session belongs to its owner, not to a facility. Opening an editor opens
+  your own bench, private until somebody joins it; the session list goes to every player in every scene, so the
+  players panel can say what someone is building and the BUILDERS panel can offer a Join. Joining stashes your
+  craft and restores it on Leave; if the owner walks out of the editor, guests keep the craft on their own bench
+  rather than losing it. Any builder may launch, which ends the session. One shared bench per facility - what
+  this used to be - dropped two players who simply both wanted to build onto one craft, each losing edits to the
+  other's revision.
+- **Applying a snapshot** must swap the workbench the way KSP's own craft load does. `ShipConstruct.Clear()`
+  only empties a list (`ShipConstruct.cs:2799`), so the previous craft's `Part` objects stay in the scene, drawn
+  and clickable but in no ship: a deleted part lingers as a ghost, clicking a ghost does nothing, and a fresh
+  set piles up with every snapshot applied - which is why the player receiving the most snapshots ended up
+  unable to delete anything. `EditorSystem.ReplaceWorkbench` mirrors `on_shipLoaded` (`EditorLogic.cs:6591`):
+  destroy every part not in the new ship, drop the selection, re-layer, rebuild the dV readout, reset the crew
+  tab. It also writes the incoming name into `shipNameField` before `SetBackup()`, which copies that field back
+  into the ship - without it every applied craft was renamed to whatever the receiver had typed.
 - **M7a snapshot sync + presence** (fast to get working): server-hosted editor session per facility; every `onEditorShipModified` on any client (debounced 300 ms, suppressed while a part is held) sends `EditorSnapshot` (`EditorLogic.fetch.ship.SaveShip()`); receivers rebuild via `ShipConstruct.LoadShip(node)` after clearing the current ship, preserving the local held part and camera; `EditorPresence` at 10 Hz draws other players' cursor labels (`editorCamera.WorldToScreenPoint`) and highlights their locked subtree (`Part.SetHighlight`). Last snapshot wins; the debug window shows a hash of `SaveShip()` on both clients for verification.
 - **M7b part-level op log** (scales beyond two builders): stable ids are `Part.craftID`, allocated from server-issued ranges on `EditorSessionJoin`. Ops: `Spawn`, `Attach{parent, node id or surface, attPos0, attRotation0, symmetry mode/method}`, `Detach`, `Delete`, `Move`, `SetRoot`, `Tweak`, `Variant`, `ActionGroup`, `Crew{craftId, seat, kerbalName}`, `Meta`, `Subassembly`. Server serializes ops (ReliableOrdered), assigns `Rev`, rebroadcasts, appends to the session log; conflicts are last-writer-wins per part, and ops on a subtree locked by another player's drag are rejected with a resync. Capture points (names from KSPCommunityFixes `QoL/BetterEditorUndoRedo.cs`): `EditorLogic.attachPart`/`detachPart` (private), `DeletePart`, `SpawnPart`, `RestoreState` (undo/redo → snapshot), `GameEvents.onEditorPartEvent(ConstructionEventType, Part)`, `onEditorVariantApplied`, `onEditorSymmetryModeChange`, `onCrewDialogChange`; apply via `PartLoader.getPartInfoByName(...).partPrefab` instantiate, `part.setParent`, `AttachNode.attachedPart`, `EditorLogic.fetch.ship.Add`, `SetBackup()`, `EditorLogic.DeletePart`, `BaseField.SetValue`, `VesselCrewManifest.GetPartCrewManifest(craftId).AddCrewToSeat/RemoveCrewFromSeat` + `CrewAssignmentDialog.Instance.RefreshCrewLists(manifest, true, true)`. Symmetry: apply to the primary part and re-run stock symmetry; fall back to explicit counterpart ops. Snapshots every 10 s remain the recovery path.
 - Crew rule: only the owning player may seat/unseat their avatar; NPCs are free.
@@ -244,9 +287,19 @@ Two apparently obvious fixes were tried and both are wrong:
   is pulled back to the pilot mid-approach, when the whole point of the hold is to keep both craft under one
   simulator. `ServerDockingTests.WithTwoPilotsTheLowerPersistentIdYieldsAndTheHoldExpires` catches it.
 
-So the server-side assignment is not the whole story. The next step is the client: find what resets
-`RemoteVessel.OwnerClientId` after a merged proto arrives, and why a client told it owns a vessel does not
-start sending its state.
+**Found (2026-09-05).** Ownership rides on three messages - `AuthorityAssign` on the Control channel,
+`VesselProto` and `DockCommit` on Bulk - and the two channels are ordered independently of each other. A bulky
+snapshot carrying the previous owner could therefore arrive *after* the assignment that replaced it and quietly
+undo it, which is exactly the shape of the symptom: the client logged `Authority for ... : us (Granted)` and
+then, by the time anything looked, the registry said somebody else owned it again, so it never streamed state.
+
+The fix is a sequence number. The server counts its authority decisions per vessel and stamps every message
+that carries an owner; clients keep the highest sequence seen and ignore anything older
+(`VesselRegistry.ApplyOwner`, which is now the only place `OwnerClientId` is written). A new owner also logs
+`Simulating <vessel>: first state sent`, so "was it assigned" and "is it actually being simulated" can be told
+apart in a log - the distinction that made this bug so hard to read.
+
+The seat rule that pulled authority around behind everyone's back is gone too; see the control section above.
 
 ## Steam transport: what is actually possible (verified 2026-09-05)
 

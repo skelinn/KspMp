@@ -161,6 +161,33 @@ The password is hashed before it leaves the client, which keeps the password its
 reuse them. It is not strong authentication: there is no challenge from the server, so anyone who can read a
 join packet could replay it. Treat it as a lock on the door, not a guarantee about who is behind it.
 
+### Scripted testing
+
+`scripts/run-clients.ps1` takes `-ArgsA` / `-ArgsB` to give the two copies different arguments, which is how
+they get different avatars (those must be unique) and different scripted actions:
+
+    scripts\run-clients.ps1 -kspmp-connect 127.0.0.1:7777 -kspmp-enter `
+      -ArgsA @('-kspmp-avatar','Alice Kerman:Pilot','-kspmp-launch','Ships/VAB/Kerbal X.craft','-kspmp-crew','Bob Kerman') `
+      -ArgsB @('-kspmp-avatar','Bob Kerman:Pilot','-kspmp-joinflight')
+
+Options added for the shared-building, shared-flight and EVA work, on top of those already in
+`src/KspMp.Client/LaunchOptions.cs`:
+
+    -kspmp-editordelete D     delete the last non-root part D seconds in (a deletion round-trip is the check
+                              the ghost-part bug used to fail)
+    -kspmp-editorjoin D       join the other player's workbench
+    -kspmp-editorleave D      go back to our own
+    -kspmp-joinflight         accept a flight invite as soon as it can be accepted, no countdown
+    -kspmp-givecontrol D      give the active vessel to the other player aboard
+    -kspmp-requestcontrol D   ask the pilot for control
+    -kspmp-sharedstick D      turn shared stick on
+    -kspmp-nametags on|off|all   `all` also tags our own vessel, for a self-check screenshot
+    -kspmp-near D             pull up alongside another player's ship without docking
+    -kspmp-eva D              send our avatar out of the airlock
+    -kspmp-board D            climb back into the nearest craft with a free seat
+    -kspmp-evamode frozen|live   pose remote kerbals ourselves (default), or leave KerbalEVA running
+    -kspmp-evasync off        do not load other players' kerbals on EVA at all
+
 ## Known gaps
 
 Worth knowing before you play, roughly in the order you would hit them.
@@ -180,8 +207,14 @@ Worth knowing before you play, roughly in the order you would hit them.
 - **Undocking is not implemented.** There is no `Undock` or `Decouple` message and no patch for either, so once
   two craft are docked they stay that way.
 - **Physics authority does not return to the pilot after a dock.** The server hands the target vessel to the
-  approaching player and never hands it back, so the merged craft ends up piloted by one player and simulated by
-  the other. This is also why neither side can undock.
+  approaching player and does not hand it back on its own. The player who wants it can now press **Request
+  control**, which is granted immediately if nobody else is flying it - but nothing does it automatically. This
+  is also why neither side can undock.
+- **Crew manifests are local.** Only the launcher's seating counts: the manifest is not synced, so seat your
+  friend's Kerbal on your side before you launch, not theirs.
+- **A co-pilot's own copy of the craft is not reloaded while they fly it.** Snapshots of the active vessel are
+  ignored, so after the pilot stages, a co-pilot may still see the spent stage attached until they leave the
+  flight. Everything else about the craft stays in step.
 - **Stock docking magnets do not fire on a teleported approach.** The test harness closes the last centimetres
   itself, through `ModuleDockingNode.DockToVessel`, which is what the mod patches. A hand-flown dock has not been
   tried, so it is not known whether this affects normal play or only the harness.
@@ -192,9 +225,22 @@ Worth knowing before you play, roughly in the order you would hit them.
 
 - Everyone shares one timeline. Warp is negotiated: the slowest request wins, anyone can drop back to 1x, and a
   player who cannot warp (in the atmosphere, moving on the ground) limits everyone.
-- You are your Kerbal. Sit in a rocket with a friend and the player in the command seat is the pilot (and runs the
-  physics); everyone else aboard can stage, use action groups, SAS and part buttons. With `sharedStickDefault = True`
-  co-pilots can also steer when the pilot's hands are off the stick.
+- **Building.** Opening the VAB or SPH gives you your own workbench. Alt+M lists everyone else's under BUILDERS,
+  with a Join button; joining sets your own craft aside and hands it back when you Leave. Anyone on a bench can
+  launch it, and that ends the session for everyone on it.
+- **Launching together.** Seat your friend's Kerbal in the crew tab on your side and launch. They get a notice
+  saying their Kerbal is aboard, with a button to join: at the space centre it also counts down from ten and
+  joins on its own; in the VAB it says "Leave the VAB and join", because nothing should drag you out of a build.
+- **Flying together.** Whoever launched a craft flies it. Everyone else aboard is a co-pilot: they can stage, use
+  action groups, SAS and part buttons, but their stick does nothing until the pilot turns on **Shared stick**.
+  The pilot can hand over with **Give to <name>**, and a co-pilot can ask with **Request control**; both are in
+  the FLIGHT section of Alt+M. Control only goes to somebody who is actually in the flight - handing a rocket to
+  a player still in the VAB would leave nobody simulating it.
+- **EVA.** Climb out and your friend sees your Kerbal, with your name over them. You can only move your own
+  Kerbal, and only the player simulating a craft can take crew out of it or put crew into it - so the mod asks
+  them to, rather than doing it behind their back.
+- **Nametags** name other players' craft and Kerbals in each player's colour, out to 5 km (1 km for a Kerbal).
+  Turn them off in Alt+M.
 - A vessel with nobody's Kerbal aboard is simulated by whoever is nearest; uncrewed probes can be flown by anyone.
 - Pause only pauses your menu; quickload and revert are disabled.
 
