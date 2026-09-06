@@ -213,4 +213,60 @@ namespace KspMp.Shared.Protocol
             AuthoritySeq = r.GetUInt();
         }
     }
+
+    /// <summary>
+    /// Resource amounts on a vessel, from its physics owner to everyone aboard it. Usually a delta: only the
+    /// parts and resources that moved since the last one, with everything sent again every so often.
+    /// </summary>
+    public struct VesselResourcesMsg : INetSerializable
+    {
+        public struct Resource
+        {
+            public string Name;
+            public float Amount;
+        }
+
+        public struct PartResources
+        {
+            public uint PartFlightId;
+            public Resource[] Resources;
+        }
+
+        public Guid VesselId;
+        public PartResources[] Parts;
+
+        public void Serialize(NetDataWriter w)
+        {
+            w.PutGuidRaw(VesselId);
+            var parts = Parts ?? Array.Empty<PartResources>();
+            w.Put((ushort)parts.Length);
+            foreach (var part in parts)
+            {
+                w.Put(part.PartFlightId);
+                var resources = part.Resources ?? Array.Empty<Resource>();
+                w.Put((byte)resources.Length);
+                foreach (var resource in resources)
+                {
+                    w.Put(resource.Name ?? string.Empty);
+                    w.Put(resource.Amount);
+                }
+            }
+        }
+
+        public void Deserialize(NetDataReader r)
+        {
+            VesselId = r.GetGuidRaw();
+            Parts = new PartResources[r.GetUShort()];
+            for (var i = 0; i < Parts.Length; i++)
+            {
+                Parts[i].PartFlightId = r.GetUInt();
+                Parts[i].Resources = new Resource[r.GetByte()];
+                for (var j = 0; j < Parts[i].Resources.Length; j++)
+                {
+                    Parts[i].Resources[j].Name = r.GetString();
+                    Parts[i].Resources[j].Amount = r.GetFloat();
+                }
+            }
+        }
+    }
 }

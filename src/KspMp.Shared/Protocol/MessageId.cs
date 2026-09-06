@@ -49,6 +49,8 @@ namespace KspMp.Shared.Protocol
         VesselProto = 400,
         VesselRemove = 401,
         VesselState = 402,
+        /// <summary>Owner -> everyone aboard: how much of each resource each part holds, so co-pilots' tanks agree.</summary>
+        VesselResources = 403,
 
         // physics authority
         AuthorityAssign = 500,

@@ -73,6 +73,7 @@ namespace KspMp.Ui
             Theme.Row("Role", _addon.Control.RoleText);
             Theme.Row("Inputs", _addon.Control.InputsSent + " sent / " + _addon.Control.InputsReceived + " received");
             Theme.Row("Actions", _addon.Control.ActionsApplied + " applied");
+            Theme.Row("Resources", _addon.Resources.Sent + " sent / " + _addon.Resources.Applied + " applied");
             Theme.EndSection();
 
             if (GUILayout.Button("Hide" + Theme.Tint("   Alt+F10", Theme.Dim))) Visible = false;

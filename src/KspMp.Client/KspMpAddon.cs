@@ -29,6 +29,7 @@ namespace KspMp
         public RosterSystem Roster { get; private set; }
         public PresenceSystem Presence { get; private set; }
         public ControlSystem Control { get; private set; }
+        public ResourceSyncSystem Resources { get; private set; }
         public DockSystem Dock { get; private set; }
         public CrewSystem Crew { get; private set; }
         public EditorSystem Editor { get; private set; }
@@ -121,6 +122,7 @@ namespace KspMp
             Systems.Add(Presence = new PresenceSystem(this));
             Systems.Add(Authority = new AuthoritySystem(this));
             Systems.Add(Control = new ControlSystem(this));
+            Systems.Add(Resources = new ResourceSyncSystem(this));
             Systems.Add(Dock = new DockSystem(this));
             Systems.Add(Crew = new CrewSystem(this));
             Systems.Add(Builders = new BuildersSystem(this));

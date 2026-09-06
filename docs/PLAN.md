@@ -382,7 +382,9 @@ A mirrored stage splits pieces off the local copy that are not ours to announce,
 anything KSP creates locally is discarded (`VesselProtoSystem.ExpectSplitOff`) and the owner's real debris
 arrives as its own snapshots. As a safety net, a snapshot of the vessel we sit in that has a different set of
 parts (or crew) reloads it through the docking merge's `allowActiveReload` path (`VesselLoader.SamePartIds`).
-Resources are not mirrored, which is the one visible difference left.
+Resources are streamed separately: once a second the owner sends the amounts that moved (everything every
+fifteen seconds) as `VesselResources`, relayed to everyone aboard, who write them into their tanks
+(`ResourceSyncSystem`). Both clients log a `Fuel check` line every ten seconds for comparing.
 
 The same flight found why a kerbal on EVA was invisible until its owner left: the vessel's first snapshot was
 taken the frame it was born, before KSP had computed its orbit, and the loader rejected the NaN orbit and

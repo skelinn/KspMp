@@ -64,6 +64,7 @@ internal class TestClient
             MessageId.VesselProto => Envelope.Read<VesselProtoMsg>(body),
             MessageId.VesselRemove => Envelope.Read<VesselRemoveMsg>(body),
             MessageId.VesselState => Envelope.Read<VesselStateMsg>(body),
+            MessageId.VesselResources => Envelope.Read<VesselResourcesMsg>(body),
             MessageId.AuthorityAssign => Envelope.Read<AuthorityAssignMsg>(body),
             MessageId.WarpState => Envelope.Read<WarpStateMsg>(body),
             MessageId.SyncComplete => Envelope.Read<SyncCompleteMsg>(body),

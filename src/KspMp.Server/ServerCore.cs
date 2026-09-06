@@ -238,6 +238,12 @@ namespace KspMp.Server
                     Broadcast(MessageId.VesselState, state, Channel.State, Delivery.Sequenced, client.Peer);
                     break;
                 }
+                case MessageId.VesselResources:
+                {
+                    var resources = Envelope.Read<VesselResourcesMsg>(body);
+                    Control.RelayActionToAboard(client, resources.VesselId, MessageId.VesselResources, resources, Channel.Bulk, Delivery.ReliableOrdered);
+                    break;
+                }
                 case MessageId.VesselRemove:
                 {
                     var remove = Envelope.Read<VesselRemoveMsg>(body);

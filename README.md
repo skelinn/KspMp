@@ -212,10 +212,6 @@ Worth knowing before you play, roughly in the order you would hit them.
   is also why neither side can undock.
 - **Crew manifests are local.** Only the launcher's seating counts: the manifest is not synced, so seat your
   friend's Kerbal on your side before you launch, not theirs.
-- **A co-pilot's copy of the craft keeps its own fuel.** The pilot's staging, action groups, SAS and part
-  buttons are mirrored onto everyone aboard, and the copy is reloaded if its parts ever differ from the
-  pilot's, but resources are not synced onto the vessel you sit in: a co-pilot's gauges drain at their own
-  rate and can disagree with the pilot's.
 - **Stock docking magnets do not fire on a teleported approach.** The test harness closes the last centimetres
   itself, through `ModuleDockingNode.DockToVessel`, which is what the mod patches. A hand-flown dock has not been
   tried, so it is not known whether this affects normal play or only the harness.
@@ -233,7 +229,8 @@ Worth knowing before you play, roughly in the order you would hit them.
   from the other builder leaves whatever you are holding in your hand.
 - **Flying together.** The pilot simulates the craft; what they stage, toggle or press is mirrored onto every
   copy aboard, so a co-pilot sees the engines light, the chutes open and the escape tower leave at the same
-  moment. The pieces that separate are theirs, and arrive as the pilot's own snapshots.
+  moment. The pieces that separate are theirs, and arrive as the pilot's own snapshots. The pilot's tank
+  levels are streamed to everyone aboard once a second, so a co-pilot's gauges read the same as the pilot's.
 - **Launching together.** Seat your friend's Kerbal in the crew tab on your side and launch. They get a notice
   saying their Kerbal is aboard, with a button to join: at the space centre it also counts down from ten and
   joins on its own; in the VAB it says "Leave the VAB and join", because nothing should drag you out of a build.

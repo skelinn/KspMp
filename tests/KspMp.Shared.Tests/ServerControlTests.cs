@@ -334,5 +334,21 @@ public class ServerControlTests
         Assert.Empty(carol.Messages<StageMsg>());
         Assert.Empty(carol.Messages<PartEventMsg>());
         Assert.Empty(bob.Messages<StageMsg>());
+
+        // So do the pilot's tank levels, and only the pilot's: Alice's own would be ignored.
+        var fuel = new VesselResourcesMsg
+        {
+            VesselId = VesselId,
+            Parts = new[] { new VesselResourcesMsg.PartResources { PartFlightId = 10, Resources = new[] { new VesselResourcesMsg.Resource { Name = "LiquidFuel", Amount = 123.5f } } } },
+        };
+        bob.Send(MessageId.VesselResources, fuel, Channel.Bulk);
+        alice.Send(MessageId.VesselResources, fuel, Channel.Bulk);
+        TestClient.Pump(server, alice, bob, carol);
+        var got = alice.Last<VesselResourcesMsg>()!.Value;
+        Assert.Equal(10u, got.Parts[0].PartFlightId);
+        Assert.Equal("LiquidFuel", got.Parts[0].Resources[0].Name);
+        Assert.Equal(123.5f, got.Parts[0].Resources[0].Amount);
+        Assert.Empty(carol.Messages<VesselResourcesMsg>());
+        Assert.Empty(bob.Messages<VesselResourcesMsg>());
     }
 }
