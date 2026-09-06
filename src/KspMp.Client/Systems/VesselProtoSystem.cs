@@ -70,7 +70,7 @@ namespace KspMp.Systems
             var msg = Envelope.Read<VesselProtoMsg>(body);
             if (msg.VesselId == Guid.Empty) return;
             var remote = Registry.GetOrAdd(msg.VesselId);
-            remote.OwnerClientId = msg.OwnerClientId;
+            Registry.ApplyOwner(remote, msg.OwnerClientId, msg.AuthoritySeq, "a snapshot");
             remote.PersistentId = msg.PersistentId;
             remote.Name = msg.Name;
             remote.VesselType = msg.VesselType;

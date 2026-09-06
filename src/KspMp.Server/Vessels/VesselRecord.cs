@@ -17,7 +17,7 @@ namespace KspMp.Server.Vessels
         public bool HasState;
         public VesselStateMsg LastState;
 
-        public VesselProtoMsg ToProtoMessage(int ownerClientId, ProtoReason reason) => new VesselProtoMsg
+        public VesselProtoMsg ToProtoMessage(int ownerClientId, ProtoReason reason, uint authoritySeq) => new VesselProtoMsg
         {
             VesselId = Id,
             PersistentId = PersistentId,
@@ -26,6 +26,7 @@ namespace KspMp.Server.Vessels
             Name = Name,
             VesselType = VesselType,
             ProtoDeflated = ProtoDeflated,
+            AuthoritySeq = authoritySeq,
         };
     }
 }

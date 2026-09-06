@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using HarmonyLib;
 
 namespace KspMp.Harmony
@@ -21,9 +22,31 @@ namespace KspMp.Harmony
                 return false;
             }
             var ship = __instance != null ? __instance.ship : null;
-            addon.AnnounceLaunch(ship != null ? ship.shipName : "a craft", siteName);
+            addon.AnnounceLaunch(ship != null ? ship.shipName : "a craft", siteName, SeatedKerbals());
             Vessels.LaunchSiteGuard.Clear(siteName);
             return true;
+        }
+
+        /// <summary>
+        /// Who is in the seats at the moment of launch. The other player only learns their kerbal is going up
+        /// from this list, so it is read from the crew dialog's live manifest rather than from the craft file.
+        /// </summary>
+        private static string[] SeatedKerbals()
+        {
+            var names = new List<string>();
+            try
+            {
+                var manifest = KSP.UI.CrewAssignmentDialog.Instance != null ? KSP.UI.CrewAssignmentDialog.Instance.GetManifest() : null;
+                if (manifest != null)
+                    foreach (var crew in manifest.GetAllCrew(false))
+                        if (crew != null && !string.IsNullOrEmpty(crew.name) && !names.Contains(crew.name)) names.Add(crew.name);
+            }
+            catch (System.Exception e)
+            {
+                Log.Exception("Reading the crew manifest at launch", e);
+            }
+            Log.Info("Launching with " + (names.Count == 0 ? "nobody" : string.Join(", ", names.ToArray())) + " aboard");
+            return names.ToArray();
         }
     }
 }

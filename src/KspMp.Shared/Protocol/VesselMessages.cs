@@ -24,6 +24,12 @@ namespace KspMp.Shared.Protocol
         OwnerLeft = 3,
         Created = 4,
         Removed = 5,
+        /// <summary>The previous owner gave it to this player.</summary>
+        HandedOver = 6,
+        /// <summary>The owner's avatar left the vessel, so someone else aboard and flying it took over.</summary>
+        PilotLeft = 7,
+        /// <summary>Refused: the intended owner is not in flight on this vessel, so nobody would simulate it.</summary>
+        NotInFlight = 8,
     }
 
     /// <summary>
@@ -39,6 +45,8 @@ namespace KspMp.Shared.Protocol
         public string Name;
         public string VesselType;
         public byte[] ProtoDeflated;
+        /// <summary>Which authority decision OwnerClientId came from; see <see cref="AuthorityAssignMsg.AuthoritySeq"/>.</summary>
+        public uint AuthoritySeq;
 
         public void Serialize(NetDataWriter w)
         {
@@ -49,6 +57,7 @@ namespace KspMp.Shared.Protocol
             w.Put(Name ?? string.Empty);
             w.Put(VesselType ?? string.Empty);
             w.PutBytesWithLength(ProtoDeflated ?? Array.Empty<byte>());
+            w.Put(AuthoritySeq);
         }
 
         public void Deserialize(NetDataReader r)
@@ -60,6 +69,7 @@ namespace KspMp.Shared.Protocol
             Name = r.GetString();
             VesselType = r.GetString();
             ProtoDeflated = r.GetBytesWithLength();
+            AuthoritySeq = r.GetUInt();
         }
     }
 
@@ -179,12 +189,20 @@ namespace KspMp.Shared.Protocol
         public Guid VesselId;
         public int OwnerClientId;
         public AuthorityReason Reason;
+        /// <summary>
+        /// Counts the server's authority decisions for this vessel. Ownership rides on three different messages
+        /// travelling on two channels that are ordered independently of each other, so a bulky snapshot carrying
+        /// the previous owner can arrive after the assignment that replaced it. Clients keep the highest sequence
+        /// seen and ignore anything older, which is what stops a stale snapshot silently un-assigning a vessel.
+        /// </summary>
+        public uint AuthoritySeq;
 
         public void Serialize(NetDataWriter w)
         {
             w.PutGuidRaw(VesselId);
             w.Put(OwnerClientId);
             w.Put((byte)Reason);
+            w.Put(AuthoritySeq);
         }
 
         public void Deserialize(NetDataReader r)
@@ -192,6 +210,7 @@ namespace KspMp.Shared.Protocol
             VesselId = r.GetGuidRaw();
             OwnerClientId = r.GetInt();
             Reason = (AuthorityReason)r.GetByte();
+            AuthoritySeq = r.GetUInt();
         }
     }
 }

@@ -173,7 +173,7 @@ namespace KspMp.Systems
             var msg = Envelope.Read<DockCommitMsg>(body);
             if (msg.OwnerClientId == Net.ClientId) return;
             var survivor = Registry.GetOrAdd(msg.SurvivorVesselId);
-            survivor.OwnerClientId = msg.OwnerClientId;
+            Registry.ApplyOwner(survivor, msg.OwnerClientId, msg.AuthoritySeq, "a docking commit");
             survivor.Name = msg.Name;
             survivor.ProtoDeflated = msg.ProtoDeflated;
             survivor.ProtoDirty = true;

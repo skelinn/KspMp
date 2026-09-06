@@ -8,6 +8,11 @@ using Xunit;
 
 namespace KspMp.Shared.Tests;
 
+/// <summary>
+/// The control rules R1-R5 documented on <see cref="ControlService"/>. The theme running through them: the
+/// server never makes somebody the physics owner of a vessel they are not actually flying, because that leaves
+/// nobody simulating it - the failure recorded in docs/PLAN.md that these rules exist to prevent.
+/// </summary>
 public class ServerControlTests
 {
     private static readonly Guid VesselId = Guid.NewGuid();
@@ -49,6 +54,13 @@ public class ServerControlTests
         return client;
     }
 
+    /// <summary>Says "I am in the flight scene, on this vessel" - the precondition for owning it.</summary>
+    private static void Fly(ServerCore server, TestClient client, Guid vesselId, params TestClient[] all)
+    {
+        client.Send(MessageId.Presence, new PresenceMsg { State = PresenceState.InFlight, VesselId = vesselId, VesselName = "Two Seater", Scene = (byte)7 });
+        TestClient.Pump(server, all.Length > 0 ? all : new[] { client });
+    }
+
     [Fact]
     public void CrewInfoFindsTheCommandSeat()
     {
@@ -60,8 +72,31 @@ public class ServerControlTests
         Assert.Null(info.CommandSeatOccupant(_ => false));
     }
 
+    /// <summary>
+    /// R1. The bug this replaces: the host seated his friend's kerbal in the command seat, launched, and the
+    /// server handed the rocket to the friend - who was still in the VAB. Nobody simulated it and the host was
+    /// locked out of his own controls.
+    /// </summary>
     [Fact]
-    public void PilotBySeatOwnsPhysicsAndCoPilotInputIsForwardedToThePilot()
+    public void LauncherIsPilotAndOwnerEvenWhenAFriendSitsInTheCommandSeat()
+    {
+        var hub = new LoopbackHub();
+        using var server = NewServer(hub);
+        var alice = JoinWithAvatar(hub, server, "Alice", "Alice Kerman");
+        var bob = JoinWithAvatar(hub, server, "Bob", "Bob Kerman", alice);
+
+        // Bob launches; Alice's kerbal is in the command seat, but Alice is not in the flight at all.
+        bob.Send(MessageId.VesselProto, Proto(VesselText((10, true, new[] { "Alice Kerman", "Bob Kerman" }))), Channel.Bulk);
+        Fly(server, bob, VesselId, alice, bob);
+
+        Assert.Equal(bob.ClientId, server.Authority.OwnerOf(VesselId));
+        var roles = alice.Last<VesselRolesMsg>()!.Value;
+        Assert.Equal(bob.ClientId, roles.PilotClientId);
+        Assert.Equal(new[] { alice.ClientId, bob.ClientId }, roles.AboardClientIds);
+    }
+
+    [Fact]
+    public void CoPilotInputAndDiscreteActionsGoToTheOwner()
     {
         var hub = new LoopbackHub();
         using var server = NewServer(hub);
@@ -69,44 +104,207 @@ public class ServerControlTests
         var bob = JoinWithAvatar(hub, server, "Bob", "Bob Kerman", alice);
         var carol = JoinWithAvatar(hub, server, "Carol", "Carol Kerman", alice, bob);
 
-        // Bob launches the vessel, but Alice sits in the command seat: Alice becomes pilot and physics owner.
         bob.Send(MessageId.VesselProto, Proto(VesselText((10, true, new[] { "Alice Kerman", "Bob Kerman" }))), Channel.Bulk);
-        TestClient.Pump(server, alice, bob, carol);
-        var roles = carol.Last<VesselRolesMsg>()!.Value;
-        Assert.Equal(alice.ClientId, roles.PilotClientId);
-        Assert.Equal(new[] { alice.ClientId, bob.ClientId }, roles.AboardClientIds);
-        Assert.Equal(alice.ClientId, server.Authority.OwnerOf(VesselId));
-        Assert.Equal(alice.ClientId, alice.Messages<AuthorityAssignMsg>().Last().OwnerClientId);
+        Fly(server, bob, VesselId, alice, bob, carol);
+        Assert.Equal(bob.ClientId, server.Authority.OwnerOf(VesselId));
 
-        // Bob (co-pilot) sends input: forwarded to Alice only. Carol (not aboard) is dropped.
-        bob.Send(MessageId.CtrlInput, new CtrlInputMsg { VesselId = VesselId, Seq = 1, Active = CtrlAxes.Pitch, Pitch = 0.5f }, Channel.State, Delivery.Sequenced);
+        // Alice (co-pilot) sends input: forwarded to Bob only. Carol (not aboard) is dropped.
+        alice.Send(MessageId.CtrlInput, new CtrlInputMsg { VesselId = VesselId, Seq = 1, Active = CtrlAxes.Pitch, Pitch = 0.5f }, Channel.State, Delivery.Sequenced);
         carol.Send(MessageId.CtrlInput, new CtrlInputMsg { VesselId = VesselId, Seq = 1, Active = CtrlAxes.Roll, Roll = 1f }, Channel.State, Delivery.Sequenced);
         TestClient.Pump(server, alice, bob, carol);
-        var inputs = alice.Messages<CtrlInputMsg>().ToList();
+        var inputs = bob.Messages<CtrlInputMsg>().ToList();
         Assert.Single(inputs);
-        Assert.Equal(bob.ClientId, inputs[0].FromClientId);
+        Assert.Equal(alice.ClientId, inputs[0].FromClientId);
         Assert.Equal(0.5f, inputs[0].Pitch);
 
-        // Alice's merged state reaches Bob (aboard) but not Carol.
-        alice.Send(MessageId.CtrlState, new CtrlInputMsg { VesselId = VesselId, Seq = 2, MainThrottle = 1f }, Channel.State, Delivery.Sequenced);
+        // The owner's merged state reaches Alice (aboard) but not Carol.
+        bob.Send(MessageId.CtrlState, new CtrlInputMsg { VesselId = VesselId, Seq = 2, MainThrottle = 1f }, Channel.State, Delivery.Sequenced);
         TestClient.Pump(server, alice, bob, carol);
-        Assert.Equal(1f, bob.Messages<CtrlInputMsg>().Last().MainThrottle);
+        Assert.Equal(1f, alice.Messages<CtrlInputMsg>().Last().MainThrottle);
         Assert.Empty(carol.Messages<CtrlInputMsg>());
 
-        // Bob stages: forwarded to Alice.
-        bob.Send(MessageId.Stage, new StageMsg { VesselId = VesselId });
-        bob.Send(MessageId.PartEvent, new PartEventMsg { VesselId = VesselId, PartFlightId = 10, ModuleIndex = 0, EventName = "Deploy" });
+        // Staging and part buttons from a co-pilot reach the owner too.
+        alice.Send(MessageId.Stage, new StageMsg { VesselId = VesselId });
+        alice.Send(MessageId.PartEvent, new PartEventMsg { VesselId = VesselId, PartFlightId = 10, ModuleIndex = 0, EventName = "Deploy" });
         TestClient.Pump(server, alice, bob, carol);
-        Assert.Equal(bob.ClientId, alice.Last<StageMsg>()!.Value.FromClientId);
-        Assert.Equal("Deploy", alice.Last<PartEventMsg>()!.Value.EventName);
+        Assert.Equal(alice.ClientId, bob.Last<StageMsg>()!.Value.FromClientId);
+        Assert.Equal("Deploy", bob.Last<PartEventMsg>()!.Value.EventName);
+    }
 
-        // Alice leaves: Bob, next in the command part, becomes pilot and takes over the physics.
-        alice.Stop();
-        TestClient.Pump(server, alice, bob, carol);
-        var after = bob.Messages<VesselRolesMsg>().Last();
-        Assert.Equal(bob.ClientId, after.PilotClientId);
-        Assert.Equal(new[] { bob.ClientId }, after.AboardClientIds);
+    /// <summary>R2, and the sequence number that makes a stale snapshot harmless.</summary>
+    [Fact]
+    public void ControlIsGivenOnlyToSomeoneFlyingTheVessel()
+    {
+        var hub = new LoopbackHub();
+        using var server = NewServer(hub);
+        var alice = JoinWithAvatar(hub, server, "Alice", "Alice Kerman");
+        var bob = JoinWithAvatar(hub, server, "Bob", "Bob Kerman", alice);
+
+        bob.Send(MessageId.VesselProto, Proto(VesselText((10, true, new[] { "Alice Kerman", "Bob Kerman" }))), Channel.Bulk);
+        Fly(server, bob, VesselId, alice, bob);
+        var seqAtLaunch = server.Authority.SeqOf(VesselId);
+
+        // Alice is aboard on paper but has not reached the flight scene: refused, and nothing moves.
+        bob.Send(MessageId.ControlGive, new ControlGiveMsg { VesselId = VesselId, ToClientId = alice.ClientId });
+        TestClient.Pump(server, alice, bob);
+        Assert.Equal(AuthorityReason.NotInFlight, bob.Messages<AuthorityAssignMsg>().Last().Reason);
         Assert.Equal(bob.ClientId, server.Authority.OwnerOf(VesselId));
-        Assert.Equal(bob.ClientId, bob.Messages<AuthorityAssignMsg>().Last().OwnerClientId);
+        Assert.Equal(seqAtLaunch, server.Authority.SeqOf(VesselId));
+
+        // Once Alice is actually flying it, the same request works.
+        Fly(server, alice, VesselId, alice, bob);
+        bob.Send(MessageId.ControlGive, new ControlGiveMsg { VesselId = VesselId, ToClientId = alice.ClientId });
+        TestClient.Pump(server, alice, bob);
+        var granted = alice.Messages<AuthorityAssignMsg>().Last();
+        Assert.Equal(AuthorityReason.HandedOver, granted.Reason);
+        Assert.Equal(alice.ClientId, granted.OwnerClientId);
+        Assert.Equal(alice.ClientId, server.Authority.OwnerOf(VesselId));
+        Assert.True(granted.AuthoritySeq > seqAtLaunch, "every decision must advance the sequence");
+
+        // The pilot follows the owner, so Alice is announced as pilot too.
+        Assert.Equal(alice.ClientId, bob.Messages<VesselRolesMsg>().Last().PilotClientId);
+    }
+
+    [Fact]
+    public void RequestIsRelayedToThePilotAndDeclineComesBack()
+    {
+        var hub = new LoopbackHub();
+        using var server = NewServer(hub);
+        var alice = JoinWithAvatar(hub, server, "Alice", "Alice Kerman");
+        var bob = JoinWithAvatar(hub, server, "Bob", "Bob Kerman", alice);
+
+        bob.Send(MessageId.VesselProto, Proto(VesselText((10, true, new[] { "Alice Kerman", "Bob Kerman" }))), Channel.Bulk);
+        Fly(server, bob, VesselId, alice, bob);
+        Fly(server, alice, VesselId, alice, bob);
+
+        alice.Send(MessageId.ControlRequest, new ControlRequestMsg { VesselId = VesselId });
+        TestClient.Pump(server, alice, bob);
+        var asked = bob.Last<ControlRequestMsg>();
+        Assert.NotNull(asked);
+        Assert.Equal(alice.ClientId, asked!.Value.FromClientId);
+        Assert.Equal(bob.ClientId, server.Authority.OwnerOf(VesselId));   // asking alone changes nothing
+
+        bob.Send(MessageId.ControlDecline, new ControlDeclineMsg { VesselId = VesselId, ToClientId = alice.ClientId });
+        TestClient.Pump(server, alice, bob);
+        Assert.Equal(bob.ClientId, alice.Last<ControlDeclineMsg>()!.Value.FromClientId);
+        Assert.Equal(bob.ClientId, server.Authority.OwnerOf(VesselId));
+    }
+
+    /// <summary>R3: when the owner is not there to answer, the asker gets it rather than waiting forever.</summary>
+    [Fact]
+    public void RequestIsGrantedAtOnceWhenTheOwnerIsNotFlyingIt()
+    {
+        var hub = new LoopbackHub();
+        using var server = NewServer(hub);
+        var alice = JoinWithAvatar(hub, server, "Alice", "Alice Kerman");
+        var bob = JoinWithAvatar(hub, server, "Bob", "Bob Kerman", alice);
+
+        bob.Send(MessageId.VesselProto, Proto(VesselText((10, true, new[] { "Alice Kerman", "Bob Kerman" }))), Channel.Bulk);
+        TestClient.Pump(server, alice, bob);   // Bob owns it by R1 but never reports being in flight
+
+        Fly(server, alice, VesselId, alice, bob);
+        alice.Send(MessageId.ControlRequest, new ControlRequestMsg { VesselId = VesselId });
+        TestClient.Pump(server, alice, bob);
+        Assert.Equal(alice.ClientId, server.Authority.OwnerOf(VesselId));
+        Assert.Equal(AuthorityReason.HandedOver, alice.Messages<AuthorityAssignMsg>().Last().Reason);
+    }
+
+    /// <summary>R4 on a disconnect.</summary>
+    [Fact]
+    public void WhenThePilotDisconnectsWhoeverIsAboardAndFlyingTakesOver()
+    {
+        var hub = new LoopbackHub();
+        using var server = NewServer(hub);
+        var alice = JoinWithAvatar(hub, server, "Alice", "Alice Kerman");
+        var bob = JoinWithAvatar(hub, server, "Bob", "Bob Kerman", alice);
+
+        bob.Send(MessageId.VesselProto, Proto(VesselText((10, true, new[] { "Alice Kerman", "Bob Kerman" }))), Channel.Bulk);
+        Fly(server, bob, VesselId, alice, bob);
+        Fly(server, alice, VesselId, alice, bob);
+        Assert.Equal(bob.ClientId, server.Authority.OwnerOf(VesselId));
+
+        bob.Stop();
+        TestClient.Pump(server, alice, bob);
+        Assert.Equal(alice.ClientId, server.Authority.OwnerOf(VesselId));
+        var taken = alice.Messages<AuthorityAssignMsg>().Last();
+        Assert.Equal(AuthorityReason.PilotLeft, taken.Reason);
+        Assert.Equal(alice.ClientId, taken.OwnerClientId);
+    }
+
+    /// <summary>R5: with nobody flying it the vessel goes unowned, and is then there for the asking.</summary>
+    [Fact]
+    public void NobodyWhoIsNotFlyingIsMadeOwner()
+    {
+        var hub = new LoopbackHub();
+        using var server = NewServer(hub);
+        var alice = JoinWithAvatar(hub, server, "Alice", "Alice Kerman");
+        var bob = JoinWithAvatar(hub, server, "Bob", "Bob Kerman", alice);
+
+        bob.Send(MessageId.VesselProto, Proto(VesselText((10, true, new[] { "Alice Kerman", "Bob Kerman" }))), Channel.Bulk);
+        Fly(server, bob, VesselId, alice, bob);
+
+        bob.Stop();   // Alice is aboard but has never been in the flight
+        TestClient.Pump(server, alice, bob);
+        Assert.Equal(0, server.Authority.OwnerOf(VesselId));
+
+        Fly(server, alice, VesselId, alice);
+        alice.Send(MessageId.AuthorityRequest, new AuthorityRequestMsg { VesselId = VesselId });
+        TestClient.Pump(server, alice);
+        Assert.Equal(alice.ClientId, server.Authority.OwnerOf(VesselId));
+    }
+
+    /// <summary>
+    /// R4 on a departure. A pilot who steps out onto EVA with nobody else flying the rocket keeps simulating it -
+    /// releasing it there would leave the rocket beside them unsimulated.
+    /// </summary>
+    [Fact]
+    public void PilotWhoLeavesTheVesselHandsOverOnlyToSomeoneFlyingIt()
+    {
+        var hub = new LoopbackHub();
+        using var server = NewServer(hub);
+        var alice = JoinWithAvatar(hub, server, "Alice", "Alice Kerman");
+        var bob = JoinWithAvatar(hub, server, "Bob", "Bob Kerman", alice);
+
+        bob.Send(MessageId.VesselProto, Proto(VesselText((10, true, new[] { "Alice Kerman", "Bob Kerman" }))), Channel.Bulk);
+        Fly(server, bob, VesselId, alice, bob);
+        Assert.Equal(bob.ClientId, server.Authority.OwnerOf(VesselId));
+
+        // Bob's kerbal leaves the craft and Alice is not flying it: Bob keeps it.
+        bob.Send(MessageId.VesselProto, Proto(VesselText((10, true, new[] { "Alice Kerman" }))), Channel.Bulk);
+        TestClient.Pump(server, alice, bob);
+        Assert.Equal(bob.ClientId, server.Authority.OwnerOf(VesselId));
+
+        // Alice reaches the flight; the next snapshot without Bob aboard hands it to her.
+        Fly(server, alice, VesselId, alice, bob);
+        bob.Send(MessageId.VesselProto, Proto(VesselText((10, true, new[] { "Alice Kerman" }))), Channel.Bulk);
+        TestClient.Pump(server, alice, bob);
+        Assert.Equal(alice.ClientId, server.Authority.OwnerOf(VesselId));
+        Assert.Equal(AuthorityReason.PilotLeft, alice.Messages<AuthorityAssignMsg>().Last().Reason);
+    }
+
+    [Fact]
+    public void SharedStickIsPerVesselAndOnlyThePilotSetsIt()
+    {
+        var hub = new LoopbackHub();
+        using var server = NewServer(hub);
+        var alice = JoinWithAvatar(hub, server, "Alice", "Alice Kerman");
+        var bob = JoinWithAvatar(hub, server, "Bob", "Bob Kerman", alice);
+
+        bob.Send(MessageId.VesselProto, Proto(VesselText((10, true, new[] { "Alice Kerman", "Bob Kerman" }))), Channel.Bulk);
+        Fly(server, bob, VesselId, alice, bob);
+        Assert.False(alice.Messages<VesselRolesMsg>().Last().SharedStick);
+
+        // The co-pilot cannot let herself steer.
+        alice.Send(MessageId.ControlSetSharedStick, new ControlSetSharedStickMsg { VesselId = VesselId, Enabled = true });
+        TestClient.Pump(server, alice, bob);
+        Assert.False(alice.Messages<VesselRolesMsg>().Last().SharedStick);
+
+        bob.Send(MessageId.ControlSetSharedStick, new ControlSetSharedStickMsg { VesselId = VesselId, Enabled = true });
+        TestClient.Pump(server, alice, bob);
+        Assert.True(alice.Messages<VesselRolesMsg>().Last().SharedStick);
+
+        bob.Send(MessageId.ControlSetSharedStick, new ControlSetSharedStickMsg { VesselId = VesselId, Enabled = false });
+        TestClient.Pump(server, alice, bob);
+        Assert.False(alice.Messages<VesselRolesMsg>().Last().SharedStick);
     }
 }

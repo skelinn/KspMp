@@ -174,6 +174,9 @@ public class ServerVesselTests
             var synced = b.Last<VesselProtoMsg>();
             Assert.NotNull(synced);
             Assert.Equal(0, synced!.Value.OwnerClientId);
+            // A snapshot carries the authority decision it belongs to, so a client can tell a stale one from a
+            // fresh one when it arrives out of order against the Control channel.
+            Assert.Equal(server2.Authority.SeqOf(VesselA), synced.Value.AuthoritySeq);
             var text = Encoding.UTF8.GetString(DeflateCodec.Decompress(synced.Value.ProtoDeflated, 0, synced.Value.ProtoDeflated.Length));
             Assert.Contains("mk1pod.v2", text);
         }

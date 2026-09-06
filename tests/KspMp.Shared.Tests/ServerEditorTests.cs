@@ -126,12 +126,15 @@ public class ServerEditorTests
         Assert.Equal("liquidEngine", seen.HeldPartName);
         Assert.Equal(1.5f, seen.CursorX);
 
-        a.Send(MessageId.EditorLaunch, new EditorLaunchMsg { Facility = EditorFacilityKind.Vab, ShipName = "Rocket", LaunchSite = "LaunchPad" });
+        a.Send(MessageId.EditorLaunch, new EditorLaunchMsg { Facility = EditorFacilityKind.Vab, ShipName = "Rocket", LaunchSite = "LaunchPad", AboardKerbals = new[] { "Alice Kerman", "Bob Kerman" } });
         TestClient.Pump(server, a, b);
         var launch = b.Last<EditorLaunchMsg>();
         Assert.NotNull(launch);
         Assert.Equal("Rocket", launch!.Value.ShipName);
         Assert.Equal(a.ClientId, launch.Value.FromClientId);
+        // Who is seated has to survive the relay: it is the only way the other player learns their kerbal is
+        // going up, and the invite to join the flight is raised from it.
+        Assert.Equal(new[] { "Alice Kerman", "Bob Kerman" }, launch.Value.AboardKerbals);
         Assert.False(server.Editor.Get(EditorFacilityKind.Vab).HasCraft);
         Assert.Equal(0, server.Editor.Get(EditorFacilityKind.Vab).Revision);
 

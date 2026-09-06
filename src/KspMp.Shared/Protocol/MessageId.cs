@@ -70,6 +70,14 @@ namespace KspMp.Shared.Protocol
         // shared control
         CtrlInput = 600,
         CtrlState = 601,
+        /// <summary>Pilot -> server: let co-pilots steer while my hands are off the stick.</summary>
+        ControlSetSharedStick = 602,
+        /// <summary>Pilot -> server: hand this vessel to another player who is flying it.</summary>
+        ControlGive = 603,
+        /// <summary>Co-pilot -> server -> pilot: may I fly it? (the server fills in who asked)</summary>
+        ControlRequest = 604,
+        /// <summary>Pilot -> server -> asker: no.</summary>
+        ControlDecline = 605,
         Stage = 620,
         ActionGroup = 621,
         SasMode = 622,

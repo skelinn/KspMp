@@ -31,6 +31,7 @@ namespace KspMp
         public ControlSystem Control { get; private set; }
         public DockSystem Dock { get; private set; }
         public EditorSystem Editor { get; private set; }
+        public NoticeSystem Notices { get; private set; }
         public VesselRegistry Vessels { get; private set; }
         public VesselProtoSystem VesselProto { get; private set; }
         public VesselStateSystem VesselState { get; private set; }
@@ -46,6 +47,9 @@ namespace KspMp
         private float _stageAt = -1f;
         private float _toggleAt = -1f;
         private float _partEventAt = -1f;
+        private float _giveControlAt = -1f;
+        private float _requestControlAt = -1f;
+        private float _sharedStickAt = -1f;
         private float _orbitAt = -1f;
         private bool _dockSequenceStarted;
         private float _inputAt = -1f;
@@ -99,6 +103,7 @@ namespace KspMp
             Network.RegisterHandler(Shared.Protocol.MessageId.EditorLaunch, OnRemoteLaunchNotice);
 
             Systems = new SystemRegistry();
+            Systems.Add(Notices = new NoticeSystem(this));
             Systems.Add(Players = new PlayersSystem(this));
             Systems.Add(Chat = new ChatSystem(this));
             Systems.Add(TimeSync = new TimeSyncSystem(this));
@@ -177,6 +182,12 @@ namespace KspMp
                 _toggleAt = Time.realtimeSinceStartup + Launch.ToggleAfterSeconds;
             if (scene == GameScenes.FLIGHT && Launch.PartEventAfterSeconds >= 0 && _partEventAt < 0)
                 _partEventAt = Time.realtimeSinceStartup + Launch.PartEventAfterSeconds;
+            if (scene == GameScenes.FLIGHT && Launch.GiveControlAfterSeconds >= 0 && _giveControlAt < 0)
+                _giveControlAt = Time.realtimeSinceStartup + Launch.GiveControlAfterSeconds;
+            if (scene == GameScenes.FLIGHT && Launch.RequestControlAfterSeconds >= 0 && _requestControlAt < 0)
+                _requestControlAt = Time.realtimeSinceStartup + Launch.RequestControlAfterSeconds;
+            if (scene == GameScenes.FLIGHT && Launch.SharedStickAfterSeconds >= 0 && _sharedStickAt < 0)
+                _sharedStickAt = Time.realtimeSinceStartup + Launch.SharedStickAfterSeconds;
             if (scene == GameScenes.FLIGHT && Launch.OrbitAfterSeconds >= 0 && _orbitAt < 0)
                 _orbitAt = Time.realtimeSinceStartup + Launch.OrbitAfterSeconds;
             if (scene == GameScenes.FLIGHT && Launch.DockAfterSeconds >= 0 && !_dockSequenceStarted)
@@ -236,13 +247,45 @@ namespace KspMp
                 var extra = Game.SessionStarter.SeatCrew(manifest, Launch.ExtraCrew);
                 Log.Info("Auto-launch: " + craft + " from " + site + (seated ? " with " + Roster.AvatarName + " in the first seat" : " with default crew") + (extra > 0 ? " and " + extra + " extra crew" : ""));
                 KspMp.Vessels.LaunchSiteGuard.Clear(site);
-                AnnounceLaunch(System.IO.Path.GetFileNameWithoutExtension(path), site);
+                AnnounceLaunch(System.IO.Path.GetFileNameWithoutExtension(path), site, CrewNamesOf(manifest));
                 FlightDriver.StartWithNewLaunch(path, "Squad/Flags/default", site, manifest);
             }
             catch (Exception e)
             {
                 Log.Exception("Auto-launch", e);
             }
+        }
+
+        /// <summary>Gives the active vessel to the first other player aboard it.</summary>
+        private void AutoGiveControl()
+        {
+            var active = FlightGlobals.ActiveVessel;
+            if (active == null || !Control.TryGetRoles(active.id, out var roles) || roles.AboardClientIds == null) { Log.Warn("Auto-control: nobody to give control to"); return; }
+            foreach (var clientId in roles.AboardClientIds)
+            {
+                if (clientId == Network.ClientId) continue;
+                Log.Info("Auto-control: giving " + active.GetDisplayName() + " to #" + clientId);
+                Control.GiveControl(active.id, clientId);
+                return;
+            }
+            Log.Warn("Auto-control: nobody else is aboard " + active.GetDisplayName());
+        }
+
+        /// <summary>The kerbals a manifest seats, so a launch can say whose avatar is going up.</summary>
+        private static string[] CrewNamesOf(VesselCrewManifest manifest)
+        {
+            var names = new List<string>();
+            if (manifest == null) return names.ToArray();
+            try
+            {
+                foreach (var crew in manifest.GetAllCrew(false))
+                    if (crew != null && !string.IsNullOrEmpty(crew.name) && !names.Contains(crew.name)) names.Add(crew.name);
+            }
+            catch (Exception e)
+            {
+                Log.Exception("Reading a crew manifest", e);
+            }
+            return names.ToArray();
         }
 
         /// <summary>Toggles an action group the way the keyboard does, so co-pilot relaying is exercised.</summary>
@@ -659,7 +702,7 @@ namespace KspMp
         /// Tell everyone we are taking a launch site. Sent from here rather than EditorSystem so it also
         /// covers launches that never go through the VAB, such as the test harness.
         /// </summary>
-        public void AnnounceLaunch(string shipName, string site)
+        public void AnnounceLaunch(string shipName, string site, string[] aboardKerbals = null)
         {
             if (!Network.IsConnected) return;
             var facility = !string.IsNullOrEmpty(site) && site.IndexOf("Runway", StringComparison.OrdinalIgnoreCase) >= 0
@@ -670,6 +713,7 @@ namespace KspMp
                 Facility = facility,
                 ShipName = shipName ?? "a craft",
                 LaunchSite = site ?? string.Empty,
+                AboardKerbals = aboardKerbals ?? new string[0],
             }, Shared.Protocol.Channel.Control, Shared.Protocol.Delivery.ReliableOrdered);
         }
 
@@ -679,7 +723,9 @@ namespace KspMp
             var who = Players != null && Players.TryGet(msg.FromClientId, out var player) ? player.Name : "#" + msg.FromClientId;
             Log.Info(who + " launched " + msg.ShipName + " from " + msg.LaunchSite);
             KspMp.Vessels.LaunchSiteGuard.NoteRemoteLaunch(msg.LaunchSite, who);
-            if (Chat != null) Chat.AddLocal(who + " launched " + msg.ShipName + ". If your Kerbal is aboard you will join the flight.");
+            if (Presence != null) Presence.OnLaunchNotice(msg, Guid.Empty);
+            if (Notices != null && (msg.AboardKerbals == null || Roster == null || System.Array.IndexOf(msg.AboardKerbals, Roster.AvatarName ?? "") < 0))
+                Notices.Post("launch-" + msg.FromClientId, who + " launched " + msg.ShipName + " from " + msg.LaunchSite, Ui.Theme.Ink, ttlSeconds: 12f);
             if (Editor != null) Editor.OnRemoteLaunch();
         }
 
@@ -741,6 +787,23 @@ namespace KspMp
             {
                 _partEventAt = -1f;
                 AutoPartEvent();
+            }
+            if (_giveControlAt >= 0 && Time.realtimeSinceStartup >= _giveControlAt && HighLogic.LoadedSceneIsFlight && FlightGlobals.ready)
+            {
+                _giveControlAt = -1f;
+                AutoGiveControl();
+            }
+            if (_requestControlAt >= 0 && Time.realtimeSinceStartup >= _requestControlAt && HighLogic.LoadedSceneIsFlight && FlightGlobals.ready)
+            {
+                _requestControlAt = -1f;
+                var active = FlightGlobals.ActiveVessel;
+                if (active != null) { Log.Info("Auto-control: asking for control of " + active.GetDisplayName()); Control.RequestControl(active.id); }
+            }
+            if (_sharedStickAt >= 0 && Time.realtimeSinceStartup >= _sharedStickAt && HighLogic.LoadedSceneIsFlight && FlightGlobals.ready)
+            {
+                _sharedStickAt = -1f;
+                var active = FlightGlobals.ActiveVessel;
+                if (active != null) { Log.Info("Auto-control: sharing the stick on " + active.GetDisplayName()); Control.SetSharedStick(active.id, true); }
             }
             if (_inputAt >= 0 && HighLogic.LoadedSceneIsFlight && FlightGlobals.ready && Time.realtimeSinceStartup >= _inputAt)
             {

@@ -39,6 +39,18 @@ namespace KspMp.Systems
         private CtrlInputMsg _ownerState;
         private float _ownerStateAt = -10f;
         private float _nextMergeLogAt;
+        private bool _coPilotLocked;
+
+        /// <summary>
+        /// The axes a locked co-pilot must not move. Deliberately not ControlTypes.ALL_SHIP_CONTROLS: that also
+        /// swallows the staging and action-group keys, and those are exactly what a co-pilot is still allowed to
+        /// press - they are relayed to the pilot by the Harmony patches.
+        /// </summary>
+        private const ControlTypes CoPilotAxes = ControlTypes.PITCH | ControlTypes.YAW | ControlTypes.ROLL
+                                                 | ControlTypes.THROTTLE | ControlTypes.LINEAR
+                                                 | ControlTypes.WHEEL_STEER | ControlTypes.WHEEL_THROTTLE
+                                                 | ControlTypes.THROTTLE_CUT_MAX;
+        private const string CoPilotLockId = "KspMp.copilot";
 
         public ControlSystem(KspMpAddon addon) : base(addon) { }
 
@@ -71,8 +83,9 @@ namespace KspMp.Systems
                 if (!HighLogic.LoadedSceneIsFlight || FlightGlobals.fetch == null) return "";
                 var vessel = FlightGlobals.ActiveVessel;
                 if (vessel == null) return "";
-                if (Addon.Vessels.IsMine(vessel.id)) return IAmPilot(vessel.id) ? "Pilot" : IAmAboard(vessel.id) ? "Pilot (physics)" : "Controlling";
-                if (IAmAboard(vessel.id)) return "Co-pilot" + (PilotOf(vessel.id) != 0 ? " of " + NameOf(PilotOf(vessel.id)) : "") + (SharedStickFor(vessel.id) ? ", shared stick" : ", actions only");
+                // "Pilot" is flying your own kerbal's craft; "Controlling" is an uncrewed probe you simulate.
+                if (Addon.Vessels.IsMine(vessel.id)) return IAmAboard(vessel.id) ? "Pilot" : "Controlling";
+                if (IAmAboard(vessel.id)) return "Co-pilot" + (PilotOf(vessel.id) != 0 ? " of " + NameOf(PilotOf(vessel.id)) : "") + (SharedStickFor(vessel.id) ? " (shared stick)" : " (locked)");
                 return "Spectating";
             }
         }
@@ -88,6 +101,8 @@ namespace KspMp.Systems
             Net.RegisterHandler(MessageId.ActionGroup, OnActionGroup);
             Net.RegisterHandler(MessageId.SasMode, OnSasMode);
             Net.RegisterHandler(MessageId.PartEvent, OnPartEvent);
+            Net.RegisterHandler(MessageId.ControlRequest, OnControlRequest);
+            Net.RegisterHandler(MessageId.ControlDecline, OnControlDecline);
         }
 
         protected override void OnDeactivate()
@@ -99,7 +114,10 @@ namespace KspMp.Systems
             Net.UnregisterHandler(MessageId.ActionGroup, OnActionGroup);
             Net.UnregisterHandler(MessageId.SasMode, OnSasMode);
             Net.UnregisterHandler(MessageId.PartEvent, OnPartEvent);
+            Net.UnregisterHandler(MessageId.ControlRequest, OnControlRequest);
+            Net.UnregisterHandler(MessageId.ControlDecline, OnControlDecline);
             Unhook();
+            SetCoPilotLock(false);
             _roles.Clear();
             _inputs.Clear();
         }
@@ -119,7 +137,70 @@ namespace KspMp.Systems
             }
             var asOwner = Addon.Vessels.IsMine(active.id);
             if (_hooked != active || _hookedAsOwner != asOwner) Hook(active, asOwner);
+            // Exclusive control by default: a co-pilot's stick does nothing until the pilot shares it. The
+            // discrete actions stay live, which is the whole point of not locking ALL_SHIP_CONTROLS.
+            SetCoPilotLock(!asOwner && IAmAboard(active.id) && !SharedStickFor(active.id));
         }
+
+        private void SetCoPilotLock(bool locked)
+        {
+            if (locked == _coPilotLocked) return;
+            _coPilotLocked = locked;
+            if (locked) InputLockManager.SetControlLock(CoPilotAxes, CoPilotLockId);
+            else InputLockManager.RemoveControlLock(CoPilotLockId);
+        }
+
+        // ---- asking for, giving up and sharing the stick ----
+
+        /// <summary>Hands our vessel to another player. The server refuses unless they are in flight on it.</summary>
+        public void GiveControl(Guid vesselId, int toClientId)
+        {
+            if (!Addon.Vessels.IsMine(vesselId) || toClientId == 0 || toClientId == Net.ClientId) return;
+            Net.Send(MessageId.ControlGive, new ControlGiveMsg { VesselId = vesselId, ToClientId = toClientId }, Channel.Control, Delivery.ReliableOrdered);
+            Log.Info("Offered control of " + LabelOf(vesselId) + " to " + NameOf(toClientId));
+        }
+
+        public void RequestControl(Guid vesselId)
+        {
+            if (Addon.Vessels.IsMine(vesselId)) return;
+            Net.Send(MessageId.ControlRequest, new ControlRequestMsg { VesselId = vesselId }, Channel.Control, Delivery.ReliableOrdered);
+            Addon.Notices.Post("control-asked-" + vesselId, "Asked " + NameOf(PilotOf(vesselId)) + " for control of " + LabelOf(vesselId), Ui.Theme.Ink, ttlSeconds: 8f);
+        }
+
+        public void DeclineControl(Guid vesselId, int toClientId)
+        {
+            Net.Send(MessageId.ControlDecline, new ControlDeclineMsg { VesselId = vesselId, ToClientId = toClientId }, Channel.Control, Delivery.ReliableOrdered);
+            Addon.Notices.Dismiss("control-request-" + vesselId);
+        }
+
+        public void SetSharedStick(Guid vesselId, bool enabled)
+        {
+            if (!Addon.Vessels.IsMine(vesselId)) return;
+            Net.Send(MessageId.ControlSetSharedStick, new ControlSetSharedStickMsg { VesselId = vesselId, Enabled = enabled }, Channel.Control, Delivery.ReliableOrdered);
+        }
+
+        private void OnControlRequest(NetDataReader body)
+        {
+            var msg = Envelope.Read<ControlRequestMsg>(body);
+            var asker = msg.FromClientId;
+            var key = "control-request-" + msg.VesselId;
+            Addon.Notices.Post(key,
+                NameOf(asker) + " asks to fly " + LabelOf(msg.VesselId),
+                Ui.Theme.Accent,
+                new[]
+                {
+                    new NoticeSystem.Action { Label = "Give control", Primary = true, OnClick = () => { GiveControl(msg.VesselId, asker); Addon.Notices.Dismiss(key); } },
+                    new NoticeSystem.Action { Label = "Not now", OnClick = () => DeclineControl(msg.VesselId, asker) },
+                }, ttlSeconds: 30f);
+        }
+
+        private void OnControlDecline(NetDataReader body)
+        {
+            var msg = Envelope.Read<ControlDeclineMsg>(body);
+            Addon.Notices.Post("control-declined-" + msg.VesselId, NameOf(msg.FromClientId) + " is keeping the stick for now", Ui.Theme.Dim, ttlSeconds: 8f);
+        }
+
+        private string LabelOf(Guid vesselId) => Addon.Vessels.TryGet(vesselId, out var rv) ? rv.Label : vesselId.ToString().Substring(0, 8);
 
         private void Hook(Vessel vessel, bool asOwner)
         {
@@ -282,9 +363,14 @@ namespace KspMp.Systems
         private void OnRoles(NetDataReader body)
         {
             var msg = Envelope.Read<VesselRolesMsg>(body);
+            var hadPilot = _roles.TryGetValue(msg.VesselId, out var before) ? before.PilotClientId : 0;
             _roles[msg.VesselId] = msg;
             var label = Addon.Vessels.TryGet(msg.VesselId, out var rv) ? rv.Label : msg.VesselId.ToString().Substring(0, 8);
             Log.Info("Roles for " + label + ": pilot " + (msg.PilotClientId == 0 ? "none" : NameOf(msg.PilotClientId)) + ", aboard " + (msg.AboardClientIds != null ? msg.AboardClientIds.Length : 0) + (IAmAboard(msg.VesselId) ? " (we are aboard as " + (IAmPilot(msg.VesselId) ? "pilot" : "co-pilot") + ")" : ""));
+            if (msg.PilotClientId != hadPilot && msg.PilotClientId != 0 && IAmAboard(msg.VesselId))
+                Addon.Notices.Post("pilot-" + msg.VesselId,
+                    msg.PilotClientId == Net.ClientId ? "You are now pilot of " + label : NameOf(msg.PilotClientId) + " is now pilot of " + label,
+                    msg.PilotClientId == Net.ClientId ? Ui.Theme.Accent : Ui.Theme.Ink, ttlSeconds: 10f);
         }
 
         private void OnCtrlInput(NetDataReader body)

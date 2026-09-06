@@ -39,6 +39,10 @@ namespace KspMp
     ///                                clients can be compared for convergence
     ///   -kspmp-editordelete D        D seconds after the editor opens, delete the last non-root part, so a
     ///                                deletion round-trip can be checked from both clients' logs
+    ///   -kspmp-joinflight            accept a flight invite as soon as it can be accepted, without the countdown
+    ///   -kspmp-givecontrol D         D seconds after entering flight, give the active vessel to the other player
+    ///   -kspmp-requestcontrol D      D seconds after entering flight, ask the pilot for control
+    ///   -kspmp-sharedstick D         D seconds after entering flight, turn shared stick on for our vessel
     /// </summary>
     public sealed class LaunchOptions
     {
@@ -77,6 +81,10 @@ namespace KspMp
         public float EditorLoadAfterSeconds = -1f;
         public float EditorWatchSeconds = -1f;
         public float EditorDeleteAfterSeconds = -1f;
+        public bool JoinFlightAutomatically;
+        public float GiveControlAfterSeconds = -1f;
+        public float RequestControlAfterSeconds = -1f;
+        public float SharedStickAfterSeconds = -1f;
         public double OrbitAltitudeKm = -1;
         public float OrbitAfterSeconds = -1f;
         public float DockAfterSeconds = -1f;
@@ -219,6 +227,18 @@ namespace KspMp
                         break;
                     case "-kspmp-editordelete" when i + 1 < args.Length:
                         if (float.TryParse(args[++i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var deleteAfter)) options.EditorDeleteAfterSeconds = deleteAfter;
+                        break;
+                    case "-kspmp-joinflight":
+                        options.JoinFlightAutomatically = true;
+                        break;
+                    case "-kspmp-givecontrol" when i + 1 < args.Length:
+                        if (float.TryParse(args[++i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var giveAfter)) options.GiveControlAfterSeconds = giveAfter;
+                        break;
+                    case "-kspmp-requestcontrol" when i + 1 < args.Length:
+                        if (float.TryParse(args[++i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var askAfter)) options.RequestControlAfterSeconds = askAfter;
+                        break;
+                    case "-kspmp-sharedstick" when i + 1 < args.Length:
+                        if (float.TryParse(args[++i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var shareAfter)) options.SharedStickAfterSeconds = shareAfter;
                         break;
                     case "-kspmp-orbit" when i + 1 < args.Length:
                     {

@@ -79,6 +79,8 @@ internal class TestClient
             MessageId.ActionGroup => Envelope.Read<ActionGroupMsg>(body),
             MessageId.SasMode => Envelope.Read<SasModeMsg>(body),
             MessageId.PartEvent => Envelope.Read<PartEventMsg>(body),
+            MessageId.ControlRequest => Envelope.Read<ControlRequestMsg>(body),
+            MessageId.ControlDecline => Envelope.Read<ControlDeclineMsg>(body),
             MessageId.DockCommit => Envelope.Read<DockCommitMsg>(body),
             MessageId.EditorSnapshot => Envelope.Read<EditorSnapshotMsg>(body),
             MessageId.EditorPresence => Envelope.Read<EditorPresenceMsg>(body),

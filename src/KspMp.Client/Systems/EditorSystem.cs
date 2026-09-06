@@ -155,12 +155,13 @@ namespace KspMp.Systems
             }, Channel.State, Delivery.Sequenced);
         }
 
-        /// <summary>Called by the launch patch so everyone else leaves the shared bench.</summary>
-        public void AnnounceLaunch(string shipName, string site)
+        /// <summary>Called by the launch patch so everyone else leaves the shared bench, and so a player whose
+        /// kerbal is seated hears about it before the vessel reaches them.</summary>
+        public void AnnounceLaunch(string shipName, string site, string[] aboardKerbals)
         {
             if (!_joined) return;
-            Net.Send(MessageId.EditorLaunch, new EditorLaunchMsg { Facility = _facility, ShipName = shipName, LaunchSite = site }, Channel.Control, Delivery.ReliableOrdered);
-            Log.Info("Announced the launch of " + shipName + " from " + site);
+            Net.Send(MessageId.EditorLaunch, new EditorLaunchMsg { Facility = _facility, ShipName = shipName, LaunchSite = site, AboardKerbals = aboardKerbals }, Channel.Control, Delivery.ReliableOrdered);
+            Log.Info("Announced the launch of " + shipName + " from " + site + " with " + (aboardKerbals != null ? aboardKerbals.Length : 0) + " kerbal(s) aboard");
         }
 
         // ---- remote changes coming in ----

@@ -334,6 +334,18 @@ namespace KspMp.Server
                 case MessageId.DockCommit:
                     HandleDockCommit(client, Envelope.Read<DockCommitMsg>(body));
                     break;
+                case MessageId.ControlSetSharedStick:
+                    Control.HandleSetSharedStick(client, Envelope.Read<ControlSetSharedStickMsg>(body));
+                    break;
+                case MessageId.ControlGive:
+                    Control.HandleGive(client, Envelope.Read<ControlGiveMsg>(body));
+                    break;
+                case MessageId.ControlRequest:
+                    Control.HandleRequest(client, Envelope.Read<ControlRequestMsg>(body));
+                    break;
+                case MessageId.ControlDecline:
+                    Control.HandleDecline(client, Envelope.Read<ControlDeclineMsg>(body));
+                    break;
                 case MessageId.AuthorityRequest:
                     Authority.Request(client, Envelope.Read<AuthorityRequestMsg>(body).VesselId);
                     break;
@@ -426,7 +438,7 @@ namespace KspMp.Server
             owner = Authority.OwnerOf(proto.VesselId);
             if (proto.Reason != ProtoReason.Periodic)
                 _log(client.DisplayName + " snapshot of '" + record.Name + "' " + proto.VesselId.ToString().Substring(0, 8) + " (" + proto.Reason + ", " + record.ProtoDeflated.Length + " bytes)");
-            Broadcast(MessageId.VesselProto, record.ToProtoMessage(owner, proto.Reason), Channel.Bulk, Delivery.ReliableOrdered, client.Peer);
+            Broadcast(MessageId.VesselProto, record.ToProtoMessage(owner, proto.Reason, Authority.SeqOf(proto.VesselId)), Channel.Bulk, Delivery.ReliableOrdered, client.Peer);
         }
 
         /// <summary>Docking finished on the owner: one vessel absorbed the other.</summary>
@@ -457,6 +469,7 @@ namespace KspMp.Server
             Control.OnVesselRemoved(commit.RemovedVesselId);
             _log(client.DisplayName + ": vessel " + commit.RemovedVesselId.ToString().Substring(0, 8) + " docked into '" + record.Name + "' " + commit.SurvivorVesselId.ToString().Substring(0, 8));
             commit.OwnerClientId = client.ClientId;
+            commit.AuthoritySeq = Authority.SeqOf(commit.SurvivorVesselId);
             Broadcast(MessageId.DockCommit, commit, Channel.Bulk, Delivery.ReliableOrdered, client.Peer);
             Control.OnVesselSnapshot(record);
         }
@@ -465,7 +478,7 @@ namespace KspMp.Server
         private void SyncVessels(ClientSession client)
         {
             foreach (var record in Vessels.All)
-                Send(client.Peer, MessageId.VesselProto, record.ToProtoMessage(Authority.OwnerOf(record.Id), ProtoReason.Sync), Channel.Bulk, Delivery.ReliableOrdered);
+                Send(client.Peer, MessageId.VesselProto, record.ToProtoMessage(Authority.OwnerOf(record.Id), ProtoReason.Sync, Authority.SeqOf(record.Id)), Channel.Bulk, Delivery.ReliableOrdered);
             if (Vessels.Count > 0) _log("Synced " + Vessels.Count + " vessel(s) to " + client.DisplayName);
         }
 

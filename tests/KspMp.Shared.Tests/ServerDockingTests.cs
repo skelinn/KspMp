@@ -67,7 +67,7 @@ public class ServerDockingTests
     }
 
     [Fact]
-    public void WithTwoPilotsTheLowerPersistentIdYieldsAndTheHoldExpires()
+    public void WithTwoPilotsTheLowerPersistentIdYieldsAndOnlyAskingGetsItBack()
     {
         var hub = new LoopbackHub();
         using var server = NewServer(hub);
@@ -79,17 +79,31 @@ public class ServerDockingTests
         alice.Send(MessageId.VesselProto, Proto(a, 500, "A", "Alice Kerman"), Channel.Bulk);
         bob.Send(MessageId.VesselProto, Proto(b, 400, "B", "Bob Kerman"), Channel.Bulk);
         TestClient.Pump(server, alice, bob);
+        Fly(server, alice, a, alice, bob);
+        Fly(server, bob, b, alice, bob);
 
         alice.Send(MessageId.DockIntent, new DockIntentMsg { MyVesselId = a, OtherVesselId = b, DistanceMeters = 40 });
         TestClient.Pump(server, alice, bob);
         Assert.Equal(alice.ClientId, server.Authority.OwnerOf(b)); // B has the lower persistent id: it yields to Alice
         Assert.Equal(alice.ClientId, server.Authority.OwnerOf(a));
 
-        // Hold expired (0 s): Bob's next snapshot puts the seat rule back in charge of B.
+        // The hold has expired, but nothing hands B back on its own any more. The seat rule used to do that, and
+        // it was wrong in both directions: it gave craft to players who were not there, and it pulled authority
+        // back mid-approach. Bob is still aboard B and still flying it, so he asks, and gets it.
         bob.Send(MessageId.VesselProto, Proto(b, 400, "B", "Bob Kerman"), Channel.Bulk);
         TestClient.Pump(server, alice, bob);
-        Assert.Equal(alice.ClientId, server.Authority.OwnerOf(b)); // snapshot from a non-owner is ignored...
-        server.Control.OnVesselSnapshot(server.Vessels.All.First(v => v.Id == b));
-        Assert.Equal(bob.ClientId, server.Authority.OwnerOf(b)); // ...but the seat rule reassigns once the hold is gone
+        Assert.Equal(alice.ClientId, server.Authority.OwnerOf(b));
+
+        bob.Send(MessageId.ControlRequest, new ControlRequestMsg { VesselId = b });
+        TestClient.Pump(server, alice, bob);
+        Assert.Equal(bob.ClientId, server.Authority.OwnerOf(b));
+        Assert.Equal(AuthorityReason.HandedOver, bob.Messages<AuthorityAssignMsg>().Last().Reason);
+    }
+
+    /// <summary>Says "I am in the flight scene, on this vessel" - the precondition for owning one.</summary>
+    private static void Fly(ServerCore server, TestClient client, Guid vesselId, params TestClient[] all)
+    {
+        client.Send(MessageId.Presence, new PresenceMsg { State = PresenceState.InFlight, VesselId = vesselId, VesselName = "v", Scene = 7 });
+        TestClient.Pump(server, all);
     }
 }

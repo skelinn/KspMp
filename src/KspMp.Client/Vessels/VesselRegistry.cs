@@ -55,6 +55,30 @@ namespace KspMp.Vessels
             return _vessels.Remove(id);
         }
 
+        /// <summary>
+        /// Records who the server says owns a vessel, ignoring anything older than what we already have.
+        ///
+        /// Ownership arrives on three different messages - AuthorityAssign on the Control channel, VesselProto and
+        /// DockCommit on Bulk - and the channels are ordered independently of one another. A bulky snapshot
+        /// carrying the previous owner can therefore land after the assignment that replaced it and quietly undo
+        /// it. That is how a client could be told "authority: us (Granted)" and then never simulate the vessel:
+        /// by the time it looked, the registry said somebody else owned it again. The sequence number the server
+        /// stamps on every decision is what makes the three messages comparable.
+        /// </summary>
+        public bool ApplyOwner(RemoteVessel vessel, int ownerClientId, uint authoritySeq, string source)
+        {
+            if (authoritySeq != 0 && authoritySeq < vessel.AuthoritySeq)
+            {
+                if (ownerClientId != vessel.OwnerClientId)
+                    KspMp.Log.Info("Ignored a stale owner for " + vessel.Label + " from " + source + ": #" + ownerClientId
+                                   + " at sequence " + authoritySeq + ", we already have #" + vessel.OwnerClientId + " at " + vessel.AuthoritySeq);
+                return false;
+            }
+            if (authoritySeq > vessel.AuthoritySeq) vessel.AuthoritySeq = authoritySeq;
+            vessel.OwnerClientId = ownerClientId;
+            return true;
+        }
+
         public int OwnerOf(Guid id) => _vessels.TryGetValue(id, out var vessel) ? vessel.OwnerClientId : 0;
         public bool IsMine(Guid id) => _vessels.TryGetValue(id, out var vessel) && IsMine(vessel);
         public bool IsMine(RemoteVessel vessel) => LocalClientId != 0 && vessel.OwnerClientId == LocalClientId;

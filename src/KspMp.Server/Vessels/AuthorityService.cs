@@ -14,6 +14,7 @@ namespace KspMp.Server.Vessels
         private readonly ServerCore _server;
         private readonly Dictionary<Guid, int> _owners = new Dictionary<Guid, int>();
         private readonly Dictionary<Guid, DateTime> _dockingHolds = new Dictionary<Guid, DateTime>();
+        private readonly Dictionary<Guid, uint> _seq = new Dictionary<Guid, uint>();
 
         /// <summary>How long after the last DockIntent the pilot rule stays suspended for the vessel that yielded.</summary>
         public int DockingHoldSeconds = 60;
@@ -24,6 +25,8 @@ namespace KspMp.Server.Vessels
         }
 
         public int OwnerOf(Guid vesselId) => _owners.TryGetValue(vesselId, out var owner) ? owner : 0;
+        /// <summary>How many authority decisions this vessel has had. Rides on every message that carries an owner.</summary>
+        public uint SeqOf(Guid vesselId) => _seq.TryGetValue(vesselId, out var seq) ? seq : 0;
         public bool IsOwnedBy(Guid vesselId, int clientId) => OwnerOf(vesselId) == clientId;
         public bool IsUnowned(Guid vesselId) => OwnerOf(vesselId) == 0;
         public IEnumerable<Guid> VesselsOwnedBy(int clientId) => _owners.Where(p => p.Value == clientId).Select(p => p.Key).ToList();
@@ -35,7 +38,10 @@ namespace KspMp.Server.Vessels
             if (owner == client.ClientId) return;
             if (owner != 0)
             {
-                _server.Send(client.Peer, MessageId.AuthorityAssign, new AuthorityAssignMsg { VesselId = vesselId, OwnerClientId = owner, Reason = AuthorityReason.Denied }, Channel.Control, Delivery.ReliableOrdered);
+                // Deliberately not "unless the owner looks idle": presence arrives a beat after the snapshot that
+                // claims a vessel, so a client entering flight would race the launcher for their own rocket.
+                // Taking a vessel off an owner who is not flying it is what ControlRequest (R3) is for.
+                Tell(client, vesselId, AuthorityReason.Denied);
                 return;
             }
             Assign(vesselId, client.ClientId, AuthorityReason.Granted);
@@ -44,19 +50,25 @@ namespace KspMp.Server.Vessels
         public void Release(ClientSession client, Guid vesselId)
         {
             if (OwnerOf(vesselId) != client.ClientId) return;
+            // Prefer someone else who is aboard and in flight over leaving the vessel unsimulated.
+            if (_server.Control.TryHandOverOnDeparture(vesselId, client.ClientId)) return;
             Assign(vesselId, 0, AuthorityReason.Released);
         }
 
         public void ReleaseAll(ClientSession client)
         {
             foreach (var vesselId in VesselsOwnedBy(client.ClientId))
+            {
+                if (_server.Control.TryHandOverOnDeparture(vesselId, client.ClientId)) continue;
                 Assign(vesselId, 0, AuthorityReason.OwnerLeft);
+            }
         }
 
         public void Forget(Guid vesselId)
         {
             _owners.Remove(vesselId);
             _dockingHolds.Remove(vesselId);
+            _seq.Remove(vesselId);
         }
 
         public bool IsDockingHeld(Guid vesselId)
@@ -81,8 +93,10 @@ namespace KspMp.Server.Vessels
             if (otherOwner == client.ClientId) return;
             if (!_server.Vessels.TryGet(mine, out var mineRecord) || !_server.Vessels.TryGet(other, out var otherRecord)) return;
 
-            var myPilot = _server.Control.PilotOf(mine);
-            var otherPilot = _server.Control.PilotOf(other);
+            // "Has a pilot" here means somebody is aboard and actually in flight on it: an unattended vessel is
+            // the one that should yield, and a vessel whose crew is not in the flight scene is unattended.
+            var myPilot = _server.Control.FlyingCrewOf(mine);
+            var otherPilot = _server.Control.FlyingCrewOf(other);
             Guid yielding;
             int newOwner;
             if (otherOwner == 0 || otherPilot == 0) { yielding = other; newOwner = client.ClientId; }
@@ -101,7 +115,16 @@ namespace KspMp.Server.Vessels
         {
             if (ownerClientId == 0) _owners.Remove(vesselId);
             else _owners[vesselId] = ownerClientId;
-            _server.Broadcast(MessageId.AuthorityAssign, new AuthorityAssignMsg { VesselId = vesselId, OwnerClientId = ownerClientId, Reason = reason }, Channel.Control, Delivery.ReliableOrdered);
+            var seq = SeqOf(vesselId) + 1;
+            _seq[vesselId] = seq;
+            _server.Broadcast(MessageId.AuthorityAssign, new AuthorityAssignMsg { VesselId = vesselId, OwnerClientId = ownerClientId, Reason = reason, AuthoritySeq = seq }, Channel.Control, Delivery.ReliableOrdered);
+            _server.Control.OnAuthorityChanged(vesselId);
+        }
+
+        /// <summary>Tells one client who owns a vessel without changing anything (a refusal, or an answer to a request).</summary>
+        public void Tell(ClientSession client, Guid vesselId, AuthorityReason reason)
+        {
+            _server.Send(client.Peer, MessageId.AuthorityAssign, new AuthorityAssignMsg { VesselId = vesselId, OwnerClientId = OwnerOf(vesselId), Reason = reason, AuthoritySeq = SeqOf(vesselId) }, Channel.Control, Delivery.ReliableOrdered);
         }
     }
 }

@@ -33,6 +33,8 @@ namespace KspMp.Shared.Protocol
         public int OwnerClientId;
         public string Name;
         public byte[] ProtoDeflated;
+        /// <summary>Which authority decision OwnerClientId came from; see <see cref="AuthorityAssignMsg.AuthoritySeq"/>.</summary>
+        public uint AuthoritySeq;
 
         public void Serialize(NetDataWriter w)
         {
@@ -41,6 +43,7 @@ namespace KspMp.Shared.Protocol
             w.Put(OwnerClientId);
             w.Put(Name ?? string.Empty);
             w.PutBytesWithLength(ProtoDeflated ?? Array.Empty<byte>());
+            w.Put(AuthoritySeq);
         }
 
         public void Deserialize(NetDataReader r)
@@ -50,6 +53,7 @@ namespace KspMp.Shared.Protocol
             OwnerClientId = r.GetInt();
             Name = r.GetString();
             ProtoDeflated = r.GetBytesWithLength();
+            AuthoritySeq = r.GetUInt();
         }
     }
 }

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using KspMp.Shared.Protocol;
+using KspMp.Vessels;
 using LiteNetLib.Utils;
 using UnityEngine;
 
@@ -47,35 +48,160 @@ namespace KspMp.Systems
         {
             _sceneEnteredAt = Time.realtimeSinceStartup;
             _lastSnappedTo = Guid.Empty;
+            // The wording and the countdown depend on the scene, so a kept invite is re-raised after the move.
+            if (Invite != null) RaiseInviteNotice();
         }
 
-        /// <summary>Our Kerbal was seated in a vessel that is now flying (a friend launched with us aboard): join it.</summary>
-        private void MaybeEnterFlight(Vessel avatarVessel)
+        // ---- being invited into somebody else's flight ----
+
+        /// <summary>An offer to join a flight our avatar is aboard: raised by a launch notice, or by noticing our
+        /// kerbal on a vessel we are not flying. It survives scene changes, because accepting one usually means
+        /// walking out of the VAB first.</summary>
+        public sealed class FlightInvite
         {
-            if (avatarVessel == null) return;
-            var proto = avatarVessel.protoVessel;
-            MaybeEnterFlightFromProto(proto, avatarVessel.GetDisplayName(), avatarVessel.id, proto != null ? proto.situation : avatarVessel.situation);
+            public Guid VesselId;
+            public string VesselName;
+            public string LauncherName;
+            /// <summary>When the automatic join fires, or -1 while it is not counting down.</summary>
+            public float AutoAt = -1f;
         }
 
-        private void MaybeEnterFlightFromProto(ProtoVessel proto, string name)
+        public FlightInvite Invite { get; private set; }
+
+        /// <summary>The launch notice arrived before the vessel exists here, so the invite is raised from it.</summary>
+        public void OnLaunchNotice(EditorLaunchMsg msg, Guid vesselId)
         {
-            if (proto != null) MaybeEnterFlightFromProto(proto, name, proto.vesselID, proto.situation);
+            var avatar = Addon.Roster.AvatarName;
+            if (string.IsNullOrEmpty(avatar) || msg.AboardKerbals == null) return;
+            var aboard = false;
+            for (var i = 0; i < msg.AboardKerbals.Length; i++)
+                if (string.Equals(msg.AboardKerbals[i], avatar, StringComparison.Ordinal)) { aboard = true; break; }
+            if (!aboard) return;
+            Offer(vesselId, msg.ShipName, NameOf(msg.FromClientId));
         }
 
-        private void MaybeEnterFlightFromProto(ProtoVessel proto, string name, Guid vesselId, Vessel.Situations situation)
+        /// <summary>
+        /// Raises (or completes) an invite. The launch notice arrives before the craft does - it is sent from a
+        /// prefix on launchVessel, when the vessel does not exist even on the launcher's machine - so an invite
+        /// starts without a vessel id and is completed by the first snapshot that puts our kerbal aboard one.
+        /// </summary>
+        private void Offer(Guid vesselId, string vesselName, string launcherName)
         {
+            if (vesselId != Guid.Empty && _lastEnteredFor == vesselId) return;
+            if (Invite != null)
+            {
+                if (Invite.VesselId == vesselId) return;
+                if (Invite.VesselId != Guid.Empty || vesselId == Guid.Empty) return;
+                Invite.VesselId = vesselId;                              // the craft we were promised has arrived
+                if (!string.IsNullOrEmpty(vesselName)) Invite.VesselName = vesselName;
+                RaiseInviteNotice();
+                return;
+            }
+            Invite = new FlightInvite { VesselId = vesselId, VesselName = vesselName, LauncherName = launcherName };
+            RaiseInviteNotice();
+        }
+
+        public void DismissInvite()
+        {
+            Invite = null;
+            Addon.Notices.Dismiss(InviteKey);
+        }
+
+        private const string InviteKey = "flight-invite";
+
+        /// <summary>
+        /// The notice for the current invite, reworded for where the player is standing. Only somebody idle at the
+        /// space centre gets a countdown - yanking a player out of the VAB mid-build would be worse than the
+        /// problem it solves - so in an editor the button says what it will cost instead.
+        /// </summary>
+        private void RaiseInviteNotice()
+        {
+            var invite = Invite;
+            if (invite == null) return;
             var scene = HighLogic.LoadedScene;
-            if (scene != GameScenes.SPACECENTER && scene != GameScenes.TRACKSTATION) return;
-            if (Time.realtimeSinceStartup - _sceneEnteredAt < 3f || _lastEnteredFor == vesselId) return;
-            if (situation == Vessel.Situations.LANDED || situation == Vessel.Situations.SPLASHED) return;
-            var game = HighLogic.CurrentGame;
-            var index = game.flightState.protoVessels.FindIndex(p => p != null && p.vesselID == vesselId);
-            if (index < 0) return;
-            _lastEnteredFor = vesselId;
-            Log.Info("Entering flight: our Kerbal is aboard " + name + " (" + situation + ")");
-            Addon.Chat.AddLocal("Your Kerbal is aboard " + name + "; joining the flight.");
-            FlightDriver.StartAndFocusVessel(game, index);
+            var idleAtBase = scene == GameScenes.SPACECENTER || scene == GameScenes.TRACKSTATION;
+            var inEditor = scene == GameScenes.EDITOR;
+            var who = string.IsNullOrEmpty(invite.LauncherName) ? "Someone" : invite.LauncherName;
+            var name = string.IsNullOrEmpty(invite.VesselName) ? "a craft" : invite.VesselName;
+            var ready = invite.VesselId != Guid.Empty;
+            var text = who + " launched " + name + " with your Kerbal aboard";
+
+            NoticeSystem.Action[] actions;
+            if (inEditor)
+            {
+                actions = new[]
+                {
+                    new NoticeSystem.Action { Label = "Leave the VAB and join", Primary = true, OnClick = () => HighLogic.LoadScene(GameScenes.SPACECENTER) },
+                    new NoticeSystem.Action { Label = "Stay here", OnClick = DismissInvite },
+                };
+            }
+            else
+            {
+                actions = new[]
+                {
+                    new NoticeSystem.Action { Label = ready ? "Enter flight" : "waiting for the launch...", Primary = ready, OnClick = ready ? (System.Action)(() => JoinFlight(invite.VesselId)) : null },
+                    new NoticeSystem.Action { Label = "Not now", OnClick = DismissInvite },
+                };
+            }
+
+            var notice = Addon.Notices.Post(InviteKey, text, Ui.Theme.Accent, actions, ttlSeconds: 0f);
+            // Only a player standing idle at the space centre gets pulled in automatically; anywhere else the
+            // countdown would interrupt something they were doing on purpose.
+            if (ready && idleAtBase && Time.realtimeSinceStartup - _sceneEnteredAt >= 3f)
+            {
+                invite.AutoAt = Time.realtimeSinceStartup + AutoJoinSeconds;
+                notice.CountdownUntil = invite.AutoAt;
+                notice.CountdownText = "joining";
+                notice.OnCountdown = () => JoinFlight(invite.VesselId);
+            }
+            else
+            {
+                invite.AutoAt = -1f;
+            }
         }
+
+        public const float AutoJoinSeconds = 10f;
+
+        /// <summary>
+        /// Loads the flight scene focused on a vessel.
+        ///
+        /// It cannot simply look the vessel up in <c>flightState.protoVessels</c>: that list is written by the
+        /// save file, and vessels that arrived over the network are never added to it - which is the second
+        /// reason the old join path never fired. <see cref="Game.Updated"/> rebuilds the flight state from every
+        /// live vessel instead, which is the same thing KSP does when you fly a craft from the tracking station.
+        /// </summary>
+        public bool JoinFlight(Guid vesselId)
+        {
+            if (vesselId == Guid.Empty) return false;
+            if (!VesselLoader.GameReady || FlightGlobals.FindVessel(vesselId) == null)
+            {
+                Log.Info("Cannot join the flight yet: vessel " + vesselId.ToString().Substring(0, 8) + " has not arrived here");
+                return false;
+            }
+            try
+            {
+                GamePersistence.SaveGame("persistent", HighLogic.SaveFolder, SaveMode.OVERWRITE);
+                var game = HighLogic.CurrentGame.Updated();
+                var index = game.flightState.protoVessels.FindIndex(pv => pv != null && pv.vesselID == vesselId);
+                if (index < 0)
+                {
+                    Log.Warn("Cannot join the flight: vessel " + vesselId.ToString().Substring(0, 8) + " is not in the refreshed flight state");
+                    return false;
+                }
+                _lastEnteredFor = vesselId;
+                DismissInvite();
+                Log.Info("Entering flight on vessel " + vesselId.ToString().Substring(0, 8) + " (index " + index + " of " + game.flightState.protoVessels.Count + ")");
+                FlightDriver.StartAndFocusVessel(game, index);
+                return true;
+            }
+            catch (Exception e)
+            {
+                Log.Exception("Joining a flight", e);
+                return false;
+            }
+        }
+
+        private string NameOf(int clientId) => Addon.Players.TryGet(clientId, out var p) ? p.Name : "#" + clientId;
 
         public string Describe(int clientId)
         {
@@ -110,7 +236,18 @@ namespace KspMp.Systems
                 Log.Info("Presence: " + Describe(presence));
             }
 
-            MaybeEnterFlight(avatarVessel);
+            // Our kerbal is aboard a vessel we are not flying: offer to join it.
+            if (avatarVessel != null && !HighLogic.LoadedSceneIsFlight)
+                Offer(avatarVessel.id, avatarVessel.GetDisplayName(), "");
+            if (Invite != null)
+            {
+                var id = Invite.VesselId;
+                if (id != Guid.Empty && (_lastEnteredFor == id || (HighLogic.LoadedSceneIsFlight && FlightGlobals.ActiveVessel != null && FlightGlobals.ActiveVessel.id == id)))
+                    DismissInvite();
+                else if (!Addon.Notices.Has(InviteKey)) RaiseInviteNotice();
+                else if (id != Guid.Empty && Invite.AutoAt < 0 && (HighLogic.LoadedScene == GameScenes.SPACECENTER || HighLogic.LoadedScene == GameScenes.TRACKSTATION)) RaiseInviteNotice();
+                if (Invite != null && Invite.VesselId != Guid.Empty && Addon.Launch != null && Addon.Launch.JoinFlightAutomatically) JoinFlight(Invite.VesselId);
+            }
 
             // The camera follows our Kerbal: if they sit in a loaded vessel that is not active, switch to it.
             if (HighLogic.LoadedSceneIsFlight && FlightGlobals.ready && avatarVessel != null && avatarVessel.loaded && FlightGlobals.ActiveVessel != avatarVessel && _lastSnappedTo != avatarVessel.id)
@@ -162,7 +299,8 @@ namespace KspMp.Systems
                         if (crew[c] == null || crew[c].name != avatar) continue;
                         avatarVessel = proto.vesselRef;
                         var protoName = KSP.Localization.Localizer.Format(proto.vesselName);
-                        if (avatarVessel == null) MaybeEnterFlightFromProto(proto, protoName);
+                        if (avatarVessel == null && proto.situation != Vessel.Situations.LANDED && proto.situation != Vessel.Situations.SPLASHED)
+                            Offer(proto.vesselID, protoName, "");
                         return new PresenceMsg
                         {
                             ClientId = Net.ClientId,

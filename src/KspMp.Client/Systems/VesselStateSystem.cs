@@ -56,6 +56,14 @@ namespace KspMp.Systems
                 {
                     Net.Send(MessageId.VesselState, VesselStateCapture.Capture(vessel, ut), Channel.State, Delivery.Sequenced);
                     Sent++;
+                    // Being told we own a vessel and actually simulating it are two different things: a fix that
+                    // moved authority correctly but left nobody streaming state is what docs/PLAN.md:230 records.
+                    // This line is the difference showing up in the log.
+                    if (remote.AnnounceFirstStateSent)
+                    {
+                        remote.AnnounceFirstStateSent = false;
+                        Log.Info("Simulating " + remote.Label + ": first state sent");
+                    }
                 }
                 catch (Exception e)
                 {

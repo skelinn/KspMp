@@ -34,6 +34,89 @@ namespace KspMp.Shared.Protocol
         }
     }
 
+    /// <summary>The pilot lets everyone else aboard steer while the pilot's own stick is neutral. Pilot only.</summary>
+    public struct ControlSetSharedStickMsg : INetSerializable
+    {
+        public Guid VesselId;
+        public bool Enabled;
+
+        public void Serialize(NetDataWriter w)
+        {
+            w.PutGuidRaw(VesselId);
+            w.Put(Enabled);
+        }
+
+        public void Deserialize(NetDataReader r)
+        {
+            VesselId = r.GetGuidRaw();
+            Enabled = r.GetBool();
+        }
+    }
+
+    /// <summary>
+    /// The pilot hands a vessel to another player. The server refuses unless that player is actually in flight on
+    /// it: handing a vessel to somebody who is not there leaves nobody simulating it, which is worse than the
+    /// wrong player simulating it (see the docking-authority section of docs/PLAN.md).
+    /// </summary>
+    public struct ControlGiveMsg : INetSerializable
+    {
+        public Guid VesselId;
+        public int ToClientId;
+
+        public void Serialize(NetDataWriter w)
+        {
+            w.PutGuidRaw(VesselId);
+            w.Put(ToClientId);
+        }
+
+        public void Deserialize(NetDataReader r)
+        {
+            VesselId = r.GetGuidRaw();
+            ToClientId = r.GetInt();
+        }
+    }
+
+    /// <summary>A co-pilot asks for the stick. Client -> server (FromClientId ignored) and server -> pilot (filled in).</summary>
+    public struct ControlRequestMsg : INetSerializable
+    {
+        public Guid VesselId;
+        public int FromClientId;
+
+        public void Serialize(NetDataWriter w)
+        {
+            w.PutGuidRaw(VesselId);
+            w.Put(FromClientId);
+        }
+
+        public void Deserialize(NetDataReader r)
+        {
+            VesselId = r.GetGuidRaw();
+            FromClientId = r.GetInt();
+        }
+    }
+
+    /// <summary>The pilot says no to a <see cref="ControlRequestMsg"/>; relayed back to whoever asked.</summary>
+    public struct ControlDeclineMsg : INetSerializable
+    {
+        public Guid VesselId;
+        public int ToClientId;
+        public int FromClientId;
+
+        public void Serialize(NetDataWriter w)
+        {
+            w.PutGuidRaw(VesselId);
+            w.Put(ToClientId);
+            w.Put(FromClientId);
+        }
+
+        public void Deserialize(NetDataReader r)
+        {
+            VesselId = r.GetGuidRaw();
+            ToClientId = r.GetInt();
+            FromClientId = r.GetInt();
+        }
+    }
+
     [Flags]
     public enum CtrlAxes : ushort
     {

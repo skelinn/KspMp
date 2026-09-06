@@ -98,6 +98,8 @@ namespace KspMp.Shared.Protocol
         public int FromClientId;
         public string ShipName;
         public string LaunchSite;
+        /// <summary>Kerbals seated at launch, so a player whose avatar is aboard can be invited into the flight.</summary>
+        public string[] AboardKerbals;
 
         public void Serialize(NetDataWriter w)
         {
@@ -105,6 +107,9 @@ namespace KspMp.Shared.Protocol
             w.Put(FromClientId);
             w.Put(ShipName ?? string.Empty);
             w.Put(LaunchSite ?? string.Empty);
+            var count = AboardKerbals != null ? AboardKerbals.Length : 0;
+            w.Put((byte)count);
+            for (var i = 0; i < count; i++) w.Put(AboardKerbals[i] ?? string.Empty);
         }
 
         public void Deserialize(NetDataReader r)
@@ -113,6 +118,9 @@ namespace KspMp.Shared.Protocol
             FromClientId = r.GetInt();
             ShipName = r.GetString();
             LaunchSite = r.GetString();
+            var count = r.GetByte();
+            AboardKerbals = new string[count];
+            for (var i = 0; i < count; i++) AboardKerbals[i] = r.GetString();
         }
     }
 }
