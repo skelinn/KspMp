@@ -159,6 +159,11 @@ namespace KspMp
                 _editorLoadDone = true;
                 StartCoroutine(AutoLoadCraft(Launch.EditorLoadAfterSeconds));
             }
+            if (scene == GameScenes.EDITOR && Launch.EditorDeleteAfterSeconds >= 0 && !_editorDeleteDone)
+            {
+                _editorDeleteDone = true;
+                StartCoroutine(AutoDeletePart(Launch.EditorDeleteAfterSeconds));
+            }
             if (scene == GameScenes.EDITOR && Launch.EditorWatchSeconds > 0 && !_editorWatchStarted)
             {
                 _editorWatchStarted = true;
@@ -538,6 +543,7 @@ namespace KspMp
 
         private bool _autoEditorDone;
         private bool _editorLoadDone;
+        private bool _editorDeleteDone;
         private bool _editorWatchStarted;
 
         /// <summary>Test harness: open the VAB or SPH so two clients end up on one shared workbench.</summary>
@@ -579,10 +585,7 @@ namespace KspMp
                     Log.Warn("Auto-editor: could not read a craft out of " + path);
                     return;
                 }
-                editor.ship.Clear();
-                EditorLogic.fetch.ship = ship;
-                editor.SetBackup();
-                GameEvents.onEditorShipModified.Fire(ship);
+                global::KspMp.Systems.EditorSystem.ReplaceWorkbench(editor, ship);
                 Log.Info("Auto-editor: loaded " + ship.shipName + " ("
                          + (ship.parts != null ? ship.parts.Count : 0) + " part(s)) onto the shared workbench");
             }
@@ -590,6 +593,33 @@ namespace KspMp
             {
                 Log.Exception("Auto-editor: loading a craft", e);
             }
+        }
+
+        /// <summary>
+        /// Deletes the last non-root part, the way clicking it with the delete tool does. A deletion is the edit
+        /// the ghost-part bug used to swallow, so it is the one worth being able to repeat from a script.
+        /// </summary>
+        private System.Collections.IEnumerator AutoDeletePart(float delaySeconds)
+        {
+            yield return new WaitForSeconds(Mathf.Max(delaySeconds, 0f));
+            var editor = EditorLogic.fetch;
+            if (editor == null || editor.ship == null || editor.ship.parts == null || editor.ship.parts.Count < 2)
+            {
+                Log.Warn("Auto-editor: nothing to delete (the workbench has fewer than two parts)");
+                yield break;
+            }
+            Part target = null;
+            for (var i = editor.ship.parts.Count - 1; i >= 0; i--)
+            {
+                var part = editor.ship.parts[i];
+                if (part == null || part == editor.rootPart || part.children.Count > 0) continue;
+                target = part;
+                break;
+            }
+            if (target == null) { Log.Warn("Auto-editor: every part is the root or has children; nothing safe to delete"); yield break; }
+            var name = target.partInfo != null ? target.partInfo.title : target.name;
+            EditorLogic.DeletePart(target);
+            Log.Info("Auto-editor: deleted " + name + ", " + editor.ship.parts.Count + " part(s) left");
         }
 
         private System.Collections.IEnumerator EditorWatch(float everySeconds)

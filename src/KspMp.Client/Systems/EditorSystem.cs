@@ -187,10 +187,7 @@ namespace KspMp.Systems
                     Log.Warn("Could not load the shared craft (revision " + msg.Revision + ")");
                     return;
                 }
-                editor.ship.Clear();
-                EditorLogic.fetch.ship = ship;
-                editor.SetBackup();
-                GameEvents.onEditorShipModified.Fire(ship);
+                ReplaceWorkbench(editor, ship);
                 // Hash what SendSnapshot would hash, not the bytes that arrived. KSP renumbers parts and
                 // reorders them as it loads a craft, so the text we received and the text we would write back
                 // out differ for the very same ship. Storing the received text here meant the guard never
@@ -208,6 +205,66 @@ namespace KspMp.Systems
             {
                 Applying = false;
             }
+        }
+
+        /// <summary>
+        /// Puts <paramref name="ship"/> on the workbench the way KSP's own craft load does.
+        ///
+        /// The obvious swap - <c>editor.ship.Clear(); editor.ship = ship;</c> - does not work, because
+        /// <see cref="ShipConstruct.Clear"/> only empties a list (ShipConstruct.cs:2799). The previous craft's
+        /// Part objects stay in the scene: drawn and clickable, but belonging to no ship. A part the other
+        /// builder deleted lingers as a ghost, clicking a ghost does nothing, and a fresh set piles up with every
+        /// snapshot applied - which is why the player who receives more snapshots ends up unable to delete
+        /// anything at all. KSP's on_shipLoaded (EditorLogic.cs:6591-6640) destroys every part that is not in the
+        /// new ship, drops the selection, re-layers and resets the crew tab; this does the same.
+        /// </summary>
+        internal static void ReplaceWorkbench(EditorLogic editor, ShipConstruct ship)
+        {
+            if (editor == null || ship == null) return;
+
+            // SetBackup() copies these two fields back into the ship (EditorLogic.cs:7568), so they have to say
+            // the incoming craft's name before it runs. Otherwise every applied craft is silently renamed to
+            // whatever the receiving player had typed, and the rename goes back out as if it were a local edit.
+            if (editor.shipNameField != null) editor.shipNameField.text = ship.shipName;
+            if (editor.shipDescriptionField != null) editor.shipDescriptionField.text = ship.shipDescription;
+
+            var previous = editor.ship;
+            if (previous != null && previous.vesselDeltaV != null)
+            {
+                UnityEngine.Object.Destroy(previous.vesselDeltaV);
+                previous.vesselDeltaV = null;
+            }
+
+            var partCount = ship.parts != null ? ship.parts.Count : 0;
+            editor.ship = ship;
+            editor.rootPart = partCount > 0 ? ship.parts[0].localRoot : null;
+
+            var strays = 0;
+            var all = Part.allParts.ToArray();
+            for (var i = 0; i < all.Length; i++)
+            {
+                if (all[i] == null || ship.Contains(all[i])) continue;
+                strays++;
+                UnityEngine.Object.Destroy(all[i].gameObject);
+            }
+            editor.selectedPart = null;
+            if (editor.rootPart != null) editor.rootPart.gameObject.SetLayerRecursive(0, filterTranslucent: true, ignoreLayersMask: 2097152);
+
+            // The stage/dV readout is rebuilt per craft (EditorLogic.cs:1492); without it the engineer's report
+            // and the staging list keep describing the craft that just left.
+            if (partCount > 0 && ship.vesselDeltaV == null) ship.vesselDeltaV = VesselDeltaV.Create(ship);
+
+            editor.SetBackup();
+            // SetBackup early-returns on an empty craft (EditorLogic.cs:7537), so ShipConfig would still hold the
+            // old ship and the crew tab below would be reset against it.
+            if (partCount == 0) ShipConstruction.ShipConfig = ship.SaveShip();
+
+            var manifest = ShipConstruction.ShipManifest;
+            var keptCrew = manifest != null && manifest.CrewCount > 0;
+            if (keptCrew) editor.RefreshCrewAssignment(ShipConstruction.ShipConfig, editor.GetPartExistsFilter());
+            else editor.ResetCrewAssignment(ShipConstruction.ShipConfig, allowAutoHire: false);
+
+            Log.Info("Replaced the workbench: destroyed " + strays + " stray part(s), " + partCount + " part(s) now, crew " + (keptCrew ? "kept" : "reset"));
         }
 
         private static string HashOf(string craftText) =>

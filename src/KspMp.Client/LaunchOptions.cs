@@ -37,6 +37,8 @@ namespace KspMp
     ///   -kspmp-editorload "path":D   D seconds after the editor opens, load that craft into the shared workbench
     ///   -kspmp-editorwatch D         log the local craft hash every D seconds while in the editor, so two
     ///                                clients can be compared for convergence
+    ///   -kspmp-editordelete D        D seconds after the editor opens, delete the last non-root part, so a
+    ///                                deletion round-trip can be checked from both clients' logs
     /// </summary>
     public sealed class LaunchOptions
     {
@@ -74,6 +76,7 @@ namespace KspMp
         public string EditorLoadCraft;
         public float EditorLoadAfterSeconds = -1f;
         public float EditorWatchSeconds = -1f;
+        public float EditorDeleteAfterSeconds = -1f;
         public double OrbitAltitudeKm = -1;
         public float OrbitAfterSeconds = -1f;
         public float DockAfterSeconds = -1f;
@@ -213,6 +216,9 @@ namespace KspMp
                     }
                     case "-kspmp-editorwatch" when i + 1 < args.Length:
                         if (float.TryParse(args[++i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var watchEvery)) options.EditorWatchSeconds = watchEvery;
+                        break;
+                    case "-kspmp-editordelete" when i + 1 < args.Length:
+                        if (float.TryParse(args[++i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var deleteAfter)) options.EditorDeleteAfterSeconds = deleteAfter;
                         break;
                     case "-kspmp-orbit" when i + 1 < args.Length:
                     {
