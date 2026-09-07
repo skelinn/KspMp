@@ -209,12 +209,11 @@ Worth knowing before you play, roughly in the order you would hit them.
 - **Both sides need identical GameData.** The handshake checks the protocol version and nothing else - there is
   no mod manifest - so a single part mod on one side and not the other will fail while loading a vessel rather
   than telling you why. A stock install on both sides is the safe option.
-- **Undocking is not implemented.** There is no `Undock` or `Decouple` message and no patch for either, so once
-  two craft are docked they stay that way.
-- **Physics authority does not return to the pilot after a dock.** The server hands the target vessel to the
-  approaching player and does not hand it back on its own. The player who wants it can now press **Request
-  control**, which is granted immediately if nobody else is flying it - but nothing does it automatically. This
-  is also why neither side can undock.
+- **Docking hands the merged craft to whoever docked, and it stays theirs until someone leaves it.** Only
+  the player simulating the merged craft can undock; the piece that comes off is theirs as a new vessel, and
+  a piece whose pilot is somebody else goes back to that pilot the moment they are no longer aboard the same
+  craft. For three minutes after a separation the approach rule leaves the pair alone, so nobody's ship is
+  pulled out from under them while they drift apart. Ask for control with **Request control** otherwise.
 - **Crew manifests are local.** Only the launcher's seating counts: the manifest is not synced, so seat your
   friend's Kerbal on your side before you launch, not theirs.
 - **Stock docking magnets do not fire on a teleported approach.** The test harness closes the last centimetres

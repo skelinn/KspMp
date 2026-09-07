@@ -45,6 +45,8 @@ namespace KspMp.Shared.Protocol
         public string Name;
         public string VesselType;
         public byte[] ProtoDeflated;
+        /// <summary>For a Created snapshot: the vessel this one was undocked or decoupled from, else empty.</summary>
+        public Guid SplitFrom;
         /// <summary>Which authority decision OwnerClientId came from; see <see cref="AuthorityAssignMsg.AuthoritySeq"/>.</summary>
         public uint AuthoritySeq;
 
@@ -58,6 +60,7 @@ namespace KspMp.Shared.Protocol
             w.Put(VesselType ?? string.Empty);
             w.PutBytesWithLength(ProtoDeflated ?? Array.Empty<byte>());
             w.Put(AuthoritySeq);
+            w.PutGuidRaw(SplitFrom);
         }
 
         public void Deserialize(NetDataReader r)
@@ -70,6 +73,7 @@ namespace KspMp.Shared.Protocol
             VesselType = r.GetString();
             ProtoDeflated = r.GetBytesWithLength();
             AuthoritySeq = r.GetUInt();
+            SplitFrom = r.GetGuidRaw();
         }
     }
 

@@ -72,6 +72,45 @@ public class ServerDockingTests
     }
 
     [Fact]
+    public void AVesselThatJustUndockedIsNotHandedBackByTheApproachRule()
+    {
+        var hub = new LoopbackHub();
+        using var server = NewServer(hub);
+        var alice = JoinWithAvatar(hub, server, "Alice", "Alice Kerman");
+        var bob = JoinWithAvatar(hub, server, "Bob", "Bob Kerman", alice);
+        var station = Guid.NewGuid();
+        var ship = Guid.NewGuid();
+        // Bob simulates the merged station with Alice's kerbal aboard; he undocks his ship, and the station goes back to Alice.
+        bob.Send(MessageId.VesselProto, Proto(station, 200, "Station", "Alice Kerman"), Channel.Bulk);
+        TestClient.Pump(server, alice, bob);
+        var split = Proto(ship, 300, "Ship", "Bob Kerman");
+        split.Reason = ProtoReason.Created;
+        split.SplitFrom = station;
+        bob.Send(MessageId.VesselProto, split, Channel.Bulk);
+        alice.Send(MessageId.Presence, new PresenceMsg { State = PresenceState.InFlight, VesselId = station });
+        bob.Send(MessageId.Presence, new PresenceMsg { State = PresenceState.InFlight, VesselId = ship });
+        TestClient.Pump(server, alice, bob);
+        server.Authority.Assign(station, alice.ClientId, AuthorityReason.PilotLeft);
+        TestClient.Pump(server, alice, bob);
+
+        // Still within approach range: neither side's intent moves anything for the grace period.
+        bob.Send(MessageId.DockIntent, new DockIntentMsg { MyVesselId = ship, OtherVesselId = station, DistanceMeters = 12 });
+        alice.Send(MessageId.DockIntent, new DockIntentMsg { MyVesselId = station, OtherVesselId = ship, DistanceMeters = 12 });
+        TestClient.Pump(server, alice, bob);
+        Assert.Equal(alice.ClientId, server.Authority.OwnerOf(station));
+        Assert.Equal(bob.ClientId, server.Authority.OwnerOf(ship));
+        Assert.False(server.Authority.IsDockingHeld(station));
+        Assert.False(server.Authority.IsDockingHeld(ship));
+
+        // Once the grace is over the rule applies again.
+        server.Authority.SeparationGraceSeconds = 0;
+        server.Authority.NoteSeparation(station, ship);
+        bob.Send(MessageId.DockIntent, new DockIntentMsg { MyVesselId = ship, OtherVesselId = station, DistanceMeters = 12 });
+        TestClient.Pump(server, alice, bob);
+        Assert.True(server.Authority.IsDockingHeld(station) || server.Authority.IsDockingHeld(ship));
+    }
+
+    [Fact]
     public void WhoeverDocksOwnsTheMergedVesselEvenWhenTheOtherPlayerOwnedTheSurvivor()
     {
         var hub = new LoopbackHub();

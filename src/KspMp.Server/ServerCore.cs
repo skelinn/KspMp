@@ -454,6 +454,8 @@ namespace KspMp.Server
         private void HandleVesselProto(ClientSession client, VesselProtoMsg proto)
         {
             if (proto.VesselId == Guid.Empty) return;
+            if (proto.Reason == ProtoReason.Created && proto.SplitFrom != Guid.Empty && Authority.IsOwnedBy(proto.SplitFrom, client.ClientId))
+                Authority.NoteSeparation(proto.SplitFrom, proto.VesselId);
             var owner = Authority.OwnerOf(proto.VesselId);
             if (owner != 0 && owner != client.ClientId)
             {

@@ -19,6 +19,31 @@ namespace KspMp.Server.Vessels
         /// <summary>How long after the last DockIntent the pilot rule stays suspended for the vessel that yielded.</summary>
         public int DockingHoldSeconds = 60;
 
+        /// <summary>
+        /// How long after an undock or decouple the approach rule ignores the pair. They sit within approach
+        /// range of each other, and without this the rule handed one of them straight back to the other
+        /// player, pulling the ship out from under its pilot the moment they separated.
+        /// </summary>
+        public int SeparationGraceSeconds = 180;
+        private readonly Dictionary<Guid, (Guid other, DateTime until)> _separated = new Dictionary<Guid, (Guid, DateTime)>();
+
+        public void NoteSeparation(Guid a, Guid b)
+        {
+            var until = DateTime.UtcNow.AddSeconds(SeparationGraceSeconds);
+            _separated[a] = (b, until);
+            _separated[b] = (a, until);
+            _server.Log("Vessels " + a.ToString().Substring(0, 8) + " and " + b.ToString().Substring(0, 8) + " separated; the docking rule leaves them alone for " + SeparationGraceSeconds + " s");
+        }
+
+        public bool RecentlySeparated(Guid a, Guid b)
+        {
+            if (!_separated.TryGetValue(a, out var entry) || entry.other != b) return false;
+            if (DateTime.UtcNow < entry.until) return true;
+            _separated.Remove(a);
+            _separated.Remove(b);
+            return false;
+        }
+
         public AuthorityService(ServerCore server)
         {
             _server = server;
@@ -68,6 +93,7 @@ namespace KspMp.Server.Vessels
         {
             _owners.Remove(vesselId);
             _dockingHolds.Remove(vesselId);
+            _separated.Remove(vesselId);
             // The sequence is kept on purpose: a client that missed the removal still holds the old number, and
             // a later assignment restarting at 1 would look stale to it for the rest of the session.
         }
@@ -92,6 +118,7 @@ namespace KspMp.Server.Vessels
             if (!IsOwnedBy(mine, client.ClientId)) return;
             var otherOwner = OwnerOf(other);
             if (otherOwner == client.ClientId) return;
+            if (RecentlySeparated(mine, other)) return;   // they just undocked; let them drift apart in peace
             if (!_server.Vessels.TryGet(mine, out var mineRecord) || !_server.Vessels.TryGet(other, out var otherRecord)) return;
 
             // "Has a pilot" here means somebody is aboard and actually in flight on it: an unattended vessel is

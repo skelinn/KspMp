@@ -217,6 +217,12 @@ it. When the removed vessel is the one this player is sitting in, its parts are 
   absorbed vessel, since `DockCommit` is only handled in flight. `AuthorityService.Forget` keeps the sequence.
 - A `KerbalStatus` that outran its `KerbalProto` on the other channel was dropped; it is held until the kerbal
   arrives.
+- Undocking needed no new message: the piece that comes off is a new vessel of the undocking player's and
+  arrives as a Created snapshot, the survivor as Modified. What it did need was peace afterwards - the pair sit
+  within approach range and the docking rule handed one straight back to the other player. A Created snapshot
+  now names the vessel it split from (`VesselProtoMsg.SplitFrom`, from `onVesselsUndocking` /
+  `onPartDeCoupleNewVesselComplete`), and the server ignores approach intents between the two for three
+  minutes (`AuthorityService.SeparationGraceSeconds`). Protocol 5.
 
 ### Boarding, EVA, death
 - EVA: stock hatch → `FlightEVA.fetch.spawnEVA(...)`; `onCrewOnEva` gives the new EVA vessel (`vessel.isEVA`). Client sends `CrewEva` + the EVA vessel's proto once the EVA FSM is ready (LMP waits for it). Only the avatar's owner may EVA their avatar (`onAttemptEva` handler + `ControlTypes.EVA_INPUT` lock). Presence → `OnEva`; source vessel roles recomputed (pilot EVA → handover).

@@ -385,8 +385,12 @@ namespace KspMp.Testing
                 for (var m = 0; m < modules.Count; m++)
                 {
                     if (!(modules[m] is ModuleDockingNode node)) continue;
-                    if (node.otherNode == null) continue;
-                    if (node.state != null && node.state.StartsWith("Docked", StringComparison.Ordinal)) return node;
+                    // Docked means this port's parent is another port: that is the joint a dock makes. The
+                    // node's own bookkeeping (state string, otherNode) is not enough - a dock forced through
+                    // DockToVessel couples the parts without running the node's state machine, and the Ready
+                    // state clears otherNode again - so the part tree is what is asked.
+                    var parent = node.part.parent;
+                    if (parent != null && parent.vessel == vessel && parent.Modules.Contains<ModuleDockingNode>()) return node;
                 }
             }
             return null;
@@ -409,9 +413,15 @@ namespace KspMp.Testing
             {
                 Log.Info("Test: undocking " + vessel.GetDisplayName() + " at " + node.part.partInfo.title
                          + " (state " + node.state + ", " + vessel.parts.Count + " parts before)");
-                var undock = node.GetType().GetMethod("Undock", AnyMember, null, Type.EmptyTypes, null);
-                if (undock == null) { Log.Warn("Test: ModuleDockingNode has no parameterless Undock"); return false; }
-                undock.Invoke(node, null);
+                if (node.state != null && node.state.StartsWith("Docked", StringComparison.Ordinal) && node.otherNode != null)
+                {
+                    node.Undock();   // the stock button
+                    return true;
+                }
+                // A forced dock never entered the docked state, so the stock Undock has nothing to run. Split
+                // the vessel at the port instead - the same thing the stock path ends in.
+                Log.Info("Test: the node never entered its docked state; decoupling " + node.part.partInfo.title + " from its parent port instead");
+                node.part.decouple();
                 return true;
             }
             catch (Exception e)

@@ -47,6 +47,8 @@ namespace KspMp.Systems
             GameEvents.onVesselCrewWasModified.Add(OnVesselWasModified);
             GameEvents.onVesselGoOnRails.Add(OnVesselGoOnRails);
             GameEvents.onVesselCreate.Add(OnVesselCreate);
+            GameEvents.onVesselsUndocking.Add(OnSplit);
+            GameEvents.onPartDeCoupleNewVesselComplete.Add(OnSplit);
             GameEvents.onVesselWillDestroy.Add(OnVesselWillDestroy);
             GameEvents.onVesselRecovered.Add(OnVesselRecovered);
             GameEvents.onVesselTerminated.Add(OnVesselTerminated);
@@ -63,6 +65,9 @@ namespace KspMp.Systems
             GameEvents.onVesselCrewWasModified.Remove(OnVesselWasModified);
             GameEvents.onVesselGoOnRails.Remove(OnVesselGoOnRails);
             GameEvents.onVesselCreate.Remove(OnVesselCreate);
+            GameEvents.onVesselsUndocking.Remove(OnSplit);
+            GameEvents.onPartDeCoupleNewVesselComplete.Remove(OnSplit);
+            _splitParent.Clear();
             GameEvents.onVesselWillDestroy.Remove(OnVesselWillDestroy);
             GameEvents.onVesselRecovered.Remove(OnVesselRecovered);
             GameEvents.onVesselTerminated.Remove(OnVesselTerminated);
@@ -197,6 +202,22 @@ namespace KspMp.Systems
 
         private readonly HashSet<Guid> _idsMadeUnique = new HashSet<Guid>();
 
+        /// <summary>
+        /// New vessel id -> the vessel it came off. An undocked or decoupled ship sits within docking-approach
+        /// range of what it left, and the approach rule would hand one of them straight back to the other
+        /// player; the server needs to know the pair just separated to leave them alone for a while.
+        /// </summary>
+        private readonly Dictionary<Guid, Guid> _splitParent = new Dictionary<Guid, Guid>();
+
+        private void OnSplit(Vessel from, Vessel to)
+        {
+            if (from == null || to == null || from == to) return;
+            // KSP passes (old, new) for a decouple; for an undock either may be the one that kept the id.
+            if (Registry.IsKnown(from.id) && !Registry.IsKnown(to.id)) _splitParent[to.id] = from.id;
+            else if (Registry.IsKnown(to.id) && !Registry.IsKnown(from.id)) _splitParent[from.id] = to.id;
+            else _splitParent[to.id] = from.id;
+        }
+
         /// <summary>Vessels this flight claimed as new since it became ready: what a revert makes vanish.</summary>
         private readonly List<Guid> _createdThisFlight = new List<Guid>();
 
@@ -292,6 +313,12 @@ namespace KspMp.Systems
                     var text = System.Text.Encoding.UTF8.GetString(KspMp.Shared.Codec.DeflateCodec.Decompress(bytes, 0, bytes.Length));
                     Log.Info("First snapshot text starts with: " + text.Substring(0, Math.Min(80, text.Length)).Replace("\n", "\\n"));
                 }
+                var splitFrom = Guid.Empty;
+                if (reason == ProtoReason.Created && _splitParent.TryGetValue(vessel.id, out splitFrom))
+                {
+                    _splitParent.Remove(vessel.id);
+                    Log.Info(vessel.GetDisplayName() + " separated from " + splitFrom.ToString().Substring(0, 8) + "; the server will hold the docking rule off for a while");
+                }
                 Net.Send(MessageId.VesselProto, new VesselProtoMsg
                 {
                     VesselId = vessel.id,
@@ -301,6 +328,7 @@ namespace KspMp.Systems
                     Name = vessel.GetDisplayName(),
                     VesselType = vessel.vesselType.ToString(),
                     ProtoDeflated = bytes,
+                    SplitFrom = splitFrom,
                 }, Channel.Bulk, Delivery.ReliableOrdered);
                 Sent++;
                 var remote = Registry.GetOrAdd(vessel.id);
