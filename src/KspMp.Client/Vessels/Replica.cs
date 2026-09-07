@@ -45,8 +45,11 @@ namespace KspMp.Vessels
         {
             if (_hasTo && state.Ut <= _to.Ut)
             {
-                if (state.Ut > _to.Ut - 30) return;   // late or duplicate: ignore
-                _hasTo = false;                        // the clock went backwards by a lot (a resync): start over
+                // States arrive sequenced, so an older UT is never a late packet: the sender's clock went
+                // backwards (a time snap or a revert). Start over from this one rather than freezing until the
+                // clock catches up with the last one we had.
+                if (state.Ut == _to.Ut) return;
+                _hasTo = false;
             }
             _from = _hasTo ? _to : state;
             _to = state;

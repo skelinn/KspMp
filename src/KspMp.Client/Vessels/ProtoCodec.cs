@@ -21,7 +21,11 @@ namespace KspMp.Vessels
             var raw = DeflateCodec.Decompress(deflated, 0, deflated.Length);
             var parsed = ConfigNode.Parse(Encoding.UTF8.GetString(raw));
             if (parsed == null) return null;
-            return parsed.GetNode("VESSEL") ?? parsed;
+            var vessel = parsed.GetNode("VESSEL");
+            if (vessel != null) return vessel;
+            // A bare vessel node is fine; anything else would build an empty ProtoVessel with no id that no
+            // removal could ever name.
+            return parsed.HasValue("pid") ? parsed : null;
         }
 
         public static ProtoVessel ToProto(byte[] deflated, global::Game game)

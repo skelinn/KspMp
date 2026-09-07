@@ -187,7 +187,9 @@ namespace KspMp.Systems
                     var proto = ProtoCodec.ToProto(remote.ProtoDeflated, game);
                     if (proto == null) continue;
                     game.flightState.protoVessels.Add(proto);
-                    remote.ProtoDirty = false;
+                    // Left dirty on purpose: if KSP drops the proto while starting the game (a part it cannot
+                    // build), the first ApplyPending loads it again; if it took, that pass finds it unchanged.
+                    remote.ProtoDirty = true;
                     added++;
                 }
                 catch (Exception e)

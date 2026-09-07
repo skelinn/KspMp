@@ -21,11 +21,13 @@ namespace KspMp.Harmony
                 ScreenMessages.PostScreenMessage(reason, 6f, ScreenMessageStyle.UPPER_CENTER);
                 return false;
             }
-            var ship = __instance != null ? __instance.ship : null;
-            addon.AnnounceLaunch(ship != null ? ship.shipName : "a craft", siteName, SeatedKerbals());
-            Vessels.LaunchSiteGuard.Clear(siteName);
+            // The announcement waits for FlightDriver.StartWithNewLaunch (see FlightDriver_StartWithNewLaunch):
+            // KSP's pre-flight checks run after this and the player may cancel, and then nobody launched.
+            LastEditorLaunchCrew = SeatedKerbals();
             return true;
         }
+
+        internal static string[] LastEditorLaunchCrew;
 
         /// <summary>
         /// Who is in the seats at the moment of launch. The other player only learns their kerbal is going up
@@ -47,6 +49,46 @@ namespace KspMp.Harmony
             }
             Log.Info("Launching with " + (names.Count == 0 ? "nobody" : string.Join(", ", names.ToArray())) + " aboard");
             return names.ToArray();
+        }
+    }
+
+    /// <summary>
+    /// Every launch, from the editor or the space centre's own craft browser, ends up here after KSP's
+    /// pre-flight checks. This is where the pad is checked once more and the launch is announced: the editor
+    /// prefix above checks early for a clear message, but only a launch that is actually happening is
+    /// announced, and the space-centre path never went through the editor at all.
+    /// </summary>
+    [HarmonyPatch(typeof(FlightDriver), nameof(FlightDriver.StartWithNewLaunch), typeof(string), typeof(string), typeof(string), typeof(VesselCrewManifest))]
+    internal static class FlightDriver_StartWithNewLaunch
+    {
+        private static bool Prefix(string fullFilePath, string launchSiteName, VesselCrewManifest manifest)
+        {
+            var addon = KspMpAddon.Instance;
+            if (addon == null || addon.Network == null || !addon.Network.IsConnected) return true;
+            if (addon.SuppressLaunchAnnounce) return true;   // the harness announced and cleared the pad itself
+            if (Vessels.LaunchSiteGuard.IsBlocked(launchSiteName, addon.Vessels, out var reason))
+            {
+                Log.Info("Refused a launch from the " + launchSiteName + ": " + reason);
+                ScreenMessages.PostScreenMessage(reason, 6f, ScreenMessageStyle.UPPER_CENTER);
+                return false;
+            }
+            var crew = new List<string>();
+            try
+            {
+                if (manifest != null)
+                    foreach (var pcm in manifest.GetAllCrew(false))
+                        if (pcm != null && !string.IsNullOrEmpty(pcm.name) && !crew.Contains(pcm.name)) crew.Add(pcm.name);
+            }
+            catch (System.Exception e)
+            {
+                Log.Exception("Reading the launch manifest", e);
+            }
+            if (crew.Count == 0 && EditorLogic_LaunchVessel.LastEditorLaunchCrew != null) crew.AddRange(EditorLogic_LaunchVessel.LastEditorLaunchCrew);
+            EditorLogic_LaunchVessel.LastEditorLaunchCrew = null;
+            var name = System.IO.Path.GetFileNameWithoutExtension(fullFilePath ?? "") ;
+            addon.AnnounceLaunch(string.IsNullOrEmpty(name) ? "a craft" : name, launchSiteName, crew.ToArray());
+            Vessels.LaunchSiteGuard.Clear(launchSiteName);
+            return true;
         }
     }
 }

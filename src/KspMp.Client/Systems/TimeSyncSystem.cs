@@ -51,6 +51,7 @@ namespace KspMp.Systems
             Net.RegisterHandler(MessageId.TimeSync, OnTimeSync);
             _samples.Clear();
             HasSync = false;
+            _measuredRttMs = -1;
             _nextRequestAt = 0f;
             _nextLogAt = Time.realtimeSinceStartup + 10f;
         }
@@ -70,7 +71,29 @@ namespace KspMp.Systems
         {
             if (!_skewing) return;
             _skewing = false;
-            if (TimeWarp.fetch == null || TimeWarp.CurrentRate == 1f) Time.timeScale = 1f;
+            // Always put the scale back: physics warp owns timeScale (rate x), rails warp and 1x mean 1. Leaving
+            // it skewed because a warp began the same frame stranded the client at 0.85x for the whole warp.
+            Time.timeScale = TimeWarp.fetch != null && TimeWarp.WarpMode == TimeWarp.Modes.LOW ? TimeWarp.CurrentRate : 1f;
+        }
+
+        /// <summary>Last round trip actually measured (request -> reply); pushed samples borrow it.</summary>
+        private double _measuredRttMs = -1;
+
+        /// <summary>
+        /// The server changed the shared rate. Its warp state carries the UT it switched at, which is a better
+        /// sample than anything older: until now the estimate kept extrapolating at the old rate until the next
+        /// time sample arrived, which at 100000x was tens of thousands of seconds of drift for half a second.
+        /// </summary>
+        public void OnWarpState(double ut, float rate)
+        {
+            if (ut <= 0) return;
+            var now = DateTime.UtcNow.Ticks;
+            var rttMs = _measuredRttMs >= 0 ? _measuredRttMs : Net.PingMs * 2.0;
+            _samples.Clear();
+            var sample = new Sample { LocalTicksAtServerTime = now - (long)(rttMs * 1e4 / 2), UniversalTime = ut, Rate = rate, RttMs = rttMs };
+            _samples.Add(sample);
+            _best = sample;
+            HasSync = true;
         }
 
         public override void Update()
@@ -91,7 +114,10 @@ namespace KspMp.Systems
             var threshold = HighLogic.LoadedSceneIsFlight ? FlightHardCorrectionSeconds : HardCorrectionThresholdSeconds;
             var localRate = TimeWarp.fetch != null ? TimeWarp.CurrentRate : 1f;
             var rateMismatch = Math.Abs(localRate - Rate) > 0.01f;
-            if (Math.Abs(drift) > threshold)
+            // The thresholds are wall-clock seconds: at 1000x a few milliseconds of estimation error is several
+            // seconds of UT, and snapping on that yanked every on-rails vessel along its orbit once a second.
+            var driftWall = drift / Math.Max(1f, Rate);
+            if (Math.Abs(driftWall) > threshold)
             {
                 // With a rate mismatch snapping cannot help (the drift comes right back); do it rarely and say why.
                 if (now < _nextSnapAllowedAt) return;
@@ -112,6 +138,7 @@ namespace KspMp.Systems
                 }
                 else ResetSkew();
             }
+            else ResetSkew();   // not in flight and inside the threshold: nothing to skew for
             if (now >= _nextLogAt)
             {
                 _nextLogAt = now + 10f;
@@ -123,8 +150,17 @@ namespace KspMp.Systems
         {
             var msg = Envelope.Read<TimeSyncMsg>(body);
             var now = DateTime.UtcNow.Ticks;
-            var rttMs = msg.ClientTicks != 0 ? (now - msg.ClientTicks) / 1e4 : Net.PingMs;
-            if (rttMs < 0) rttMs = 0;
+            // A reply to our request carries a measured round trip. The server also pushes samples on its own;
+            // those used to claim a round trip of "the transport's ping", which Steam and the loopback report as
+            // zero, so they always won the lowest-round-trip pick and latency was never compensated at all.
+            double rttMs;
+            if (msg.ClientTicks != 0)
+            {
+                rttMs = (now - msg.ClientTicks) / 1e4;
+                if (rttMs < 0) rttMs = 0;
+                _measuredRttMs = _measuredRttMs < 0 ? rttMs : Math.Min(_measuredRttMs * 0.9 + rttMs * 0.1, rttMs + 50);
+            }
+            else rttMs = _measuredRttMs >= 0 ? _measuredRttMs : Net.PingMs * 2.0;
             var sample = new Sample
             {
                 LocalTicksAtServerTime = now - (long)(rttMs * 1e4 / 2),

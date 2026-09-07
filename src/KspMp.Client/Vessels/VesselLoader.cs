@@ -63,12 +63,12 @@ namespace KspMp.Vessels
         {
             if (existing.situation != proto.situation) return true;
             if ((existing.landedAt ?? "") != (proto.landedAt ?? "")) return true;
+            // Not the orbit itself: an unloaded copy's orbit follows the owner's streamed states, and a snapshot
+            // is up to thirty seconds old, so an ascending rocket would differ every time and be rebuilt every
+            // periodic snapshot. Situation, site and body are the discrete facts states do not carry.
             var orbit = existing.orbit;
             var snap = proto.orbitSnapShot;
             if (orbit == null || snap == null) return false;
-            if (Math.Abs(orbit.semiMajorAxis - snap.semiMajorAxis) > 1000.0) return true;
-            if (Math.Abs(orbit.eccentricity - snap.eccentricity) > 0.01) return true;
-            if (Math.Abs(orbit.inclination - snap.inclination) > 0.5) return true;
             return orbit.referenceBody != null && orbit.referenceBody.flightGlobalsIndex != snap.ReferenceBodyIndex;
         }
 
@@ -123,6 +123,7 @@ namespace KspMp.Vessels
             var existing = FlightGlobals.FindVessel(proto.vesselID);
             var hadExisting = existing != null;
             var reloadingActive = false;
+            ProtoVessel previous = null;
             if (existing != null)
             {
                 if (existing.isActiveVessel)
@@ -160,13 +161,18 @@ namespace KspMp.Vessels
                     return Outcome.Unchanged;
 
                 Log.Info("Reloading vessel " + label + " (" + existingParts + " -> " + proto.protoPartSnapshots.Count + " parts" + (reloadingActive ? ", active vessel" : "") + ")");
-                if (reloadingActive && existing.loaded)
+                if (existing.loaded)
                 {
+                    // Any loaded copy: a kerbal left seated in a destroyed part keeps a KerbalRef to it and its
+                    // IVA leaks; the snapshot seats them again in the new one.
                     foreach (var part in existing.parts)
                         foreach (var crew in part.protoModuleCrew.ToArray())
                             existing.RemoveCrew(crew);
                     existing.DespawnCrew();
                 }
+                // A copy of what we are replacing, to put back if the snapshot turns out not to load.
+                try { previous = existing.BackupVessel(); } catch (Exception e) { Log.Exception("Backing up " + label + " before its reload", e); }
+                VesselImmortal.Forget(existing);
                 FlightGlobals.RemoveVessel(existing);
                 HighLogic.CurrentGame.flightState.protoVessels.RemoveAll(p => p == null || p.vesselID == existing.id);
                 existing.gameObject.SetActive(false);
@@ -186,6 +192,7 @@ namespace KspMp.Vessels
             if (proto.vesselRef == null)
             {
                 Log.Warn("Snapshot of " + label + " did not create a vessel");
+                Restore(previous, label, reloadingActive);
                 return Outcome.Failed;
             }
             proto.vesselRef.protoVessel = proto;
@@ -193,6 +200,8 @@ namespace KspMp.Vessels
             if (double.IsNaN(proto.vesselRef.orbitDriver.pos.x))
             {
                 Log.Warn("Snapshot of " + label + " has an invalid orbit");
+                Discard(proto.vesselRef);
+                Restore(previous, label, reloadingActive);
                 return Outcome.Failed;
             }
             if (reloadingActive)
@@ -218,11 +227,36 @@ namespace KspMp.Vessels
         }
 
         /// <summary>Takes a vessel out of the game without telling anyone. The caller has said why.</summary>
+        /// <summary>The snapshot could not be loaded: put the copy it was replacing back, rather than have nothing.</summary>
+        private static void Restore(ProtoVessel previous, string label, bool wasActive)
+        {
+            if (previous == null) return;
+            try
+            {
+                previous.Load(HighLogic.CurrentGame.flightState);
+                if (previous.vesselRef == null) { Log.Warn("Could not put the previous copy of " + label + " back either"); return; }
+                previous.vesselRef.protoVessel = previous;
+                if (wasActive)
+                {
+                    previous.vesselRef.Load();
+                    previous.vesselRef.RebuildCrewList();
+                    FlightGlobals.ForceSetActiveVessel(previous.vesselRef);
+                    previous.vesselRef.SpawnCrew();
+                }
+                Log.Info("Put the previous copy of " + label + " back");
+            }
+            catch (Exception e)
+            {
+                Log.Exception("Putting the previous copy of " + label + " back", e);
+            }
+        }
+
         public static void Discard(Vessel vessel)
         {
             if (vessel == null) return;
             try
             {
+                VesselImmortal.Forget(vessel);
                 var id = vessel.id;
                 if (vessel.loaded) vessel.Unload();
                 FlightGlobals.RemoveVessel(vessel);

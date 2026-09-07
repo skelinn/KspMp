@@ -107,11 +107,13 @@ namespace KspMp.Server.Editor
                 return;
             }
 
-            // A guest has no bench of their own while they are visiting.
+            // A guest has no bench of their own while they are visiting. Anyone who was visiting theirs goes
+            // home too: a bench whose owner has walked away is not one anybody else should be left on.
             if (_sessions.TryGetValue(client.ClientId, out var own))
             {
-                own.Builders.Remove(client.ClientId);
-                if (own.Builders.Count == 0) _sessions.Remove(client.ClientId);
+                _sessions.Remove(client.ClientId);
+                foreach (var guest in own.Builders.ToList())
+                    if (guest != client.ClientId) OpenOwnSession(guest, own.Facility);
             }
             LeaveGuestSessions(client.ClientId, announce: false);
             if (!target.Builders.Contains(client.ClientId)) target.Builders.Add(client.ClientId);
@@ -186,6 +188,8 @@ namespace KspMp.Server.Editor
             }
 
             var wasEmpty = !session.HasCraft;
+            var previousCount = session.PartCount;
+            var previousName = session.ShipName;
             session.Revision++;
             session.ShipName = snapshot.ShipName ?? string.Empty;
             session.PartCount = snapshot.PartCount;
@@ -207,7 +211,7 @@ namespace KspMp.Server.Editor
                 SessionOwnerClientId = session.OwnerClientId,
             }, Channel.Bulk, Delivery.ReliableOrdered);
             // The list carries the ship name and part count, so the first craft on a bench changes what it says.
-            if (wasEmpty || session.PartCount != snapshot.PartCount) BroadcastList();
+            if (wasEmpty || previousCount != snapshot.PartCount || previousName != session.ShipName) BroadcastList();
         }
 
         public void HandlePresence(ClientSession client, EditorPresenceMsg presence)
@@ -223,10 +227,11 @@ namespace KspMp.Server.Editor
         /// <summary>Any builder may launch, and doing so ends the session for everyone on it.</summary>
         public void HandleLaunch(ClientSession client, EditorLaunchMsg launch)
         {
-            var session = Route(client, launch.SessionOwnerClientId, launch.Facility);
-            if (session == null) return;
+            // A launch straight from the space centre (the launch pad's own craft browser) has no bench to
+            // dissolve; routing it used to manufacture an empty VAB bench for a player who was in flight.
+            var session = launch.FromEditor ? Route(client, launch.SessionOwnerClientId, launch.Facility) : SessionOf(client.ClientId);
             launch.FromClientId = client.ClientId;
-            launch.SessionOwnerClientId = session.OwnerClientId;
+            launch.SessionOwnerClientId = session != null ? session.OwnerClientId : 0;
             _server.Log(client.DisplayName + " launched '" + launch.ShipName + "' from the " + launch.Facility + " to " + launch.LaunchSite);
             // Everyone needs this, not just the other builders: a player stood in the space center about to
             // launch has no other way to know the pad is about to be taken, and two craft on one pad destroy
@@ -234,6 +239,7 @@ namespace KspMp.Server.Editor
             foreach (var peer in _server.HandshakenClients)
                 if (peer.ClientId != client.ClientId)
                     _server.Send(peer.Peer, MessageId.EditorLaunch, launch, Channel.Control, Delivery.ReliableOrdered);
+            if (session == null) return;
             Clear(session, "launched");
             BroadcastList();
         }

@@ -116,6 +116,8 @@ namespace KspMp.Systems
         {
             _state = Envelope.Read<WarpStateMsg>(body);
             _hasState = true;
+            if (_state.RateIndex == 0) _desired = 0;   // warp ended for everyone; a wish does not outlive it
+            Addon.TimeSync.OnWarpState(_state.Ut, _state.Rate);
             Log.Info("Warp state: " + StatusText);
             Apply();
         }
@@ -141,7 +143,7 @@ namespace KspMp.Systems
                 ApplyingServerState = false;
             }
 
-            var refused = HighLogic.LoadedSceneIsFlight && _state.Mode == WarpMode.Rails && TimeWarp.CurrentRateIndex < _state.RateIndex;
+            var refused = HighLogic.LoadedSceneIsFlight && TimeWarp.CurrentRateIndex < _state.RateIndex;   // either mode
             if (refused && !_kspRefused)
             {
                 _kspRefused = true;

@@ -25,9 +25,16 @@ namespace KspMp.Systems
         internal void SetActive(bool active)
         {
             if (active == Active) return;
-            Active = active;
-            if (active) OnActivate();
-            else OnDeactivate();
+            if (active)
+            {
+                OnActivate();    // a throw here leaves the system inactive, to be tried again on the next refresh
+                Active = true;
+            }
+            else
+            {
+                Active = false;
+                OnDeactivate();
+            }
         }
 
         protected virtual void OnActivate() { }

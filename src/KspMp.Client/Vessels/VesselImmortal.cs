@@ -25,6 +25,20 @@ namespace KspMp.Vessels
 
         public static bool IsImmortal(Vessel vessel) => vessel != null && Immortal.Contains(vessel.id);
 
+        /// <summary>
+        /// The vessel object is about to be destroyed (a reload, a discard). The id stays known to the registry,
+        /// so the flag must not: the fresh vessel KSP builds under the same id has a live integrator and stock
+        /// crash tolerance, and "already immortal" would keep it that way.
+        /// </summary>
+        public static void Forget(Vessel vessel)
+        {
+            if (vessel == null) return;
+            Immortal.Remove(vessel.id);
+            if (vessel.parts == null) return;
+            foreach (var part in vessel.parts)
+                if (part != null) SavedValues.Remove(part);
+        }
+
         /// <summary>The registry was wiped (scene change, disconnect): nothing is a replica any more.</summary>
         public static void Reset()
         {

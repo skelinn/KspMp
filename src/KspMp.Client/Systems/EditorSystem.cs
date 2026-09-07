@@ -39,6 +39,8 @@ namespace KspMp.Systems
         public const float PresenceIntervalSeconds = 0.1f;
 
         private readonly Dictionary<int, EditorPresenceMsg> _others = new Dictionary<int, EditorPresenceMsg>();
+        private readonly Dictionary<int, float> _othersSeenAt = new Dictionary<int, float>();
+        private readonly List<int> _stale = new List<int>();
         private EditorFacilityKind _facility;
         /// <summary>Whose bench we are on: 0 (or our own client id) while we are on our own.</summary>
         private int _sessionOwner;
@@ -107,6 +109,14 @@ namespace KspMp.Systems
             // snapshot taken mid-drag is the craft with that part missing: the other builder watches it vanish,
             // their own copy of it is destroyed, and when they in turn pick something up the same happens
             // back. The drop or the delete fires onEditorShipModified again, and that is when it goes out.
+            // A builder who left the bench (or the game) sends no more cursors; without this their last one,
+            // part in hand, stayed painted on the bench for the rest of the session.
+            if (_others.Count > 0)
+            {
+                _stale.Clear();
+                foreach (var pair in _othersSeenAt) if (now - pair.Value > 10f) _stale.Add(pair.Key);
+                for (var i = 0; i < _stale.Count; i++) { _others.Remove(_stale[i]); _othersSeenAt.Remove(_stale[i]); }
+            }
             if (_dirtyAt >= 0 && now - _dirtyAt >= SendDebounceSeconds && now - _lastSentAt >= MinSendIntervalSeconds && HeldPart() == null)
             {
                 _dirtyAt = -1f;
@@ -315,10 +325,12 @@ namespace KspMp.Systems
             if (held != null) CollectSubtree(held, keep);
 
             var strays = 0;
+            var inShip = new HashSet<Part>();
+            if (ship.parts != null) for (var i = 0; i < ship.parts.Count; i++) if (ship.parts[i] != null) inShip.Add(ship.parts[i]);
             var all = Part.allParts.ToArray();
             for (var i = 0; i < all.Length; i++)
             {
-                if (all[i] == null || ship.Contains(all[i]) || keep.Contains(all[i])) continue;
+                if (all[i] == null || inShip.Contains(all[i]) || keep.Contains(all[i])) continue;
                 strays++;
                 UnityEngine.Object.Destroy(all[i].gameObject);
             }
@@ -378,8 +390,14 @@ namespace KspMp.Systems
 
         private static void CollectSubtree(Part part, HashSet<Part> into)
         {
-            if (part == null || !into.Add(part) || part.children == null) return;
-            for (var i = 0; i < part.children.Count; i++) CollectSubtree(part.children[i], into);
+            if (part == null || !into.Add(part)) return;
+            if (part.children != null)
+                for (var i = 0; i < part.children.Count; i++) CollectSubtree(part.children[i], into);
+            // Symmetry copies of a held part are live parts in no ship and not its children (EditorLogic
+            // DuplicatePart); destroying them out from under EditorLogic left it dereferencing dead objects
+            // every frame with the part stuck in the hand.
+            if (part.symmetryCounterparts != null)
+                for (var i = 0; i < part.symmetryCounterparts.Count; i++) CollectSubtree(part.symmetryCounterparts[i], into);
         }
 
         private static string HashOf(string craftText) =>
@@ -407,6 +425,7 @@ namespace KspMp.Systems
             var msg = Envelope.Read<EditorPresenceMsg>(body);
             if (msg.ClientId == 0 || msg.ClientId == Net.ClientId || !IsOurSession(msg.SessionOwnerClientId)) return;
             _others[msg.ClientId] = msg;
+            _othersSeenAt[msg.ClientId] = Time.realtimeSinceStartup;
         }
 
         /// <summary>A message addressed to bench <paramref name="owner"/>: is that the bench we are standing at?</summary>
@@ -425,6 +444,17 @@ namespace KspMp.Systems
             _revision = 0;
             _lastSentHash = "";
             _others.Clear();
+            _dirtyAt = -1f;
+            // Start from an empty bench: the craft we are joining arrives as a snapshot, and if that bench is
+            // empty nothing arrives at all - our own craft would have stayed on screen and gone out as the
+            // first edit on their bench.
+            var editor = EditorLogic.fetch;
+            if (editor != null)
+            {
+                try { Applying = true; ReplaceWorkbench(editor, new ShipConstruct()); _lastSentHash = LocalCraftHash(); }
+                catch (Exception e) { Log.Exception("Clearing the bench to join", e); }
+                finally { Applying = false; }
+            }
             Net.Send(MessageId.EditorSessionJoin, new EditorSessionJoinMsg { OwnerClientId = ownerClientId }, Channel.Control, Delivery.ReliableOrdered);
             Log.Info("Joining " + NameOf(ownerClientId) + "'s workbench" + (_stash != null ? " (ours is stashed)" : ""));
         }
@@ -506,14 +536,19 @@ namespace KspMp.Systems
             _revision = 0;
             _lastSentHash = "";
             _others.Clear();
-            _stash = null;
-            Addon.Notices.Post("bench-lost", who + " left the editor; you kept the craft on your own workbench", Ui.Theme.Warn);
-            _dirtyAt = Time.realtimeSinceStartup;
+            // Their craft went with them (launched, or they left); ours comes back out of the stash, the same
+            // as when we leave on purpose. Throwing the stash away here lost the guest's own craft for good.
+            var hadStash = _stash != null;
+            RestoreStash();
+            Addon.Notices.Post("bench-lost", who + "'s workbench is gone; " + (hadStash ? "your own craft is back on your bench" : "you are back on your own empty bench"), Ui.Theme.Warn);
         }
 
         /// <summary>The workbench was launched out from under us; start again from an empty revision.</summary>
-        public void OnRemoteLaunch()
+        public void OnRemoteLaunch(int sessionOwnerClientId)
         {
+            // Only the bench we are standing at: any launch anywhere used to reset every builder's revision,
+            // so their next edit was refused as stale and overwritten.
+            if (!_joined || !IsOurSession(sessionOwnerClientId)) return;
             _revision = 0;
             _lastSentHash = "";
         }

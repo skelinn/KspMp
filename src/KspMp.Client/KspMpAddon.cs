@@ -57,6 +57,7 @@ namespace KspMp
         private float _jetpackAt = -1f;
         private float _revertAt = -1f;
         private float _crashAt = -1f;
+        private bool _revertDone, _crashDone;   // one-shot: a revert reloads the flight scene, which would re-arm them
         private float _revertEditorAt = -1f;
         private float _giveControlAt = -1f;
         private float _requestControlAt = -1f;
@@ -110,7 +111,7 @@ namespace KspMp
             Network = new ClientNetwork(Settings);
             Vessels = new VesselRegistry();
             Network.Welcomed += welcome => { Vessels.LocalClientId = welcome.ClientId; RefreshSystems(); };
-            Network.Disconnected += _ => { RefreshSystems(); Vessels.LocalClientId = 0; };
+            Network.Disconnected += _ => { RefreshSystems(); Vessels.LocalClientId = 0; KspMp.Vessels.LaunchSiteGuard.Reset(); };
             Network.Welcomed += OnWelcomedForLaunchOptions;
             // Launch notices are handled here rather than in EditorSystem, which only runs inside the VAB.
             // The player who most needs to hear that a pad is being taken is the one stood in the space
@@ -222,11 +223,11 @@ namespace KspMp
                 _boardAt = Time.realtimeSinceStartup + Launch.BoardAfterSeconds;
             if (scene == GameScenes.FLIGHT && Launch.JetpackAfterSeconds >= 0 && _jetpackAt < 0)
                 _jetpackAt = Time.realtimeSinceStartup + Launch.JetpackAfterSeconds;
-            if (scene == GameScenes.FLIGHT && Launch.RevertAfterSeconds >= 0 && _revertAt < 0)
+            if (scene == GameScenes.FLIGHT && Launch.RevertAfterSeconds >= 0 && _revertAt < 0 && !_revertDone)
                 _revertAt = Time.realtimeSinceStartup + Launch.RevertAfterSeconds;
-            if (scene == GameScenes.FLIGHT && Launch.CrashAfterSeconds >= 0 && _crashAt < 0)
+            if (scene == GameScenes.FLIGHT && Launch.CrashAfterSeconds >= 0 && _crashAt < 0 && !_crashDone)
                 _crashAt = Time.realtimeSinceStartup + Launch.CrashAfterSeconds;
-            if (scene == GameScenes.FLIGHT && Launch.RevertToEditorAfterSeconds >= 0 && _revertEditorAt < 0)
+            if (scene == GameScenes.FLIGHT && Launch.RevertToEditorAfterSeconds >= 0 && _revertEditorAt < 0 && !_revertDone)
                 _revertEditorAt = Time.realtimeSinceStartup + Launch.RevertToEditorAfterSeconds;
             if (scene == GameScenes.FLIGHT && Launch.GiveControlAfterSeconds >= 0 && _giveControlAt < 0)
                 _giveControlAt = Time.realtimeSinceStartup + Launch.GiveControlAfterSeconds;
@@ -294,7 +295,9 @@ namespace KspMp
                 Log.Info("Auto-launch: " + craft + " from " + site + (seated ? " with " + Roster.AvatarName + " in the first seat" : " with default crew") + (extra > 0 ? " and " + extra + " extra crew" : ""));
                 KspMp.Vessels.LaunchSiteGuard.Clear(site);
                 AnnounceLaunch(System.IO.Path.GetFileNameWithoutExtension(path), site, CrewNamesOf(manifest));
-                FlightDriver.StartWithNewLaunch(path, "Squad/Flags/default", site, manifest);
+                SuppressLaunchAnnounce = true;
+                try { FlightDriver.StartWithNewLaunch(path, "Squad/Flags/default", site, manifest); }
+                finally { SuppressLaunchAnnounce = false; }
             }
             catch (Exception e)
             {
@@ -841,6 +844,9 @@ namespace KspMp
         /// Tell everyone we are taking a launch site. Sent from here rather than EditorSystem so it also
         /// covers launches that never go through the VAB, such as the test harness.
         /// </summary>
+        /// <summary>Set around a launch this code announced itself, so the FlightDriver patch does not announce it twice.</summary>
+        public bool SuppressLaunchAnnounce;
+
         public void AnnounceLaunch(string shipName, string site, string[] aboardKerbals = null)
         {
             if (!Network.IsConnected) return;
@@ -853,6 +859,10 @@ namespace KspMp
                 ShipName = shipName ?? "a craft",
                 LaunchSite = site ?? string.Empty,
                 AboardKerbals = aboardKerbals ?? new string[0],
+                // Which bench went up: a guest launching the host's craft names the host's bench, so that is
+                // the session the server dissolves, not the guest's own empty one.
+                SessionOwnerClientId = Editor != null && Editor.Active ? Editor.SessionOwner : 0,
+                FromEditor = Editor != null && Editor.Active,
             }, Shared.Protocol.Channel.Control, Shared.Protocol.Delivery.ReliableOrdered);
         }
 
@@ -865,7 +875,7 @@ namespace KspMp
             if (Presence != null) Presence.OnLaunchNotice(msg, Guid.Empty);
             if (Notices != null && (msg.AboardKerbals == null || Roster == null || System.Array.IndexOf(msg.AboardKerbals, Roster.AvatarName ?? "") < 0))
                 Notices.Post("launch-" + msg.FromClientId, who + " launched " + msg.ShipName + " from " + msg.LaunchSite, Ui.Theme.Ink, ttlSeconds: 12f);
-            if (Editor != null) Editor.OnRemoteLaunch();
+            if (Editor != null) Editor.OnRemoteLaunch(msg.SessionOwnerClientId);
         }
 
         private void OnWelcomedForLaunchOptions(Shared.Protocol.WelcomeMsg welcome)
@@ -935,6 +945,7 @@ namespace KspMp
             if (_crashAt >= 0 && Time.realtimeSinceStartup >= _crashAt && HighLogic.LoadedSceneIsFlight && FlightGlobals.ready)
             {
                 _crashAt = -1f;
+                _crashDone = true;
                 var doomed = FlightGlobals.ActiveVessel;
                 if (doomed != null && doomed.parts != null)
                 {
@@ -945,12 +956,14 @@ namespace KspMp
             if (_revertAt >= 0 && Time.realtimeSinceStartup >= _revertAt && HighLogic.LoadedSceneIsFlight && FlightGlobals.ready)
             {
                 _revertAt = -1f;
+                _revertDone = true;
                 Log.Info("Auto-revert: reverting to launch (can=" + FlightDriver.CanRevertToPostInit + ")");
                 FlightDriver.RevertToLaunch();
             }
             if (_revertEditorAt >= 0 && Time.realtimeSinceStartup >= _revertEditorAt && HighLogic.LoadedSceneIsFlight && FlightGlobals.ready)
             {
                 _revertEditorAt = -1f;
+                _revertDone = true;
                 Log.Info("Auto-revert: reverting to the VAB (can=" + FlightDriver.CanRevertToPrelaunch + ")");
                 FlightDriver.RevertToPrelaunch(EditorFacility.VAB);
             }
@@ -1031,11 +1044,29 @@ namespace KspMp
 
         private void OnGUI()
         {
-            Editor.DrawOverlay();
-            Ui.NametagOverlay.Draw(this);
-            _mainMenu.Draw();
-            _hud.Draw();
-            _debug.Draw();
+            // Each window on its own: one throw must not take the HUD, the debug window and the Disconnect
+            // button with it for every frame after.
+            Guarded("editor overlay", Editor.DrawOverlay);
+            Guarded("nametags", () => Ui.NametagOverlay.Draw(this));
+            Guarded("main menu window", _mainMenu.Draw);
+            Guarded("HUD", _hud.Draw);
+            Guarded("debug window", _debug.Draw);
+        }
+
+        private static readonly Dictionary<string, float> GuiFaultLoggedAt = new Dictionary<string, float>();
+
+        private static void Guarded(string what, Action draw)
+        {
+            try { draw(); }
+            catch (Exception e)
+            {
+                if (!GuiFaultLoggedAt.TryGetValue(what, out var at) || Time.realtimeSinceStartup - at > 10f)
+                {
+                    GuiFaultLoggedAt[what] = Time.realtimeSinceStartup;
+                    Log.Exception("Drawing the " + what, e);
+                }
+                try { Ui.Theme.End(); } catch { }
+            }
         }
 
         private void OnApplicationQuit()

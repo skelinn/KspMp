@@ -32,7 +32,9 @@ namespace KspMp.Ui
             if (_style == null)
                 _style = new GUIStyle(Theme.Chip) { fontSize = 12, richText = true, alignment = TextAnchor.MiddleCenter };
 
+            if (Event.current.type != EventType.Repaint) return;   // labels only exist on repaint; layout passes just cost
             var active = FlightGlobals.ActiveVessel;
+            var activePos = active != null ? active.GetWorldPos3D() : Vector3d.zero;
             var showAll = addon.Launch != null && addon.Launch.NametagsIncludeOwnVessel;
             var vessels = FlightGlobals.Vessels;
             for (var i = 0; i < vessels.Count; i++)
@@ -53,17 +55,17 @@ namespace KspMp.Ui
                 string text;
                 if (vessel.isEVA)
                 {
-                    if (!TryDescribeKerbal(addon, vessel, out text)) continue;
                     var eva = vessel.evaController;
                     if (eva == null) continue;
                     world = eva.transform.position + eva.transform.up * 0.7f;
-                    if ((world - FlightGlobals.ActiveVessel.GetWorldPos3D()).magnitude > EvaRangeMeters) continue;
+                    if (active != null && (world - activePos).magnitude > EvaRangeMeters) continue;
+                    if (!TryDescribeKerbal(addon, vessel, out text)) continue;
                 }
                 else
                 {
-                    if (!TryDescribeVessel(addon, vessel, out text)) continue;
                     world = vessel.GetWorldPos3D() + vessel.transform.up * (vessel.vesselSize.y / 2f + 2f);
-                    if (active != null && (world - active.GetWorldPos3D()).magnitude > VesselRangeMeters) continue;
+                    if (active != null && (world - activePos).magnitude > VesselRangeMeters) continue;
+                    if (!TryDescribeVessel(addon, vessel, out text)) continue;
                 }
 
                 var screen = camera.WorldToScreenPoint(world);

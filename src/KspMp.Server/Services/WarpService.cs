@@ -52,7 +52,12 @@ namespace KspMp.Server.Services
             if (changed && request.DesiredIndex > 0)
                 _server.Log(client.DisplayName + " wants " + WarpRates.Rate(request.Mode, request.DesiredIndex) + "x " + request.Mode + " warp");
             else if (changed && request.DesiredIndex == 0 && RateIndex > 0)
-                _server.Log(client.DisplayName + " drops warp");
+            {
+                // Anyone can drop back to 1x, the way anyone can in KSP: the others' wishes are withdrawn too,
+                // not merely outvoted, or the timeline would spring straight back to warp.
+                _server.Log(client.DisplayName + " drops warp for everyone");
+                foreach (var other in _wishes.Values) other.Desired = 0;
+            }
             Recompute(changed);
         }
 
@@ -82,15 +87,23 @@ namespace KspMp.Server.Services
                 requester = pair.Key;
             }
 
-            if (index > 0 && mode == WarpMode.Rails)
+            if (index > 0)
             {
+                // A client's cap applies to physics warp too: a KSP that refused the shared rate reports what it
+                // accepted, and that is the ceiling whichever mode it is in.
                 foreach (var pair in _wishes)
                 {
                     if (pair.Value.MaxRails < 0 || pair.Value.MaxRails >= index) continue;
                     index = pair.Value.MaxRails;
                     limiting = pair.Key;
                 }
-                if (index == 0) requester = 0;
+                if (index == 0)
+                {
+                    // Held at 1x by somebody who cannot warp: the wish does not linger to spring the timeline
+                    // into warp the moment they can, minutes later, with nobody having asked again.
+                    requester = 0;
+                    foreach (var other in _wishes.Values) other.Desired = 0;
+                }
             }
 
             var changed = mode != Mode || index != RateIndex || requester != RequesterClientId || limiting != LimitingClientId;

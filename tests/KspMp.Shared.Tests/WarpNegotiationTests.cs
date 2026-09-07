@@ -47,9 +47,15 @@ public class WarpNegotiationTests
         Assert.Equal(10f, state.Rate);
         Assert.Equal(b.ClientId, state.RequesterClientId);
 
-        Want(b, 0); // Bob no longer cares: Alice's 1000x stands
+        Want(b, 0); // Bob stops the warp: that ends it for everyone, the way anyone can in KSP - Alice's wish does not stand
         TestClient.Pump(server, a, b);
-        Assert.Equal(1000f, a.Last<WarpStateMsg>()!.Value.Rate);
+        Assert.Equal(1f, a.Last<WarpStateMsg>()!.Value.Rate);
+        Assert.Equal(0, a.Last<WarpStateMsg>()!.Value.RequesterClientId);
+        Assert.Equal(1f, server.Time.Rate);
+
+        Want(a, 5); // Alice asks again
+        TestClient.Pump(server, a, b);
+        Assert.Equal(1000f, b.Last<WarpStateMsg>()!.Value.Rate);
 
         Want(a, 0); // nobody warps
         TestClient.Pump(server, a, b);

@@ -108,6 +108,8 @@ namespace KspMp.Shared.Protocol
         public string LaunchSite;
         /// <summary>Kerbals seated at launch, so a player whose avatar is aboard can be invited into the flight.</summary>
         public string[] AboardKerbals;
+        /// <summary>True when the launch came from an editor bench (false: the space centre's craft browser).</summary>
+        public bool FromEditor;
         /// <summary>Which bench was launched: the client id of its owner (0 = the sender's own).</summary>
         public int SessionOwnerClientId;
 
@@ -121,6 +123,7 @@ namespace KspMp.Shared.Protocol
             w.Put((byte)count);
             for (var i = 0; i < count; i++) w.Put(AboardKerbals[i] ?? string.Empty);
             w.Put(SessionOwnerClientId);
+            w.Put(FromEditor);
         }
 
         public void Deserialize(NetDataReader r)
@@ -133,6 +136,7 @@ namespace KspMp.Shared.Protocol
             AboardKerbals = new string[count];
             for (var i = 0; i < count; i++) AboardKerbals[i] = r.GetString();
             SessionOwnerClientId = r.GetInt();
+            FromEditor = r.GetBool();
         }
     }
 

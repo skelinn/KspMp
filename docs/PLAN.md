@@ -224,6 +224,38 @@ it. When the removed vessel is the one this player is sitting in, its parts are 
   `onPartDeCoupleNewVesselComplete`), and the server ignores approach intents between the two for three
   minutes (`AuthorityService.SeparationGraceSeconds`). Protocol 5.
 
+### Third review pass (2026-09-06) - the shared clock, warp, the loader, the editor sessions, the addon
+
+- Warp: a wish of "1x" abstained from the vote instead of ending the warp, so nobody could stop a warp
+  somebody else had asked for. Dropping warp now withdraws everyone's wish, the way KSP lets anyone cancel;
+  a wish also dies when a limit holds the timeline at 1x, so it cannot spring the warp back minutes later.
+  A refusal by KSP is reported in physics mode too, and the server applies caps in both modes.
+- Time sync: samples the server pushed on its own claimed a round trip of "the transport's ping", which Steam
+  and the loopback report as zero, so they always won the lowest-round-trip pick and latency was never
+  compensated. Pushed samples borrow the last measured round trip. The warp state's UT is taken as a sample
+  at the moment the rate changes. The snap thresholds are wall-clock seconds (drift divided by the rate),
+  since at 1000x a few milliseconds of estimate error is seconds of UT. A skewed timeScale is always restored.
+- Replica: a state with an older UT than the last is a clock that went backwards (states are sequenced), and
+  restarts the stream instead of freezing the vessel until the clock catches up.
+- Loader: reloading a vessel destroys the old object but the immortality set is keyed by id, so the new
+  object came back mortal with a live integrator (`VesselImmortal.Forget` on every destroy). A snapshot that
+  fails to load puts the previous copy back. Crew of any loaded copy is despawned before the destroy. The
+  `Moved()` test no longer compares orbits: an unloaded copy's orbit follows the states and a snapshot is up
+  to thirty seconds old, so an ascending rocket was rebuilt every periodic snapshot.
+- Editor: the held-part keep set includes symmetry counterparts (destroying them stuck the part in the hand);
+  joining a bench clears ours first (an empty target bench sends no snapshot, and our craft went out as the
+  first edit on theirs); a bench that disappears under a guest restores their stash instead of dropping it;
+  a launch resets only the revision of the bench that launched (`EditorLaunchMsg.SessionOwnerClientId`, plus
+  `FromEditor` so a space-centre launch creates no bench); the server refreshes the bench list on part-count
+  and name changes and sends an owner's guests home when the owner goes visiting; other builders' cursors
+  age out after ten seconds.
+- Launch: the announcement and the pad check now happen in `FlightDriver.StartWithNewLaunch`, after KSP's
+  pre-flight checks and on the space-centre path too (the editor prefix only checks early for a clearer
+  message). The pad guard's memory is cleared on disconnect.
+- Addon: each GUI window draws under its own guard; a system whose activation throws stays inactive; no
+  system runs inside a save that is not the multiplayer sandbox; seeded snapshots stay dirty so a proto KSP
+  dropped at game start is loaded again. Protocol 6.
+
 ### Boarding, EVA, death
 - EVA: stock hatch → `FlightEVA.fetch.spawnEVA(...)`; `onCrewOnEva` gives the new EVA vessel (`vessel.isEVA`). Client sends `CrewEva` + the EVA vessel's proto once the EVA FSM is ready (LMP waits for it). Only the avatar's owner may EVA their avatar (`onAttemptEva` handler + `ControlTypes.EVA_INPUT` lock). Presence → `OnEva`; source vessel roles recomputed (pilot EVA → handover).
 - Boarding: postfix `KerbalEVA.proceedAndBoard`/`BoardPart`/`BoardSeat` (LMP `KerbalEVA_proceedAndBoard.cs`, `KerbalEVA_BoardSeat.cs`) → `CrewBoard`; boarding client sends `VesselRemove` for its EVA vessel and applies the crew locally (`part.AddCrewmember`); the owner's next proto confirms; presence → `InFlight`.

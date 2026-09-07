@@ -18,7 +18,11 @@ namespace KspMp.Systems
             {
                 try
                 {
-                    system.SetActive(system.ShouldRun(scene, connected));
+                    // Never inside somebody's private save: connected at the main menu and then resuming a
+                    // career would otherwise upload that career's vessels into the shared universe.
+                    var inGame = HighLogic.LoadedSceneIsGame;
+                    var allowed = !inGame || KspMp.Game.SessionStarter.IsInMultiplayerSave;
+                    system.SetActive(allowed && system.ShouldRun(scene, connected));
                 }
                 catch (Exception e)
                 {
