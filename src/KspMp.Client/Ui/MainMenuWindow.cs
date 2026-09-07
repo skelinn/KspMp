@@ -160,6 +160,21 @@ namespace KspMp.Ui
                 Theme.BeginSection("PLAY OVER STEAM");
                 GUILayout.Label("Unavailable: " + Net.Steam.SteamP2P.Unavailable, Theme.Caption);
                 Theme.EndSection();
+                // Hosting works without Steam (over UDP, for a LAN or a forwarded port); it used to be hidden
+                // with the Steam section.
+                Theme.BeginSection("HOST A GAME");
+                var hostingUdp = _addon.Host != null && _addon.Host.Running;
+                if (hostingUdp)
+                {
+                    GUILayout.Label(Theme.Dot(Theme.Accent) + "  Hosting on UDP port " + _addon.Host.Port + ". Friends connect to your address and that port.", Theme.Value);
+                    if (GUILayout.Button("Stop hosting")) _addon.StopHosting();
+                }
+                else if (GUILayout.Button("Host a game (direct connect)", Theme.Primary))
+                {
+                    settings.Save();
+                    _addon.StartHosting(ParseSteamIds(settings.AllowedSteamIds));
+                }
+                Theme.EndSection();
                 return;
             }
 

@@ -14,7 +14,7 @@ namespace KspMp.Harmony
         private static bool Prefix(EditorLogic __instance, string siteName)
         {
             var addon = KspMpAddon.Instance;
-            if (addon == null || !addon.Network.IsConnected) return true;
+            if (addon == null || addon.Network == null || !addon.Network.IsConnected) return true;
             if (Vessels.LaunchSiteGuard.IsBlocked(siteName, addon.Vessels, out var reason))
             {
                 Log.Info("Refused a launch from the " + siteName + ": " + reason);
@@ -24,10 +24,12 @@ namespace KspMp.Harmony
             // The announcement waits for FlightDriver.StartWithNewLaunch (see FlightDriver_StartWithNewLaunch):
             // KSP's pre-flight checks run after this and the player may cancel, and then nobody launched.
             LastEditorLaunchCrew = SeatedKerbals();
+            LastEditorLaunchCrewAt = UnityEngine.Time.realtimeSinceStartup;
             return true;
         }
 
         internal static string[] LastEditorLaunchCrew;
+        internal static float LastEditorLaunchCrewAt = -1000f;
 
         /// <summary>
         /// Who is in the seats at the moment of launch. The other player only learns their kerbal is going up
@@ -83,7 +85,10 @@ namespace KspMp.Harmony
             {
                 Log.Exception("Reading the launch manifest", e);
             }
-            if (crew.Count == 0 && EditorLogic_LaunchVessel.LastEditorLaunchCrew != null) crew.AddRange(EditorLogic_LaunchVessel.LastEditorLaunchCrew);
+            // The editor's crew list is only good for the launch it was read for; one cancelled at the
+            // pre-flight dialog must not name its crew on the next launch from the space centre.
+            var fresh = UnityEngine.Time.realtimeSinceStartup - EditorLogic_LaunchVessel.LastEditorLaunchCrewAt < 30f;
+            if (crew.Count == 0 && fresh && EditorLogic_LaunchVessel.LastEditorLaunchCrew != null) crew.AddRange(EditorLogic_LaunchVessel.LastEditorLaunchCrew);
             EditorLogic_LaunchVessel.LastEditorLaunchCrew = null;
             var name = System.IO.Path.GetFileNameWithoutExtension(fullFilePath ?? "") ;
             addon.AnnounceLaunch(string.IsNullOrEmpty(name) ? "a craft" : name, launchSiteName, crew.ToArray());

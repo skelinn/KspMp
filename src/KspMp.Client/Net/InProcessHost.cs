@@ -51,15 +51,13 @@ namespace KspMp.Net
                 config.Upnp = false;   // the dedicated host does this; in-process we leave the router alone
                 config.Save(dir);
 
-                var transports = new List<INetTransport>
+                var udp = new LiteNetLibTransport(new TransportOptions
                 {
-                    new LiteNetLibTransport(new TransportOptions
-                    {
-                        IsServer = true,
-                        Port = config.Port,
-                        MaxPeers = config.MaxPlayers + 4,
-                    }, m => Log.Info("[host/udp] " + m)),
-                };
+                    IsServer = true,
+                    Port = config.Port,
+                    MaxPeers = config.MaxPlayers + 4,
+                }, m => Log.Info("[host/udp] " + m));
+                var transports = new List<INetTransport> { udp };
 
                 if (Steam.SteamP2P.TryInitialise())
                 {
@@ -75,7 +73,10 @@ namespace KspMp.Net
                 _transport = new CompositeTransport(transports, m => Log.Warn("[host] " + m));
                 _server = new ServerCore(_transport, config, universe, m => Log.Info("[host] " + m));
                 _server.Start();
-                Port = config.Port;
+                // Our own client joins over this port; a bind that failed (another server on it) was tolerated
+                // by the composite transport and left the host "hosting" a game it could not enter itself.
+                if (udp.LocalPort == 0) throw new InvalidOperationException("UDP port " + config.Port + " could not be opened - is another KspMp server already using it?");
+                Port = udp.LocalPort;
 
                 Log.Info("Hosting on UDP " + Port + (SteamId != 0 ? ", and over Steam as " + SteamId : "")
                          + "; world in " + dir);

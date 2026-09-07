@@ -28,6 +28,8 @@ namespace KspMp.Systems
         private readonly List<VesselResourcesMsg.Resource> _amounts = new List<VesselResourcesMsg.Resource>();
         private float _nextSendAt;
         private float _nextCheckAt;
+        private float _nextPruneAt;
+        private readonly HashSet<Guid> _hadAboard = new HashSet<Guid>();
         private static readonly string[] Checked = { "LiquidFuel", "Oxidizer", "SolidFuel", "ElectricCharge", "MonoPropellant" };
 
         public ResourceSyncSystem(KspMpAddon addon) : base(addon) { }
@@ -62,12 +64,27 @@ namespace KspMp.Systems
             if (now < _nextSendAt) return;
             _nextSendAt = now + IntervalSeconds;
 
+            if (now >= _nextPruneAt)
+            {
+                _nextPruneAt = now + 60f;
+                foreach (var id in new List<Guid>(_lastSent.Keys))
+                    if (FlightGlobals.FindVessel(id) == null) { _lastSent.Remove(id); _lastFullAt.Remove(id); _hadAboard.Remove(id); }
+            }
             var loaded = FlightGlobals.VesselsLoaded;
             for (var i = 0; i < loaded.Count; i++)
             {
                 var vessel = loaded[i];
                 if (vessel == null || vessel.id == Guid.Empty || vessel.parts == null) continue;
-                if (!Addon.Vessels.IsMine(vessel.id) || !Addon.Control.OthersAboard(vessel.id)) continue;
+                if (!Addon.Vessels.IsMine(vessel.id))
+                {
+                    // Not ours (any more): the baseline dies with the ownership, so taking it back later starts
+                    // with a full send instead of suppressing every tank that "has not moved" since long ago.
+                    _lastSent.Remove(vessel.id); _lastFullAt.Remove(vessel.id); _hadAboard.Remove(vessel.id);
+                    continue;
+                }
+                if (!Addon.Control.OthersAboard(vessel.id)) { _hadAboard.Remove(vessel.id); continue; }
+                // Somebody just came aboard: everything, now, not whatever moved since the last delta.
+                if (_hadAboard.Add(vessel.id)) _lastFullAt.Remove(vessel.id);
                 Send(vessel, now);
             }
         }
@@ -88,6 +105,7 @@ namespace KspMp.Systems
                 {
                     if (resource == null) continue;
                     var amount = (float)resource.amount;
+                    if (float.IsNaN(amount) || float.IsInfinity(amount)) continue;
                     var key = ((long)part.flightID << 32) ^ (uint)resource.resourceName.GetHashCode();
                     // A tank that has not moved by a thousandth of its capacity is not worth a byte.
                     if (!full && last.TryGetValue(key, out var was) && Math.Abs(was - amount) <= Math.Max(0.001f * (float)resource.maxAmount, 0.0005f)) continue;
@@ -148,7 +166,7 @@ namespace KspMp.Systems
                 foreach (var amount in entry.Resources)
                 {
                     var resource = part.Resources.Get(amount.Name);
-                    if (resource == null) continue;
+                    if (resource == null || float.IsNaN(amount.Amount) || float.IsInfinity(amount.Amount)) continue;   // never let a NaN into a tank
                     resource.amount = Math.Max(0.0, Math.Min(resource.maxAmount, amount.Amount));
                     written++;
                 }

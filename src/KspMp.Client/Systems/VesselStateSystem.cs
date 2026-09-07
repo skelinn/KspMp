@@ -91,6 +91,7 @@ namespace KspMp.Systems
         {
             var msg = Envelope.Read<VesselStateMsg>(body);
             if (Registry.IsTombstoned(msg.VesselId)) return;
+            if (!Registry.IsKnown(msg.VesselId) && Registry.WasRemoved(msg.VesselId)) return;   // a straggler for a removed vessel
             var remote = Registry.GetOrAdd(msg.VesselId);
             if (Registry.IsMine(remote)) return;
             remote.HasState = true;

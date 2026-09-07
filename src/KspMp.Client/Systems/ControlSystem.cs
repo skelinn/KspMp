@@ -455,7 +455,13 @@ namespace KspMp.Systems
             Apply("action group " + group + " by " + NameOf(msg.FromClientId), () =>
             {
                 if (msg.Toggle) vessel.ActionGroups.ToggleGroup(group);
-                else vessel.ActionGroups.SetGroup(group, msg.Value);
+                else
+                {
+                    // KSP drops a change inside the group's cooldown window with only a log line; a mirrored
+                    // change is the pilot's truth and must land.
+                    try { vessel.ActionGroups.cooldownTimes[BaseAction.GetGroupIndex(group)] = 0.0; } catch (Exception) { }
+                    vessel.ActionGroups.SetGroup(group, msg.Value);
+                }
             });
         }
 
@@ -474,7 +480,7 @@ namespace KspMp.Systems
         private void OnPartEvent(NetDataReader body)
         {
             var msg = Envelope.Read<PartEventMsg>(body);
-            var vessel = ActionTarget(msg.VesselId, msg.FromClientId, out _);
+            var vessel = ActionTarget(msg.VesselId, msg.FromClientId, out var mirrored);
             if (vessel == null) return;
             Part part = null;
             for (var i = 0; i < vessel.parts.Count; i++)
@@ -488,6 +494,11 @@ namespace KspMp.Systems
                 if (evt == null) throw new InvalidOperationException("event " + msg.EventName + " not found");
                 evt.Invoke();
             });
+            // A relayed event is invoked here directly, not through the part action button, so the button's
+            // Harmony echo never sees it: without this the co-pilot who asked for it, and every other
+            // co-pilot, watched nothing happen while the pilot's chute opened.
+            if (!mirrored && Addon.Vessels.IsMine(vessel.id) && OthersAboard(vessel.id))
+                SendPartEvent(vessel.id, msg.PartFlightId, msg.ModuleIndex, msg.EventName, quiet: true);
         }
 
         private void Apply(string what, Action action)

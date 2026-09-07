@@ -587,7 +587,7 @@ namespace KspMp.Server
 
         private static string SanitizeName(string name)
         {
-            name = (name ?? string.Empty).Trim();
+            name = (name ?? string.Empty).Trim().Replace("<", "").Replace(">", "");   // IMGUI labels are rich text
             if (name.Length == 0) name = "Player";
             if (name.Length > 24) name = name.Substring(0, 24);
             return name;

@@ -292,6 +292,24 @@ and the manifest text is part of the snapshot hash so a seating change alone is 
   re-activation, or that saw no sync eight seconds after its Welcome, asks the server for the world again
   (`SyncRequest`). A disconnect next to somebody's craft restores the parts it had hardened.
 
+### Fifth review pass (2026-09-07) - the Harmony patches, the streams, hosting
+
+- A co-pilot's relayed part-menu action was invoked on the pilot directly, not through the part action
+  button, so the button's echo never saw it: the co-pilot who pressed "Deploy" watched nothing while the
+  pilot's chute opened. The owner now echoes a relayed part event by hand. A part event also runs on the
+  part's symmetry counterparts, as KSP's own click does. The SAS mode prefix returns the "mode taken" result,
+  so the SAS buttons follow a co-pilot's choice. Action groups travel as the state to end in, not a toggle,
+  and the mirror clears the group's cooldown so it always lands. The echoed stage index is clamped at 0.
+- Jetpack effects are repeated once a second while unchanged: the stream is unreliable, and a lost "off"
+  left the plume lit for good. A change of sphere of influence resets the replica's interpolation. Resources
+  are sent in full when somebody comes aboard and the baseline dies with the ownership; a NaN never reaches
+  a tank. Per-vessel caches are pruned; a state for a removed vessel does not resurrect its registry entry.
+- Player names and chat text cannot carry rich-text tags (IMGUI labels are rich text; one open tag ate the
+  window). Settings are written atomically with a backup, and the backup's player id is used when the file is
+  unreadable - a fresh id meant an avatar the server would never hand back. Hosting from inside the game
+  fails loudly when the UDP port cannot be opened, reports the port actually bound, and is offered without
+  Steam. Server config values out of range fall back to defaults.
+
 ### Boarding, EVA, death
 - EVA: stock hatch → `FlightEVA.fetch.spawnEVA(...)`; `onCrewOnEva` gives the new EVA vessel (`vessel.isEVA`). Client sends `CrewEva` + the EVA vessel's proto once the EVA FSM is ready (LMP waits for it). Only the avatar's owner may EVA their avatar (`onAttemptEva` handler + `ControlTypes.EVA_INPUT` lock). Presence → `OnEva`; source vessel roles recomputed (pilot EVA → handover).
 - Boarding: postfix `KerbalEVA.proceedAndBoard`/`BoardPart`/`BoardSeat` (LMP `KerbalEVA_proceedAndBoard.cs`, `KerbalEVA_BoardSeat.cs`) → `CrewBoard`; boarding client sends `VesselRemove` for its EVA vessel and applies the crew locally (`part.AddCrewmember`); the owner's next proto confirms; presence → `InFlight`.

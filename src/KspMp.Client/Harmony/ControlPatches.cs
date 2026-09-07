@@ -59,7 +59,9 @@ namespace KspMp.Harmony
                 default:
                     // The index matters: a co-pilot's copy that fires "whatever is next" by its own count drifts
                     // from the pilot's within a couple of stages, and then decouples what the pilot did not.
-                    if (ControlGate.Echo(vessel)) KspMpAddon.Instance.Control.SendStage(vessel.id, quiet: true, stage: stage);
+                    // ActivateNextStage passes _currentStage - 1, which is -1 on the last stage - the "no index"
+                    // sentinel on the wire; KSP clamps it to 0 itself.
+                    if (ControlGate.Echo(vessel)) KspMpAddon.Instance.Control.SendStage(vessel.id, quiet: true, stage: stage < 0 ? 0 : stage);
                     return true;
             }
         }
@@ -74,13 +76,15 @@ namespace KspMp.Harmony
             switch (ControlGate.For(vessel))
             {
                 case ControlGate.Verdict.Relay:
-                    KspMpAddon.Instance.Control.SendActionGroup(vessel.id, group, true, false);
+                    // The state it should end in, not a blind toggle: a toggle lost to the group's cooldown on
+                    // the other side inverted the gear for the rest of the flight.
+                    KspMpAddon.Instance.Control.SendActionGroup(vessel.id, group, false, !__instance[group]);
                     return false;
                 case ControlGate.Verdict.Blocked:
                     ControlGate.Blocked(group.ToString());
                     return false;
                 default:
-                    if (ControlGate.Echo(vessel)) KspMpAddon.Instance.Control.SendActionGroup(vessel.id, group, true, false);
+                    if (ControlGate.Echo(vessel)) KspMpAddon.Instance.Control.SendActionGroup(vessel.id, group, false, !__instance[group]);
                     return true;
             }
         }
@@ -89,15 +93,17 @@ namespace KspMp.Harmony
     [HarmonyPatch(typeof(VesselAutopilot), nameof(VesselAutopilot.SetMode), typeof(VesselAutopilot.AutopilotMode))]
     internal static class VesselAutopilot_SetMode
     {
-        private static bool Prefix(VesselAutopilot __instance, VesselAutopilot.AutopilotMode mode)
+        private static bool Prefix(VesselAutopilot __instance, VesselAutopilot.AutopilotMode mode, ref bool __result)
         {
             var vessel = __instance.Vessel;
             switch (ControlGate.For(vessel))
             {
                 case ControlGate.Verdict.Relay:
                     KspMpAddon.Instance.Control.SendSasMode(vessel.id, (int)mode, true);
+                    __result = true;   // SetMode returns whether the mode was taken; the SAS buttons stay stuck otherwise
                     return false;
                 case ControlGate.Verdict.Blocked:
+                    __result = false;
                     return false;
                 default:
                     if (ControlGate.Echo(vessel)) KspMpAddon.Instance.Control.SendSasMode(vessel.id, (int)mode, true);
@@ -122,6 +128,10 @@ namespace KspMp.Harmony
                     var evt = __instance.evt;
                     if (evt == null) return false;
                     KspMpAddon.Instance.Control.SendPartEvent(vessel.id, part.flightID, index, evt.name);
+                    // KSP's own click runs the event on every symmetry counterpart too (UIPartActionButton.OnClick).
+                    if (part.symmetryCounterparts != null)
+                        foreach (var twin in part.symmetryCounterparts)
+                            if (twin != null) KspMpAddon.Instance.Control.SendPartEvent(vessel.id, twin.flightID, index, evt.name, quiet: true);
                     return false;
                 }
                 case ControlGate.Verdict.Blocked:
@@ -133,7 +143,13 @@ namespace KspMp.Harmony
                         var module = __instance.partModule;
                         var index = module != null ? part.Modules.IndexOf(module) : -1;
                         var evt = __instance.evt;
-                        if (evt != null) KspMpAddon.Instance.Control.SendPartEvent(vessel.id, part.flightID, index, evt.name, quiet: true);
+                        if (evt != null)
+                        {
+                            KspMpAddon.Instance.Control.SendPartEvent(vessel.id, part.flightID, index, evt.name, quiet: true);
+                            if (part.symmetryCounterparts != null)
+                                foreach (var twin in part.symmetryCounterparts)
+                                    if (twin != null) KspMpAddon.Instance.Control.SendPartEvent(vessel.id, twin.flightID, index, evt.name, quiet: true);
+                        }
                     }
                     return true;
             }

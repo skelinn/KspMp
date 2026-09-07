@@ -44,6 +44,9 @@ namespace KspMp.Server
             config.RespawnSeconds = node.GetFloat("respawnSeconds", config.RespawnSeconds);
             config.SharedStickDefault = node.GetBool("sharedStickDefault", config.SharedStickDefault);
             config.InitialUniversalTime = node.GetDouble("initialUniversalTime", config.InitialUniversalTime);
+            var defaults = new ServerConfig();
+            if (config.Port <= 0 || config.Port > 65535) config.Port = defaults.Port;
+            if (config.MaxPlayers < 1) config.MaxPlayers = defaults.MaxPlayers;
             return config;
         }
 

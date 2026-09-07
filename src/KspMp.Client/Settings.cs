@@ -71,6 +71,27 @@ namespace KspMp
                 Log.Exception("Loading settings", e);
             }
 
+            if (settings.PlayerId == Guid.Empty && File.Exists(FilePath + ".bak"))
+            {
+                // The file did not read back; the previous good copy did.
+                try
+                {
+                    var backup = ConfigNode.Load(FilePath + ".bak");
+                    var node = backup != null ? backup.GetNode(NodeName) : null;
+                    var id = string.Empty;
+                    if (node != null && node.TryGetValue("playerId", ref id) && Guid.TryParse(id, out var guid))
+                    {
+                        settings.PlayerId = guid;
+                        node.TryGetValue("playerName", ref settings.PlayerName);
+                        node.TryGetValue("avatarKerbalName", ref settings.AvatarKerbalName);
+                        Log.Warn("settings.cfg was unreadable; the player id came from settings.cfg.bak");
+                    }
+                }
+                catch (Exception e)
+                {
+                    Log.Exception("Reading settings.cfg.bak", e);
+                }
+            }
             if (settings.PlayerId == Guid.Empty)
             {
                 settings.PlayerId = Guid.NewGuid();
@@ -103,7 +124,17 @@ namespace KspMp
                 // name, so the settings would never read back. Wrap it in a root node.
                 var file = new ConfigNode();
                 file.AddNode(node);
-                file.Save(FilePath);
+                // A crash mid-write used to leave an unreadable file, and an unreadable file meant a brand-new
+                // player id - and an avatar the server would never hand back. Write beside it, keep the last
+                // good copy, then swap.
+                var tmp = FilePath + ".tmp";
+                file.Save(tmp);
+                if (File.Exists(FilePath))
+                {
+                    try { File.Copy(FilePath, FilePath + ".bak", true); } catch (Exception) { }
+                    File.Replace(tmp, FilePath, null);
+                }
+                else File.Move(tmp, FilePath);
             }
             catch (Exception e)
             {

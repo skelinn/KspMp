@@ -7,8 +7,9 @@ namespace KspMp.Harmony
     /// nothing it does not simulate can fly through air (Vessel.CheckKill, called from VesselPrecalculate).
     /// That is exactly what another player's rocket is on this machine once it climbs out of physics range:
     /// it blinked out, and came back with the next snapshot thirty seconds later, all the way up. Somebody else
-    /// simulates it and streams where it is, so it lives. Only that one branch is skipped; the rest of
-    /// CheckKill still runs.
+    /// simulates it and streams where it is, so it lives. The prefix runs only when that branch would fire,
+    /// and then skips the whole method (a prefix cannot skip one branch) - including the below-terrain check,
+    /// which is fine: the owner's states put the replica where the owner has it.
     /// </summary>
     [HarmonyPatch(typeof(Vessel), nameof(Vessel.CheckKill))]
     internal static class Vessel_CheckKill

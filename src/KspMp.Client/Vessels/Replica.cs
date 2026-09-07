@@ -51,6 +51,8 @@ namespace KspMp.Vessels
                 if (state.Ut == _to.Ut) return;
                 _hasTo = false;
             }
+            // A change of sphere of influence: positions relative to two different bodies cannot be blended.
+            if (_hasTo && state.BodyIndex != _to.BodyIndex) _hasTo = false;
             _from = _hasTo ? _to : state;
             _to = state;
             _hasTo = true;

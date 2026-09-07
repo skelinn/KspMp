@@ -43,7 +43,7 @@ namespace KspMp.Harmony
         internal static void ReportBoarding(KerbalEVA eva, Part target, int seatIndex)
         {
             var addon = KspMpAddon.Instance;
-            if (addon == null || !addon.Network.IsConnected || eva == null || target == null || target.vessel == null) return;
+            if (addon == null || addon.Network == null || !addon.Network.IsConnected || eva == null || target == null || target.vessel == null) return;
             if (!addon.Vessels.IsOwnedByOther(target.vessel.id)) return;   // ours to do locally
             var kerbal = eva.vessel != null ? eva.vessel.GetVesselCrew() : null;
             if (kerbal == null || kerbal.Count == 0 || kerbal[0] == null) return;

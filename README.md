@@ -197,6 +197,11 @@ Options added for the shared-building, shared-flight and EVA work, on top of tho
 
 Worth knowing before you play, roughly in the order you would hit them.
 
+- **Hosting from inside the game runs on the game's main thread**, so while the host's KSP loads a scene
+  (tens of seconds) nothing is relayed between the other players; they see each other freeze and then catch
+  up. A dedicated server (`KspMp.Server.Host`) does not have this.
+- **The introducer trusts registrations.** Two hosts using the same join code overwrite each other; pick a
+  code nobody else would.
 - **A host must know a joining player's Steam ID up front.** Steam discards packets from a session nobody
   accepted, and learning that someone wants in needs a P2PSessionRequest callback that is not written, so the
   IDs go in the Friends box or `-kspmp-allow` beforehand. The list is read when hosting starts, so adding
@@ -220,8 +225,8 @@ Worth knowing before you play, roughly in the order you would hit them.
 - **Stock docking magnets do not fire on a teleported approach.** The test harness closes the last centimetres
   itself, through `ModuleDockingNode.DockToVessel`, which is what the mod patches. A hand-flown dock has not been
   tried, so it is not known whether this affects normal play or only the harness.
-- **Which client ends up owning a shared vessel is not deterministic.** The same scenario can hand authority to
-  either player from one run to the next.
+- **An unowned vessel goes to whoever is aboard and flying it**, else to whoever asked first. After a server
+  restart nothing is owned until somebody asks.
 
 ## How playing together works
 

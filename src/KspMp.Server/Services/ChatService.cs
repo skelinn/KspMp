@@ -18,6 +18,7 @@ namespace KspMp.Server.Services
             var text = (message.Text ?? string.Empty).Trim();
             if (text.Length == 0) return;
             if (text.Length > MaxLength) text = text.Substring(0, MaxLength);
+            text = text.Replace('<', '\u2039').Replace('>', '\u203a');   // labels are rich text; an open tag would eat the window
             _server.Log(from.DisplayName + ": " + text);
             _server.Broadcast(MessageId.Chat, new ChatMsg { FromClientId = from.ClientId, FromName = from.PlayerName, Text = text }, Channel.ChatMod, Delivery.ReliableOrdered);
         }

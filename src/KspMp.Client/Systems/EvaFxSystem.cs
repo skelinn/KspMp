@@ -21,6 +21,8 @@ namespace KspMp.Systems
 
         private float _nextSendAt;
         private readonly Dictionary<Guid, EvaFxMsg> _lastSent = new Dictionary<Guid, EvaFxMsg>();
+        private readonly Dictionary<Guid, float> _lastSentAt = new Dictionary<Guid, float>();
+        private float _nextPruneAt;
 
         public EvaFxSystem(KspMpAddon addon) : base(addon) { }
 
@@ -39,12 +41,19 @@ namespace KspMp.Systems
         {
             Net.UnregisterHandler(MessageId.EvaFx, OnEvaFx);
             _lastSent.Clear();
+            _lastSentAt.Clear();
         }
 
         public override void Update()
         {
             if (!HighLogic.LoadedSceneIsFlight || !FlightGlobals.ready || !Net.IsConnected) return;
             var now = Time.realtimeSinceStartup;
+            if (now >= _nextPruneAt)
+            {
+                _nextPruneAt = now + 60f;
+                foreach (var id in new List<Guid>(_lastSent.Keys))
+                    if (FlightGlobals.FindVessel(id) == null) { _lastSent.Remove(id); _lastSentAt.Remove(id); }
+            }
             if (now < _nextSendAt) return;
             _nextSendAt = now + IntervalSeconds;
 
@@ -54,9 +63,12 @@ namespace KspMp.Systems
                 var vessel = loaded[i];
                 if (vessel == null || !vessel.isEVA || vessel.evaController == null || !Addon.Vessels.IsMine(vessel.id)) continue;
                 var msg = Capture(vessel);
-                // While the pack is stowed nothing changes, so say so once and then be quiet.
-                if (_lastSent.TryGetValue(vessel.id, out var last) && Same(last, msg)) continue;
+                // Unchanged: say so again once a second anyway. The stream is unreliable and sequenced, and a
+                // lost "thrust off" left the plume lit on every other machine for good.
+                var stale = !_lastSentAt.TryGetValue(vessel.id, out var at) || now - at > 1f;
+                if (!stale && _lastSent.TryGetValue(vessel.id, out var last) && Same(last, msg)) continue;
                 _lastSent[vessel.id] = msg;
+                _lastSentAt[vessel.id] = now;
                 Net.Send(MessageId.EvaFx, msg, Channel.State, Delivery.Sequenced);
                 Sent++;
             }
