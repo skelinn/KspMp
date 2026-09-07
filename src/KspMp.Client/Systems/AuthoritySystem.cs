@@ -15,6 +15,8 @@ namespace KspMp.Systems
     {
         private const string SpectateLockId = "KspMp.spectate";
         private readonly Dictionary<Guid, float> _pendingRequests = new Dictionary<Guid, float>();
+        /// <summary>Vessels we released moments ago: the volunteer scan must not take them straight back.</summary>
+        private readonly Dictionary<Guid, float> _releasedAt = new Dictionary<Guid, float>();
         private float _nextScanAt;
         private bool _spectating;
 
@@ -65,6 +67,7 @@ namespace KspMp.Systems
             if (!Registry.IsMine(vesselId)) return;
             Net.Send(MessageId.AuthorityRelease, new AuthorityReleaseMsg { VesselId = vesselId }, Channel.Control, Delivery.ReliableOrdered);
             Registry.GetOrAdd(vesselId).OwnerClientId = 0;
+            _releasedAt[vesselId] = Time.realtimeSinceStartup;
         }
 
         public void ReleaseAll(string why, Guid keep = default)
@@ -95,6 +98,9 @@ namespace KspMp.Systems
                 }
                 if (remote.OwnerClientId == 0)
                 {
+                    // Not one we let go of a moment ago: the scene we are leaving stays "ready" for a few frames
+                    // after ReleaseAll, and taking everything back would leave it frozen for everyone else.
+                    if (_releasedAt.TryGetValue(vessel.id, out var releasedAt) && now - releasedAt < 5f) continue;
                     Request(vessel.id); // nobody simulates it and it is inside our physics range: volunteer
                 }
                 else
@@ -108,9 +114,16 @@ namespace KspMp.Systems
         private void OnAssign(NetDataReader body)
         {
             var msg = Envelope.Read<AuthorityAssignMsg>(body);
+            _pendingRequests.Remove(msg.VesselId);
+            if (!Registry.IsKnown(msg.VesselId) && Registry.WasRemoved(msg.VesselId))
+            {
+                // A late assignment on the Control channel for a vessel already removed on Bulk (a docking's
+                // absorbed half, typically). Re-adding it would keep a ghost in the registry for the session.
+                Log.Info("Ignoring an assignment for removed vessel " + msg.VesselId.ToString().Substring(0, 8));
+                return;
+            }
             var remote = Registry.GetOrAdd(msg.VesselId);
             var before = remote.OwnerClientId;
-            _pendingRequests.Remove(msg.VesselId);
             if (!Registry.ApplyOwner(remote, msg.OwnerClientId, msg.AuthoritySeq, "an authority assignment")) return;
             if (before != msg.OwnerClientId || msg.Reason == AuthorityReason.Denied || msg.Reason == AuthorityReason.NotInFlight)
                 Log.Info("Authority for " + remote.Label + ": " + (msg.OwnerClientId == 0 ? "nobody" : msg.OwnerClientId == Net.ClientId ? "us" : "#" + msg.OwnerClientId) + " (" + msg.Reason + ")");

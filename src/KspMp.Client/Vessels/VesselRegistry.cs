@@ -84,6 +84,13 @@ namespace KspMp.Vessels
                                    + " at sequence " + authoritySeq + ", we already have #" + vessel.OwnerClientId + " at " + vessel.AuthoritySeq);
                 return false;
             }
+            if (authoritySeq == 0 && ownerClientId == 0 && vessel.OwnerClientId != 0 && vessel.AuthoritySeq != 0)
+            {
+                // A snapshot the server relayed before its first assignment carries owner 0 at sequence 0;
+                // landing after that assignment, it must not turn a known owner back into nobody.
+                KspMp.Log.Info("Ignored an unsequenced 'nobody' for " + vessel.Label + " from " + source + ": we have #" + vessel.OwnerClientId + " at " + vessel.AuthoritySeq);
+                return false;
+            }
             if (authoritySeq > vessel.AuthoritySeq) vessel.AuthoritySeq = authoritySeq;
             vessel.OwnerClientId = ownerClientId;
             return true;

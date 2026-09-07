@@ -43,7 +43,11 @@ namespace KspMp.Vessels
 
         public void Push(VesselStateMsg state)
         {
-            if (_hasTo && state.Ut <= _to.Ut) return;
+            if (_hasTo && state.Ut <= _to.Ut)
+            {
+                if (state.Ut > _to.Ut - 30) return;   // late or duplicate: ignore
+                _hasTo = false;                        // the clock went backwards by a lot (a resync): start over
+            }
             _from = _hasTo ? _to : state;
             _to = state;
             _hasTo = true;

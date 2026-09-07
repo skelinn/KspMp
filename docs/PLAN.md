@@ -195,6 +195,29 @@ server removes is returned the same way (`VesselLoader.Remove` -> `ReturnAvatar`
 it. When the removed vessel is the one this player is sitting in, its parts are exploded locally
 (`Vessel.Die()` leaves an active vessel's parts alone) so KSP runs its own lost-vessel flow.
 
+### Second review pass (2026-09-06) - what a line-by-line read of control, presence, authority and docking found
+
+- A co-pilot's relayed action (stage, action group, SAS, part button) ran on the pilot's machine but was never
+  echoed back, because `ControlGate.Echo` was gated on `ApplyingRemoteAction` - the flag that marks the pilot
+  applying exactly that. The co-pilot's own copy had done nothing but send it, so its engines never lit.
+- The co-pilot lock was a cached flag; KSP clears every control lock when the navball switches to docking mode,
+  after which a locked co-pilot had the stick. The lock is now checked against the lock stack every frame.
+- "Not now" on a flight invite was undone one second later by the next scan finding our Kerbal still aboard.
+  Declines are remembered until the Kerbal is home again; a countdown whose join could not happen re-arms.
+- Leaving flight now reports presence at once: the last report stood through the loading screen, and "in
+  flight on that vessel" is what the server hands authority to.
+- Releasing authority marked the vessel unowned locally, and the one-second volunteer scan took it straight
+  back while the scene was still winding down. Released vessels are left alone for five seconds.
+- An unsequenced snapshot (relayed before the server's first assignment) could turn a known owner back into
+  nobody; a stale sequence check on co-pilot input underflowed for the first thousand packets; a late
+  assignment could resurrect a removed vessel in the registry.
+- Docking: the server only accepted a commit from the survivor's owner, so a dock whose survivor belonged to
+  the other player was dropped silently while the docking machine had already merged them. Whoever docked now
+  owns the merged vessel (`HandleDockCommit` assigns it), and everyone also receives a `VesselRemove` for the
+  absorbed vessel, since `DockCommit` is only handled in flight. `AuthorityService.Forget` keeps the sequence.
+- A `KerbalStatus` that outran its `KerbalProto` on the other channel was dropped; it is held until the kerbal
+  arrives.
+
 ### Boarding, EVA, death
 - EVA: stock hatch → `FlightEVA.fetch.spawnEVA(...)`; `onCrewOnEva` gives the new EVA vessel (`vessel.isEVA`). Client sends `CrewEva` + the EVA vessel's proto once the EVA FSM is ready (LMP waits for it). Only the avatar's owner may EVA their avatar (`onAttemptEva` handler + `ControlTypes.EVA_INPUT` lock). Presence → `OnEva`; source vessel roles recomputed (pilot EVA → handover).
 - Boarding: postfix `KerbalEVA.proceedAndBoard`/`BoardPart`/`BoardSeat` (LMP `KerbalEVA_proceedAndBoard.cs`, `KerbalEVA_BoardSeat.cs`) → `CrewBoard`; boarding client sends `VesselRemove` for its EVA vessel and applies the crew locally (`part.AddCrewmember`); the owner's next proto confirms; presence → `InFlight`.

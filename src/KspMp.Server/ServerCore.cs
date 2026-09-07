@@ -476,16 +476,26 @@ namespace KspMp.Server
         /// <summary>Docking finished on the owner: one vessel absorbed the other.</summary>
         private void HandleDockCommit(ClientSession client, DockCommitMsg commit)
         {
-            if (!Authority.IsOwnedBy(commit.SurvivorVesselId, client.ClientId))
+            // The commit comes from whoever's physics did the docking, which is the owner of at least one of
+            // the two vessels. The merged vessel is theirs from now on: KSP merged the other one into it on
+            // their machine, and nobody else's copy shows that yet.
+            var ownsSurvivor = Authority.IsOwnedBy(commit.SurvivorVesselId, client.ClientId);
+            var ownsRemoved = Authority.IsOwnedBy(commit.RemovedVesselId, client.ClientId);
+            if (!ownsSurvivor && !ownsRemoved)
             {
-                _log(client.DisplayName + " reported a docking of vessel " + commit.SurvivorVesselId + " it does not own; ignored");
+                _log(client.DisplayName + " reported a docking of vessels " + commit.SurvivorVesselId + " and " + commit.RemovedVesselId + " it owns neither of; ignored");
                 return;
             }
             var removedOwner = Authority.OwnerOf(commit.RemovedVesselId);
-            if (removedOwner != 0 && removedOwner != client.ClientId)
+            if (ownsSurvivor && removedOwner != 0 && removedOwner != client.ClientId)
             {
                 _log(client.DisplayName + " reported docking with vessel " + commit.RemovedVesselId + " owned by #" + removedOwner + "; ignored");
                 return;
+            }
+            if (!ownsSurvivor)
+            {
+                _log(client.DisplayName + " docked its vessel into " + commit.SurvivorVesselId + " (owner #" + Authority.OwnerOf(commit.SurvivorVesselId) + "); the merged vessel is theirs");
+                Authority.Assign(commit.SurvivorVesselId, client.ClientId, AuthorityReason.HandedOver);
             }
             var record = Vessels.Upsert(new VesselProtoMsg
             {
@@ -503,6 +513,9 @@ namespace KspMp.Server
             commit.OwnerClientId = client.ClientId;
             commit.AuthoritySeq = Authority.SeqOf(commit.SurvivorVesselId);
             Broadcast(MessageId.DockCommit, commit, Channel.Bulk, Delivery.ReliableOrdered, client.Peer);
+            // The commit is only understood in flight; a player at the space centre would otherwise keep the
+            // absorbed vessel for good and volunteer to simulate it next time they saw it.
+            Broadcast(MessageId.VesselRemove, new VesselRemoveMsg { VesselId = commit.RemovedVesselId, Reason = "docked" }, Channel.Bulk, Delivery.ReliableOrdered, client.Peer);
             Control.OnVesselSnapshot(record);
         }
 

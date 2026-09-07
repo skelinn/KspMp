@@ -68,7 +68,8 @@ namespace KspMp.Server.Vessels
         {
             _owners.Remove(vesselId);
             _dockingHolds.Remove(vesselId);
-            _seq.Remove(vesselId);
+            // The sequence is kept on purpose: a client that missed the removal still holds the old number, and
+            // a later assignment restarting at 1 would look stale to it for the rest of the session.
         }
 
         public bool IsDockingHeld(Guid vesselId)

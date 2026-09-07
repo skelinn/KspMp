@@ -19,6 +19,8 @@ namespace KspMp.Systems
         private float _nextCheckAt;
         private Guid _lastSnappedTo;
         private Guid _lastEnteredFor;
+        /// <summary>Invites the player turned down; not offered again while their Kerbal stays aboard.</summary>
+        private readonly HashSet<Guid> _declined = new HashSet<Guid>();
         private float _sceneEnteredAt;
 
         public PresenceSystem(KspMpAddon addon) : base(addon) { }
@@ -31,6 +33,7 @@ namespace KspMp.Systems
         {
             Net.RegisterHandler(MessageId.Presence, OnPresence);
             GameEvents.onLevelWasLoadedGUIReady.Add(OnLevelLoaded);
+            GameEvents.onGameSceneLoadRequested.Add(OnSceneLoadRequested);
             _reported = false;
             _nextCheckAt = 0f;
             _sceneEnteredAt = Time.realtimeSinceStartup;
@@ -40,8 +43,33 @@ namespace KspMp.Systems
         {
             Net.UnregisterHandler(MessageId.Presence, OnPresence);
             GameEvents.onLevelWasLoadedGUIReady.Remove(OnLevelLoaded);
+            GameEvents.onGameSceneLoadRequested.Remove(OnSceneLoadRequested);
             _others.Clear();
             _reported = false;
+            Invite = null;
+            _lastEnteredFor = Guid.Empty;
+            _declined.Clear();
+        }
+
+        /// <summary>
+        /// Leaving flight is announced at once. The last report would otherwise stand through the loading
+        /// screen, and "in flight on that vessel" is what the server hands authority to - to a player who is
+        /// already on their way to the space centre.
+        /// </summary>
+        private void OnSceneLoadRequested(GameScenes scene)
+        {
+            if (!HighLogic.LoadedSceneIsFlight || !Net.IsConnected || scene == GameScenes.FLIGHT) return;
+            var presence = new PresenceMsg
+            {
+                State = scene == GameScenes.EDITOR ? PresenceState.Editor : PresenceState.MissionControl,
+                VesselId = Guid.Empty,
+                VesselName = string.Empty,
+                Scene = (byte)scene,
+            };
+            _mine = presence;
+            _reported = true;
+            Net.Send(MessageId.Presence, presence, Channel.Control, Delivery.ReliableOrdered);
+            Log.Info("Presence: leaving flight for " + scene);
         }
 
         private void OnLevelLoaded(GameScenes scene)
@@ -87,7 +115,7 @@ namespace KspMp.Systems
         /// </summary>
         private void Offer(Guid vesselId, string vesselName, string launcherName)
         {
-            if (vesselId != Guid.Empty && _lastEnteredFor == vesselId) return;
+            if (vesselId != Guid.Empty && (_lastEnteredFor == vesselId || _declined.Contains(vesselId))) return;
             if (Invite != null)
             {
                 if (Invite.VesselId == vesselId) return;
@@ -103,6 +131,9 @@ namespace KspMp.Systems
 
         public void DismissInvite()
         {
+            // "Not now" means not now: without remembering it, the next one-second check found our Kerbal still
+            // aboard and raised the same invite again, countdown and all.
+            if (Invite != null && Invite.VesselId != Guid.Empty) _declined.Add(Invite.VesselId);
             Invite = null;
             Addon.Notices.Dismiss(InviteKey);
         }
@@ -154,7 +185,9 @@ namespace KspMp.Systems
                 if (invite.AutoAt < 0f) invite.AutoAt = Time.realtimeSinceStartup + AutoJoinSeconds;
                 notice.CountdownUntil = invite.AutoAt;
                 notice.CountdownText = "joining";
-                notice.OnCountdown = () => JoinFlight(invite.VesselId);
+                // A join that cannot happen yet (the craft has not arrived here) re-arms a fresh countdown
+                // instead of firing a deadline already in the past on every frame.
+                notice.OnCountdown = () => { if (!JoinFlight(invite.VesselId)) invite.AutoAt = -1f; };
             }
             else
             {
@@ -190,10 +223,12 @@ namespace KspMp.Systems
                     Log.Warn("Cannot join the flight: vessel " + vesselId.ToString().Substring(0, 8) + " is not in the refreshed flight state");
                     return false;
                 }
-                _lastEnteredFor = vesselId;
-                DismissInvite();
                 Log.Info("Entering flight on vessel " + vesselId.ToString().Substring(0, 8) + " (index " + index + " of " + game.flightState.protoVessels.Count + ")");
                 FlightDriver.StartAndFocusVessel(game, index);
+                // Only after the start took: a throw above must leave the invite standing for another try.
+                _lastEnteredFor = vesselId;
+                Invite = null;
+                Addon.Notices.Dismiss(InviteKey);
                 return true;
             }
             catch (Exception e)
@@ -247,6 +282,8 @@ namespace KspMp.Systems
             // Our kerbal is aboard a vessel we are not flying: offer to join it.
             if (avatarVessel != null && !HighLogic.LoadedSceneIsFlight)
                 Offer(avatarVessel.id, avatarVessel.GetDisplayName(), "");
+            else if (avatarVessel == null && _declined.Count > 0)
+                _declined.Clear();   // the Kerbal is home again; a later launch is a new invitation
             if (Invite != null)
             {
                 var id = Invite.VesselId;

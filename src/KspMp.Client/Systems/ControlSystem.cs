@@ -135,12 +135,14 @@ namespace KspMp.Systems
             if (!HighLogic.LoadedSceneIsFlight || !FlightGlobals.ready)
             {
                 Unhook();
+                SetCoPilotLock(false);
                 return;
             }
             var active = ActiveVesselOrNull;
             if (active == null)
             {
                 Unhook();
+                SetCoPilotLock(false);
                 return;
             }
             var asOwner = Addon.Vessels.IsMine(active.id);
@@ -152,10 +154,13 @@ namespace KspMp.Systems
 
         private void SetCoPilotLock(bool locked)
         {
-            if (locked == _coPilotLocked) return;
+            // Ask the lock stack rather than a cached flag: KSP clears every control lock when the flight UI
+            // switches to docking mode (FlightUIModeController), which used to hand a locked co-pilot the
+            // stick for the rest of the flight.
+            var has = InputLockManager.GetControlLock(CoPilotLockId) != ControlTypes.None;
             _coPilotLocked = locked;
-            if (locked) InputLockManager.SetControlLock(CoPilotAxes, CoPilotLockId);
-            else InputLockManager.RemoveControlLock(CoPilotLockId);
+            if (locked && !has) InputLockManager.SetControlLock(CoPilotAxes, CoPilotLockId);
+            else if (!locked && has) InputLockManager.RemoveControlLock(CoPilotLockId);
         }
 
         // ---- asking for, giving up and sharing the stick ----
@@ -172,7 +177,11 @@ namespace KspMp.Systems
         {
             if (Addon.Vessels.IsMine(vesselId)) return;
             Net.Send(MessageId.ControlRequest, new ControlRequestMsg { VesselId = vesselId }, Channel.Control, Delivery.ReliableOrdered);
-            Addon.Notices.Post("control-asked-" + vesselId, "Asked " + NameOf(PilotOf(vesselId)) + " for control of " + LabelOf(vesselId), Ui.Theme.Ink, ttlSeconds: 8f);
+            // The server grants at once when nobody is flying it (the owner is not aboard); only a pilot is asked.
+            var pilot = PilotOf(vesselId);
+            Addon.Notices.Post("control-asked-" + vesselId,
+                pilot != 0 ? "Asked " + NameOf(pilot) + " for control of " + LabelOf(vesselId) : "Taking control of " + LabelOf(vesselId) + ": nobody is flying it",
+                Ui.Theme.Ink, ttlSeconds: 8f);
         }
 
         public void DeclineControl(Guid vesselId, int toClientId)
@@ -386,7 +395,7 @@ namespace KspMp.Systems
             var msg = Envelope.Read<CtrlInputMsg>(body);
             if (_hooked == null || !_hookedAsOwner || msg.VesselId != _hooked.id) return;
             if (!_inputs.TryGetValue(msg.FromClientId, out var input)) _inputs[msg.FromClientId] = input = new RemoteInput();
-            if (input.Msg.Seq != 0 && msg.Seq <= input.Msg.Seq && msg.Seq > input.Msg.Seq - 1000) return; // stale
+            if (input.Msg.Seq != 0 && (int)(msg.Seq - input.Msg.Seq) <= 0) return;   // stale or duplicate (wrap-safe)
             input.Msg = msg;
             input.ReceivedAt = Time.realtimeSinceStartup;
             InputsReceived++;

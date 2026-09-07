@@ -35,6 +35,12 @@ namespace KspMp.Systems
         /// </summary>
         private readonly Dictionary<string, float> _quietUntil = new Dictionary<string, float>(StringComparer.Ordinal);
 
+        /// <summary>
+        /// Statuses that arrived (Control channel) before the kerbal they belong to (Bulk channel): the two are
+        /// ordered independently, and a hire-and-launch in the same second used to lose the Assigned.
+        /// </summary>
+        private readonly Dictionary<string, KerbalStatusMsg> _statusBeforeKerbal = new Dictionary<string, KerbalStatusMsg>(StringComparer.Ordinal);
+
         public void QuietCrewOf(Vessel vessel, float seconds)
         {
             if (vessel == null) return;
@@ -114,6 +120,7 @@ namespace KspMp.Systems
             _kerbals.Clear();
             _reviveAt.Clear();
             _quietUntil.Clear();
+            _statusBeforeKerbal.Clear();
             Synced = false;
         }
 
@@ -195,6 +202,12 @@ namespace KspMp.Systems
             kerbal.AvatarPlayerId = msg.AvatarPlayerId;
             kerbal.AvatarClientId = msg.AvatarClientId;
             kerbal.Dirty = true;
+            if (_statusBeforeKerbal.TryGetValue(msg.Name, out var early))
+            {
+                _statusBeforeKerbal.Remove(msg.Name);
+                kerbal.Status = early.Status;
+                kerbal.InactiveTimeEnd = early.InactiveTimeEnd;
+            }
             if (msg.Reason != KerbalReason.Sync && msg.Reason != KerbalReason.Bootstrap)
                 Log.Info("Kerbal " + msg.Name + " updated (" + msg.Reason + (msg.IsAvatar ? ", avatar of #" + msg.AvatarClientId : "") + ")");
             if (msg.IsAvatar && msg.AvatarPlayerId == Addon.Settings.PlayerId && AvatarName != msg.Name)
@@ -209,7 +222,16 @@ namespace KspMp.Systems
         private void OnKerbalStatus(NetDataReader body)
         {
             var msg = Envelope.Read<KerbalStatusMsg>(body);
-            if (!_kerbals.TryGetValue(msg.Name, out var kerbal)) return;
+            if (!_kerbals.TryGetValue(msg.Name, out var kerbal))
+            {
+                _statusBeforeKerbal[msg.Name] = msg;
+                return;
+            }
+            ApplyStatus(kerbal, msg);
+        }
+
+        private void ApplyStatus(RemoteKerbal kerbal, KerbalStatusMsg msg)
+        {
             kerbal.Status = msg.Status;
             kerbal.InactiveTimeEnd = msg.InactiveTimeEnd;
             var roster = HighLogic.CurrentGame != null ? HighLogic.CurrentGame.CrewRoster : null;

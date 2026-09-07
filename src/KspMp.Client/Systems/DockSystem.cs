@@ -142,6 +142,8 @@ namespace KspMp.Systems
             var removed = _lastCoupleVessels[0] == survivor.id ? _lastCoupleVessels[1] : _lastCoupleVessels[0];
             _lastCoupleVessels.Clear();
             if (removed == survivor.id || !Registry.IsMine(survivor.id) && !Registry.IsMine(removed)) return;
+            if (!Registry.IsMine(survivor.id))
+                Log.Info("Docked into " + survivor.GetDisplayName() + ", which we did not simulate; the server hands the merged vessel to whoever docked");
 
             try
             {
@@ -182,6 +184,7 @@ namespace KspMp.Systems
             var active = FlightGlobals.ActiveVessel;
             var wasOurActive = active != null && active.id == msg.RemovedVesselId;
             var survivorWasActive = active != null && active.id == msg.SurvivorVesselId;
+            var removedGone = false;
             try
             {
                 var proto = ProtoCodec.ToProto(msg.ProtoDeflated, HighLogic.CurrentGame);
@@ -199,6 +202,7 @@ namespace KspMp.Systems
                         FlightGlobals.ForceSetActiveVessel(survivorVessel);
                     }
                 }
+                removedGone = true;
                 Registry.Remove(msg.RemovedVesselId);
                 Registry.Tombstone(msg.RemovedVesselId);
                 VesselLoader.Remove(msg.RemovedVesselId, "docked");
@@ -207,6 +211,17 @@ namespace KspMp.Systems
             catch (Exception e)
             {
                 Log.Exception("Applying docking", e);
+            }
+            finally
+            {
+                // The server has already forgotten the absorbed vessel and this is its only notice here; keeping
+                // a copy because the merged one failed to load would leave a ghost we would then volunteer for.
+                if (!removedGone)
+                {
+                    Registry.Remove(msg.RemovedVesselId);
+                    Registry.Tombstone(msg.RemovedVesselId);
+                    VesselLoader.Remove(msg.RemovedVesselId, "docked");
+                }
             }
         }
     }

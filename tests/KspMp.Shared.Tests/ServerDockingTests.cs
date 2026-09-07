@@ -64,6 +64,45 @@ public class ServerDockingTests
         Assert.NotNull(commit);
         Assert.Equal(station, commit!.Value.RemovedVesselId);
         Assert.Equal(alice.ClientId, commit.Value.OwnerClientId);
+        // Everyone also hears the absorbed vessel is gone, in a message understood in every scene.
+        var removal = bob.Last<VesselRemoveMsg>();
+        Assert.NotNull(removal);
+        Assert.Equal(station, removal!.Value.VesselId);
+        Assert.Null(alice.Last<VesselRemoveMsg>());
+    }
+
+    [Fact]
+    public void WhoeverDocksOwnsTheMergedVesselEvenWhenTheOtherPlayerOwnedTheSurvivor()
+    {
+        var hub = new LoopbackHub();
+        using var server = NewServer(hub);
+        var alice = JoinWithAvatar(hub, server, "Alice", "Alice Kerman");
+        var bob = JoinWithAvatar(hub, server, "Bob", "Bob Kerman", alice);
+        var ship = Guid.NewGuid();
+        var station = Guid.NewGuid();
+        alice.Send(MessageId.VesselProto, Proto(ship, 100, "Ship", "Alice Kerman"), Channel.Bulk);
+        bob.Send(MessageId.VesselProto, Proto(station, 200, "Station", "Bob Kerman"), Channel.Bulk);
+        TestClient.Pump(server, alice, bob);
+        var seqBefore = server.Authority.SeqOf(station);
+
+        // KSP on Alice's machine kept Bob's station as the survivor; the hold never landed. Her commit still counts.
+        alice.Send(MessageId.DockCommit, new DockCommitMsg { SurvivorVesselId = station, RemovedVesselId = ship, Name = "Station + Ship", ProtoDeflated = Proto(station, 200, "Station + Ship", "Bob Kerman").ProtoDeflated }, Channel.Bulk);
+        TestClient.Pump(server, alice, bob);
+        Assert.Equal(1, server.Vessels.Count);
+        Assert.Equal(alice.ClientId, server.Authority.OwnerOf(station));
+        Assert.True(server.Authority.SeqOf(station) > seqBefore);
+        var commit = bob.Last<DockCommitMsg>();
+        Assert.NotNull(commit);
+        Assert.Equal(alice.ClientId, commit!.Value.OwnerClientId);
+        Assert.Equal(server.Authority.SeqOf(station), commit.Value.AuthoritySeq);
+
+        // A player who owns neither cannot report a docking at all.
+        var carol = JoinWithAvatar(hub, server, "Carol", "Carol Kerman", alice, bob);
+        var other = Guid.NewGuid();
+        carol.Send(MessageId.DockCommit, new DockCommitMsg { SurvivorVesselId = station, RemovedVesselId = other, Name = "x", ProtoDeflated = Proto(station, 200, "x", null).ProtoDeflated }, Channel.Bulk);
+        TestClient.Pump(server, alice, bob, carol);
+        Assert.Equal(alice.ClientId, server.Authority.OwnerOf(station));
+        Assert.Equal("Station + Ship", server.Vessels.TryGet(station, out var record) ? record!.Name : null);
     }
 
     [Fact]

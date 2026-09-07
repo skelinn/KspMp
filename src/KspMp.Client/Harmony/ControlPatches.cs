@@ -33,8 +33,11 @@ namespace KspMp.Harmony
         public static bool Echo(Vessel vessel)
         {
             var addon = KspMpAddon.Instance;
-            if (addon == null || vessel == null || addon.Network == null || !addon.Network.IsConnected || addon.Control == null) return false;
-            if (ControlSystem.ApplyingRemoteAction) return false;
+            if (addon == null || vessel == null || addon.Network == null || !addon.Network.IsConnected || addon.Control == null || addon.Vessels == null) return false;
+            // Deliberately not gated on ApplyingRemoteAction: that flag marks a co-pilot's copy mirroring the
+            // pilot (where IsMine is false anyway) and the pilot applying a co-pilot's relayed action - and the
+            // relayed one must be echoed, because the co-pilot's own copy did nothing but send it, and every
+            // other co-pilot has heard nothing at all.
             return addon.Vessels.IsMine(vessel.id) && addon.Control.OthersAboard(vessel.id);
         }
     }

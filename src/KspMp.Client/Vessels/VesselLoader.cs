@@ -58,6 +58,20 @@ namespace KspMp.Vessels
 
         private static string CrewSignature(ProtoVessel proto) => proto == null ? "" : CrewSignature(proto.GetVesselCrew());
 
+        /// <summary>Whether a snapshot puts an unloaded vessel somewhere else than its current copy.</summary>
+        private static bool Moved(Vessel existing, ProtoVessel proto)
+        {
+            if (existing.situation != proto.situation) return true;
+            if ((existing.landedAt ?? "") != (proto.landedAt ?? "")) return true;
+            var orbit = existing.orbit;
+            var snap = proto.orbitSnapShot;
+            if (orbit == null || snap == null) return false;
+            if (Math.Abs(orbit.semiMajorAxis - snap.semiMajorAxis) > 1000.0) return true;
+            if (Math.Abs(orbit.eccentricity - snap.eccentricity) > 0.01) return true;
+            if (Math.Abs(orbit.inclination - snap.inclination) > 0.5) return true;
+            return orbit.referenceBody != null && orbit.referenceBody.flightGlobalsIndex != snap.ReferenceBodyIndex;
+        }
+
         private static string CrewSignature(System.Collections.Generic.List<ProtoCrewMember> crew)
         {
             if (crew == null || crew.Count == 0) return "";
@@ -129,6 +143,14 @@ namespace KspMp.Vessels
                     force = true;
                     SkipReported.Remove(proto.vesselID);
                     Log.Info("Refreshing " + label + ", the vessel we are aboard: its parts or crew changed");
+                }
+                // A copy outside physics range is not moved by states; only a snapshot replaces it. One with the
+                // same parts used to count as unchanged, so a rocket that left the pad without staging still sat
+                // on the pad for a player at the space centre - and blocked their launch.
+                if (!force && !existing.loaded && Moved(existing, proto))
+                {
+                    Log.Info("Moving vessel " + label + ": " + existing.situation + (string.IsNullOrEmpty(existing.landedAt) ? "" : " at " + existing.landedAt) + " -> " + proto.situation + (string.IsNullOrEmpty(proto.landedAt) ? "" : " at " + proto.landedAt));
+                    force = true;
                 }
                 var existingParts = existing.loaded ? existing.parts.Count : existing.protoVessel != null ? existing.protoVessel.protoPartSnapshots.Count : -1;
                 // Compare who is aboard, not how many: swapping one kerbal for another, which is exactly what
