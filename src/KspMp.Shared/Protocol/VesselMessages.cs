@@ -58,7 +58,7 @@ namespace KspMp.Shared.Protocol
             w.Put((byte)Reason);
             w.Put(Name ?? string.Empty);
             w.Put(VesselType ?? string.Empty);
-            w.PutBytesWithLength(ProtoDeflated ?? Array.Empty<byte>());
+            w.PutBlob(ProtoDeflated ?? Array.Empty<byte>());
             w.Put(AuthoritySeq);
             w.PutGuidRaw(SplitFrom);
         }
@@ -71,7 +71,7 @@ namespace KspMp.Shared.Protocol
             Reason = (ProtoReason)r.GetByte();
             Name = r.GetString();
             VesselType = r.GetString();
-            ProtoDeflated = r.GetBytesWithLength();
+            ProtoDeflated = r.GetBlob();
             AuthoritySeq = r.GetUInt();
             SplitFrom = r.GetGuidRaw();
         }

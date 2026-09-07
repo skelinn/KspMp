@@ -123,6 +123,13 @@ namespace KspMp.Shared.Protocol
         Editor = 3,
     }
 
+    /// <summary>Client -> server: send the roster and vessels again.</summary>
+    public struct SyncRequestMsg : INetSerializable
+    {
+        public void Serialize(NetDataWriter w) { }
+        public void Deserialize(NetDataReader r) { }
+    }
+
     /// <summary>Where a player is. Clients report their own; the server rebroadcasts everyone's.</summary>
     public struct PresenceMsg : INetSerializable
     {

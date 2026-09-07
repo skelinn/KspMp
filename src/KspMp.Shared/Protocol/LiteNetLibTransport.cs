@@ -63,6 +63,7 @@ namespace KspMp.Shared.Protocol
                     // Ask to be introduced rather than dialling an address we cannot reach. If nobody answers
                     // in time we fall back to a direct connection, which still works on a LAN or a VPN.
                     _punchDeadline = DateTime.UtcNow.AddMilliseconds(_options.PunchTimeoutMs);
+                    _nextIntroduceAt = DateTime.UtcNow.AddSeconds(3);
                     RequestIntroduction("C");
                     _log("Asking " + _options.Introducer + " to introduce us to '" + _options.JoinCode + "'");
                 }
@@ -79,6 +80,7 @@ namespace KspMp.Shared.Protocol
         private const double RegisterIntervalSeconds = 20;
         private DateTime _nextRegisterAt;
         private DateTime _punchDeadline;
+        private DateTime _nextIntroduceAt;
 
         /// <summary>
         /// Both sides ask the introducer to pair them by join code. It replies to each with the other's
@@ -161,6 +163,13 @@ namespace KspMp.Shared.Protocol
                     _nextRegisterAt = now.AddSeconds(RegisterIntervalSeconds);
                     RequestIntroduction("H");
                 }
+            }
+            else if (_serverPeer == null && _punchDeadline != default && now < _punchDeadline && now >= _nextIntroduceAt)
+            {
+                // One datagram to the introducer is one dropped packet away from a 12 s wait and a wrong
+                // fallback; ask again every few seconds until somebody answers.
+                _nextIntroduceAt = now.AddSeconds(3);
+                RequestIntroduction("C");
             }
             else if (_serverPeer == null && _punchDeadline != default && now >= _punchDeadline)
             {

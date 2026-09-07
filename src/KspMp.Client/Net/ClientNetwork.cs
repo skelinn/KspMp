@@ -159,6 +159,7 @@ namespace KspMp.Net
                 return;
             }
             _transport?.Poll();
+            TickHandshake();
         }
 
         public void Send<T>(MessageId id, T message, Channel channel, Delivery delivery) where T : INetSerializable
@@ -183,10 +184,34 @@ namespace KspMp.Net
 
         // ---- transport events (inside Poll) ----
 
+        private float _handshakeStartedAt;
+        private int _hellosSent;
+
         private void OnPeerConnected(PeerId peer)
         {
             State = ConnectionState.Handshaking;
             Status = "Connected, waiting for the server ...";
+            _handshakeStartedAt = UnityEngine.Time.realtimeSinceStartup;
+            _hellosSent = 0;
+            SendHello();
+        }
+
+        /// <summary>
+        /// A hello that goes unanswered is sent again a few times, then the attempt is given up: there was no
+        /// way out of "waiting for the server" otherwise when the server dropped it.
+        /// </summary>
+        private void TickHandshake()
+        {
+            if (State != ConnectionState.Handshaking) return;
+            var waited = UnityEngine.Time.realtimeSinceStartup - _handshakeStartedAt;
+            if (waited > 4f * _hellosSent && _hellosSent < 5) SendHello();
+            else if (_hellosSent >= 5 && waited > 20f) Disconnect("The server did not answer the hello");
+        }
+
+        private void SendHello()
+        {
+            _hellosSent++;
+            if (_hellosSent > 1) Log.Info("Sending the hello again (" + _hellosSent + ")");
             Send(MessageId.Hello, new HelloMsg
             {
                 ProtocolVersion = ProtocolVersion.Current,

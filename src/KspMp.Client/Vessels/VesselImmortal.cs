@@ -42,6 +42,13 @@ namespace KspMp.Vessels
         /// <summary>The registry was wiped (scene change, disconnect): nothing is a replica any more.</summary>
         public static void Reset()
         {
+            // Put the parts back first: a disconnect next to somebody's craft left it indestructible, with its
+            // integrator off and its kerbals frozen, for the rest of the scene.
+            foreach (var id in new List<System.Guid>(Immortal))
+            {
+                var vessel = FlightGlobals.fetch != null ? FlightGlobals.FindVessel(id) : null;
+                if (vessel != null) Set(vessel, false);
+            }
             Immortal.Clear();
             SavedValues.Clear();
         }

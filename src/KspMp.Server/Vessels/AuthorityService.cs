@@ -69,6 +69,16 @@ namespace KspMp.Server.Vessels
                 Tell(client, vesselId, AuthorityReason.Denied);
                 return;
             }
+            // After a server restart nothing is owned; the first volunteer used to win, even for a vessel
+            // somebody else is sitting in and flying. Whoever is aboard and in flight on it comes first.
+            var flying = _server.Control.FlyingCrewOf(vesselId);
+            if (flying != 0 && flying != client.ClientId)
+            {
+                _server.Log("Vessel " + vesselId.ToString().Substring(0, 8) + ": #" + client.ClientId + " asked for it, but #" + flying + " is aboard and flying it");
+                Assign(vesselId, flying, AuthorityReason.Granted);
+                Tell(client, vesselId, AuthorityReason.Denied);
+                return;
+            }
             Assign(vesselId, client.ClientId, AuthorityReason.Granted);
         }
 

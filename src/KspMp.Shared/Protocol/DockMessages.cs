@@ -42,7 +42,7 @@ namespace KspMp.Shared.Protocol
             w.PutGuidRaw(RemovedVesselId);
             w.Put(OwnerClientId);
             w.Put(Name ?? string.Empty);
-            w.PutBytesWithLength(ProtoDeflated ?? Array.Empty<byte>());
+            w.PutBlob(ProtoDeflated ?? Array.Empty<byte>());
             w.Put(AuthoritySeq);
         }
 
@@ -52,7 +52,7 @@ namespace KspMp.Shared.Protocol
             RemovedVesselId = r.GetGuidRaw();
             OwnerClientId = r.GetInt();
             Name = r.GetString();
-            ProtoDeflated = r.GetBytesWithLength();
+            ProtoDeflated = r.GetBlob();
             AuthoritySeq = r.GetUInt();
         }
     }

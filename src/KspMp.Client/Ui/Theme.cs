@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace KspMp.Ui
@@ -46,7 +47,8 @@ namespace KspMp.Ui
         private static GUISkin _savedSkin;
         private static float _requested, _scale = 1f;
         private static int _scaledFor;
-        private static Matrix4x4 _savedMatrix;
+        private static Matrix4x4 _savedMatrix = Matrix4x4.identity;
+        private static int _depth;
         private static Texture2D _window, _panel, _field, _fieldHot, _button, _buttonHot, _primary, _primaryHot, _rule, _thumb;
 
         /// <summary>Section headers, captions and status text, in the one place they can stay consistent.</summary>
@@ -92,6 +94,7 @@ namespace KspMp.Ui
         /// </summary>
         public static void Begin()
         {
+            if (_depth++ > 0) return;   // nested: the outer pass already set things up
             _savedSkin = GUI.skin;
             _savedMatrix = GUI.matrix;
             GUI.skin = Skin;
@@ -99,10 +102,13 @@ namespace KspMp.Ui
                 GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(Scale, Scale, 1f));
         }
 
+        /// <summary>Safe to call without a matching Begin (an exception guard does): then it does nothing.</summary>
         public static void End()
         {
+            if (_depth <= 0) { _depth = 0; return; }
+            if (--_depth > 0) return;
             GUI.matrix = _savedMatrix;
-            GUI.skin = _savedSkin;
+            if (_savedSkin != null) GUI.skin = _savedSkin;
         }
 
         /// <summary>Makes sure the styles exist, for code that reads them without going through the skin.</summary>
@@ -127,8 +133,22 @@ namespace KspMp.Ui
             Rgb(0xC0, 0x8C, 0xFF), Rgb(0x6F, 0xE3, 0xE1), Rgb(0xF2, 0x9E, 0x5B), Rgb(0xA8, 0xD8, 0x66),
         };
 
-        public static Color PlayerColour(int clientId) =>
-            clientId <= 0 ? Dim : Palette[clientId % Palette.Length];
+        private static readonly Dictionary<int, int> ColourSlot = new Dictionary<int, int>();
+
+        /// <summary>
+        /// One colour per player, handed out in order of first sight rather than by client id: ids only ever
+        /// grow, so "id modulo eight" gave the ninth player of the evening the first one's green.
+        /// </summary>
+        public static Color PlayerColour(int clientId)
+        {
+            if (clientId <= 0) return Dim;
+            if (!ColourSlot.TryGetValue(clientId, out var slot))
+            {
+                slot = ColourSlot.Count % Palette.Length;
+                ColourSlot[clientId] = slot;
+            }
+            return Palette[slot];
+        }
 
         // ---------------------------------------------------------------- layout helpers
 

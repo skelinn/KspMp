@@ -201,8 +201,8 @@ namespace KspMp.Shared.Config
             if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
             var tmp = path + ".tmp";
             File.WriteAllText(tmp, ToText());
-            if (File.Exists(path)) File.Delete(path);
-            File.Move(tmp, path);
+            if (File.Exists(path)) File.Replace(tmp, path, null);   // atomic: never a moment with no file
+            else File.Move(tmp, path);
         }
 
         public string ToText()

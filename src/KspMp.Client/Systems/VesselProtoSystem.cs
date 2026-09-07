@@ -54,6 +54,13 @@ namespace KspMp.Systems
             GameEvents.onVesselTerminated.Add(OnVesselTerminated);
             GameEvents.onGameSceneLoadRequested.Add(OnSceneLoadRequested);
             GameEvents.onLevelWasLoadedGUIReady.Add(OnLevelLoaded);
+            if (Addon.SyncedOnce && Registry.Count == 0 && Net.IsConnected)
+            {
+                // Re-activated with an empty registry (a scene the mod stays out of wiped it): ask for the world
+                // again, or only the vessels whose owners are in flight would ever reappear.
+                Log.Info("The registry is empty; asking the server for the world again");
+                Net.Send(MessageId.SyncRequest, new SyncRequestMsg(), Channel.Control, Delivery.ReliableOrdered);
+            }
         }
 
         protected override void OnDeactivate()
@@ -147,6 +154,18 @@ namespace KspMp.Systems
                 }
             }
             remote.NextApplyAt = 0f;
+            var active = HighLogic.LoadedSceneIsFlight ? FlightGlobals.ActiveVessel : null;
+            if (remote.OwnerClientId == 0 && active != null && active.id == remote.Id && Net.IsConnected)
+            {
+                // Our own ship, back from the server with no owner: we reconnected mid-flight. The server's
+                // copy is up to thirty seconds stale; rebuilding the rocket under us from it rewound the
+                // ascent. We are the truth here: claim it and send it.
+                Log.Info("Snapshot of " + remote.Label + " is the vessel we are flying, unowned: claiming it back rather than reloading it");
+                remote.ProtoDirty = false;
+                Addon.Authority.Request(remote.Id);
+                SendProto(active, ProtoReason.Modified);
+                return;
+            }
             // A vessel we sit in but do not simulate is still refreshed when its parts change - see VesselLoader.
             var outcome = VesselLoader.Load(proto, false, !Registry.IsMine(remote));
             remote.ProtoDirty = outcome == VesselLoader.Outcome.Deferred;

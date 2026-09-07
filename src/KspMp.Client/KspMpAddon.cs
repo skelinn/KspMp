@@ -111,7 +111,7 @@ namespace KspMp
             Network = new ClientNetwork(Settings);
             Vessels = new VesselRegistry();
             Network.Welcomed += welcome => { Vessels.LocalClientId = welcome.ClientId; RefreshSystems(); };
-            Network.Disconnected += _ => { RefreshSystems(); Vessels.LocalClientId = 0; KspMp.Vessels.LaunchSiteGuard.Reset(); };
+            Network.Disconnected += _ => { RefreshSystems(); Vessels.LocalClientId = 0; KspMp.Vessels.LaunchSiteGuard.Reset(); Notices?.Clear(); SyncedOnce = false; };
             Network.Welcomed += OnWelcomedForLaunchOptions;
             // Launch notices are handled here rather than in EditorSystem, which only runs inside the VAB.
             // The player who most needs to hear that a pad is being taken is the one stood in the space
@@ -847,6 +847,27 @@ namespace KspMp
         /// <summary>Set around a launch this code announced itself, so the FlightDriver patch does not announce it twice.</summary>
         public bool SuppressLaunchAnnounce;
 
+        /// <summary>The server's world has been received at least once this connection (used to ask for it again).</summary>
+        public bool SyncedOnce;
+
+        private readonly Queue<Action> _deferred = new Queue<Action>();
+
+        /// <summary>Runs an action on the next Update, outside any GUI pass.</summary>
+        public void Defer(Action action)
+        {
+            if (action != null) _deferred.Enqueue(action);
+        }
+
+        private void RunDeferred()
+        {
+            while (_deferred.Count > 0)
+            {
+                var action = _deferred.Dequeue();
+                try { action(); }
+                catch (Exception e) { Log.Exception("Running a deferred action", e); }
+            }
+        }
+
         public void AnnounceLaunch(string shipName, string site, string[] aboardKerbals = null)
         {
             if (!Network.IsConnected) return;
@@ -911,6 +932,7 @@ namespace KspMp
 
         private void Update()
         {
+            RunDeferred();
             Host?.Poll();
             Network.Poll();
             Systems.Update();
@@ -1028,8 +1050,8 @@ namespace KspMp
             }
 
             var alt = Input.GetKey(KeyCode.LeftAlt) || Input.GetKey(KeyCode.RightAlt);
-            if (alt && Input.GetKeyDown(KeyCode.F10)) _debug.Visible = !_debug.Visible;
-            if (alt && Input.GetKeyDown(KeyCode.M)) _hud.Visible = !_hud.Visible;
+            if (alt && Input.GetKeyDown(KeyCode.F10)) { _debug.Visible = !_debug.Visible; Settings.ShowDebugWindow = _debug.Visible; Settings.Save(); }
+            if (alt && Input.GetKeyDown(KeyCode.M)) { _hud.Visible = !_hud.Visible; Settings.ShowHud = _hud.Visible; Settings.Save(); }
         }
 
         private void FixedUpdate()

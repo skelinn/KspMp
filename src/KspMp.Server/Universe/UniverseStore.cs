@@ -77,8 +77,14 @@ namespace KspMp.Server.Universe
             Directory.CreateDirectory(VesselsDir);
             var path = Path.Combine(VesselsDir, id + ".cfg");
             File.WriteAllText(path + ".tmp", text);
-            if (File.Exists(path)) File.Delete(path);
-            File.Move(path + ".tmp", path);
+            ReplaceFile(path + ".tmp", path);
+        }
+
+        /// <summary>Atomic on NTFS: a crash between "delete the old" and "move the new" used to leave no file at all.</summary>
+        internal static void ReplaceFile(string tmp, string path)
+        {
+            if (File.Exists(path)) File.Replace(tmp, path, null);
+            else File.Move(tmp, path);
         }
 
         public void DeleteVessel(Guid id)
@@ -119,8 +125,7 @@ namespace KspMp.Server.Universe
             Directory.CreateDirectory(RosterDir);
             var path = Path.Combine(RosterDir, KerbalFileName(name));
             File.WriteAllText(path + ".tmp", text);
-            if (File.Exists(path)) File.Delete(path);
-            File.Move(path + ".tmp", path);
+            ReplaceFile(path + ".tmp", path);
         }
 
         public void DeleteKerbal(string name)

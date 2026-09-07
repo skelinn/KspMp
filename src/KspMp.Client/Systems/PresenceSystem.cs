@@ -46,6 +46,7 @@ namespace KspMp.Systems
             GameEvents.onGameSceneLoadRequested.Remove(OnSceneLoadRequested);
             _others.Clear();
             _reported = false;
+            if (Invite != null && Addon.Notices != null) Addon.Notices.Dismiss(InviteKey);
             Invite = null;
             _lastEnteredFor = Guid.Empty;
             _declined.Clear();

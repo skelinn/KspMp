@@ -78,6 +78,12 @@ namespace KspMp.Systems
             return notice;
         }
 
+        /// <summary>Everything, with its actions: a disconnect leaves nothing a stale closure could act on.</summary>
+        public void Clear()
+        {
+            _notices.Clear();
+        }
+
         public void Dismiss(string key)
         {
             for (var i = _notices.Count - 1; i >= 0; i--)

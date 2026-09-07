@@ -17,6 +17,30 @@ namespace KspMp.Shared.Protocol
     /// <summary>
     /// Wire envelope: ushort MessageId | byte EnvelopeFlags | [uint Seq] | body.
     /// </summary>
+    /// <summary>
+    /// Byte blobs with a 32-bit length. LiteNetLib's own PutBytesWithLength writes a 16-bit length and copies
+    /// only that many bytes, silently, so a vessel snapshot over 64 KiB (a big station) arrived truncated and
+    /// never loaded anywhere.
+    /// </summary>
+    public static class NetBlob
+    {
+        public static void PutBlob(this NetDataWriter w, byte[] data)
+        {
+            var length = data != null ? data.Length : 0;
+            w.Put(length);
+            if (length > 0) w.Put(data, 0, length);
+        }
+
+        public static byte[] GetBlob(this NetDataReader r)
+        {
+            var length = r.GetInt();
+            if (length <= 0) return Array.Empty<byte>();
+            var data = new byte[length];
+            r.GetBytes(data, length);
+            return data;
+        }
+    }
+
     public static class Envelope
     {
         public static void Write<T>(NetDataWriter writer, MessageId id, T body, EnvelopeFlags flags = EnvelopeFlags.None, uint seq = 0)
@@ -32,7 +56,7 @@ namespace KspMp.Shared.Protocol
                 var raw = new NetDataWriter();
                 body.Serialize(raw);
                 var packed = DeflateCodec.Compress(raw.Data, 0, raw.Length);
-                writer.PutBytesWithLength(packed);
+                writer.PutBlob(packed);
             }
             else
             {
@@ -60,7 +84,7 @@ namespace KspMp.Shared.Protocol
         public static NetDataReader OpenBody(NetDataReader reader, EnvelopeFlags flags)
         {
             if ((flags & EnvelopeFlags.Deflated) == 0) return reader;
-            var packed = reader.GetBytesWithLength();
+            var packed = reader.GetBlob();
             var raw = DeflateCodec.Decompress(packed, 0, packed.Length);
             return new NetDataReader(raw);
         }

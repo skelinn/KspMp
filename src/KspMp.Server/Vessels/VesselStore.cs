@@ -27,6 +27,14 @@ namespace KspMp.Server.Vessels
                 {
                     var record = FromText(pair.Key, pair.Value);
                     _vessels[record.Id] = record;
+                    if (record.Id != pair.Key)
+                    {
+                        // The file was named for another id than the vessel inside it; it is saved under the
+                        // right name and the old file goes, or a removal would miss it and it would come back.
+                        _log("Vessel file " + pair.Key + " holds vessel " + record.Id + "; renaming it");
+                        _universe.DeleteVessel(pair.Key);
+                        record.Dirty = true;
+                    }
                 }
                 catch (Exception e)
                 {
@@ -77,9 +85,16 @@ namespace KspMp.Server.Vessels
             foreach (var record in _vessels.Values)
             {
                 if (!record.Dirty) continue;
-                var text = Encoding.UTF8.GetString(DeflateCodec.Decompress(record.ProtoDeflated, 0, record.ProtoDeflated.Length));
-                _universe.SaveVesselText(record.Id, text);
-                record.Dirty = false;
+                record.Dirty = false;   // one bad blob must not be retried every minute and block the rest
+                try
+                {
+                    var text = Encoding.UTF8.GetString(DeflateCodec.Decompress(record.ProtoDeflated, 0, record.ProtoDeflated.Length));
+                    _universe.SaveVesselText(record.Id, text);
+                }
+                catch (Exception e)
+                {
+                    _log("Could not save vessel " + record.Id + " (" + record.Name + "): " + e.Message);
+                }
             }
         }
 

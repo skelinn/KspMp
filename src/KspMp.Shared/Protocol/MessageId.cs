@@ -16,6 +16,8 @@ namespace KspMp.Shared.Protocol
         Reject = 3,
         /// <summary>Server -> client: the initial roster, vessel and presence sync is complete.</summary>
         SyncComplete = 4,
+        /// <summary>Client -> server: send the roster and vessel sync again (the client lost its copy).</summary>
+        SyncRequest = 5,
 
         // players
         Ping = 10,

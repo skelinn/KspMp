@@ -69,6 +69,11 @@ namespace KspMp.Server.Vessels
         }
 
         /// <summary>A client aboard this vessel and in flight on it, command seat first; 0 when there is none.</summary>
+        public IEnumerable<string> CrewNamesOf(Guid vesselId)
+        {
+            return _crew.TryGetValue(vesselId, out var crew) ? new List<string>(crew.AllCrew()) : new List<string>();
+        }
+
         public int FlyingCrewOf(Guid vesselId)
         {
             if (!_roles.TryGetValue(vesselId, out var roles)) return 0;

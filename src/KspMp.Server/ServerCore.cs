@@ -55,7 +55,9 @@ namespace KspMp.Server
             if (Universe.TryLoadTime(out var savedUt, out var savedRate))
             {
                 ut = savedUt;
-                rate = savedRate;
+                // Not the saved rate: nobody is warping on a server that just started, and the warp service
+                // starts at 1x - restoring 1000x here ran the clock at 1000x with the warp state saying 1x.
+                rate = 1f;
             }
             Time = new TimeService(ut, rate);
             _knownPlayers = Universe.LoadPlayers();
@@ -141,17 +143,12 @@ namespace KspMp.Server
         public void Save()
         {
             if (!Universe.IsPersistent) return;
-            try
-            {
-                Universe.SaveTime(Time.UniversalTime, Time.Rate);
-                Universe.SavePlayers(_knownPlayers.Values);
-                Vessels.SaveDirty();
-                Roster.Store.SaveDirty();
-            }
-            catch (Exception e)
-            {
-                _log("Saving the universe failed: " + e);
-            }
+            // Each part on its own: one unreadable vessel blob used to abort the whole save, every minute, and
+            // the roster after it was never written again.
+            try { Universe.SaveTime(Time.UniversalTime, Time.Rate); } catch (Exception e) { _log("Saving the time failed: " + e.Message); }
+            try { Universe.SavePlayers(_knownPlayers.Values); } catch (Exception e) { _log("Saving the players failed: " + e.Message); }
+            try { Vessels.SaveDirty(); } catch (Exception e) { _log("Saving the vessels failed: " + e.Message); }
+            try { Roster.Store.SaveDirty(); } catch (Exception e) { _log("Saving the roster failed: " + e.Message); }
         }
 
         // ---- transport events ----
@@ -167,6 +164,14 @@ namespace KspMp.Server
             if (!_clients.TryGetValue(peer, out var client)) return;
             _clients.Remove(peer);
             _log(client.DisplayName + " disconnected (" + reason + ")");
+            // Guarded: LiteNetLib hands over a whole batch of events and a throw here would drop the rest of it.
+            try { EndSession(client, reason); }
+            catch (Exception e) { _log("Error ending the session of " + client.DisplayName + ": " + e); }
+        }
+
+        /// <summary>Everything a departed player leaves behind: vessels released, benches closed, the others told.</summary>
+        private void EndSession(ClientSession client, string reason)
+        {
             if (!client.IsOnline) return;
             Touch(client);
             Authority.ReleaseAll(client);
@@ -251,6 +256,9 @@ namespace KspMp.Server
                     Control.RelayActionToAboard(client, resources.VesselId, MessageId.VesselResources, resources, Channel.Bulk, Delivery.ReliableOrdered);
                     break;
                 }
+                case MessageId.SyncRequest:
+                    HandleSyncRequest(client);
+                    break;
                 case MessageId.VesselRemove:
                 {
                     var remove = Envelope.Read<VesselRemoveMsg>(body);
@@ -261,6 +269,7 @@ namespace KspMp.Server
                         break;
                     }
                     if (Vessels.Remove(remove.VesselId)) _log(client.DisplayName + " removed vessel " + remove.VesselId + " (" + remove.Reason + ")");
+                    if (remove.Reason != "docked") FreeCrewOf(remove.VesselId, client);
                     Authority.Forget(remove.VesselId);
                     Control.OnVesselRemoved(remove.VesselId);
                     Broadcast(MessageId.VesselRemove, remove, Channel.Bulk, Delivery.ReliableOrdered, client.Peer);
@@ -391,7 +400,16 @@ namespace KspMp.Server
 
         private void HandleHello(ClientSession client, HelloMsg hello)
         {
-            if (client.Handshaken) return;
+            if (client.Handshaken)
+            {
+                // The same peer says hello again: over Steam a player who restarted KSP comes back as the same
+                // Steam id, and the old session is theirs. Start it over rather than ignore them for good.
+                _log(client.DisplayName + " sent a new hello on a live session; starting it over");
+                EndSession(client, "reconnected");
+                var fresh = new ClientSession { Peer = client.Peer };
+                _clients[client.Peer] = fresh;
+                client = fresh;
+            }
             if (hello.ProtocolVersion != ProtocolVersion.Current)
             {
                 Reject(client, "Protocol version mismatch: server " + ProtocolVersion.Current + ", client " + hello.ProtocolVersion + ". Update KspMp on the side that is behind.");
@@ -409,10 +427,20 @@ namespace KspMp.Server
                 Reject(client, "Server is full (" + Config.MaxPlayers + " players)");
                 return;
             }
-            if (hello.PlayerId != Guid.Empty && HandshakenClients.Any(c => c.PlayerId == hello.PlayerId))
+            if (hello.PlayerId != Guid.Empty)
             {
-                Reject(client, "A player with your id is already connected. If you copied the mod folder between installs, delete GameData/KspMp/PluginData/settings.cfg in one of them.");
-                return;
+                // The same player from another connection: almost always a crash-and-rejoin whose old session
+                // has not timed out yet. The old one goes, the new one is let in - the player is not told to
+                // delete their settings file over it.
+                var stale = HandshakenClients.FirstOrDefault(c => c.PlayerId == hello.PlayerId && c != client);
+                if (stale != null)
+                {
+                    _log(stale.DisplayName + " connected again from another connection; dropping the old one");
+                    _clients.Remove(stale.Peer);
+                    try { EndSession(stale, "replaced by a new connection"); }
+                    catch (Exception e) { _log("Error ending the old session of " + stale.DisplayName + ": " + e); }
+                    try { Transport.Disconnect(stale.Peer, "replaced by a new connection"); } catch { }
+                }
             }
 
             var name = SanitizeName(hello.PlayerName);
@@ -449,6 +477,34 @@ namespace KspMp.Server
             if (!string.IsNullOrEmpty(Config.MessageOfTheDay))
                 Send(client.Peer, MessageId.Chat, new ChatMsg { FromClientId = 0, FromName = "Server", Text = Config.MessageOfTheDay }, Channel.ChatMod, Delivery.ReliableOrdered);
             Chat.ServerNotice(name + " joined");
+        }
+
+        /// <summary>
+        /// The kerbals of a vessel that no longer exists are back at the astronaut complex. Their client reports
+        /// that too in the normal run of things, but not if it disconnects first - and then the roster kept
+        /// them Assigned to nothing, forever, and refused them as avatars.
+        /// </summary>
+        private void FreeCrewOf(Guid vesselId, ClientSession by)
+        {
+            foreach (var name in Control.CrewNamesOf(vesselId))
+            {
+                if (!Roster.Store.TryGet(name, out var record) || record.Status != 1) continue;
+                Roster.Store.UpdateStatus(name, 0, 0);
+                Broadcast(MessageId.KerbalStatus, new KerbalStatusMsg { Name = name, Status = 0, InactiveTimeEnd = 0 }, Channel.Control, Delivery.ReliableOrdered);
+                _log(name + " is available again: their vessel was removed by " + by.DisplayName);
+            }
+        }
+
+        /// <summary>The client lost its copy of the world (a scene it should not have been in, a dropped sync): send it again.</summary>
+        private void HandleSyncRequest(ClientSession client)
+        {
+            if (!client.IsOnline) return;
+            _log(client.DisplayName + " asked for the world again");
+            Roster.Sync(client);
+            SyncVessels(client);
+            Control.SendRolesTo(client);
+            Editor.SendListTo(client);
+            Send(client.Peer, MessageId.SyncComplete, new SyncCompleteMsg { Kerbals = Roster.Store.Count, Vessels = Vessels.Count }, Channel.Bulk, Delivery.ReliableOrdered);
         }
 
         private void HandleVesselProto(ClientSession client, VesselProtoMsg proto)

@@ -115,6 +115,14 @@ namespace KspMp.Server.Roster
                 return;
             }
 
+            if (Store.TryGet(name, out var claimed) && (claimed.Status == 2 || claimed.Status == 3))
+            {
+                // Dead or missing in a universe whose players were offline when it happened: a claim brings
+                // them back, the way a death in play does after five seconds.
+                Store.UpdateStatus(name, 0, 0);
+                _server.Broadcast(MessageId.KerbalStatus, new KerbalStatusMsg { Name = name, Status = 0, InactiveTimeEnd = 0 }, Channel.Control, Delivery.ReliableOrdered);
+                _server.Log(name + " was " + RosterStore.StatusName(claimed.Status).ToLowerInvariant() + "; back at the astronaut complex for " + client.DisplayName);
+            }
             _server.SetAvatar(client, name);
             _server.Log(client.DisplayName + " claimed avatar " + name + " (" + trait + ")");
             _server.Send(client.Peer, MessageId.AvatarClaimResult, new AvatarClaimResultMsg { Ok = true, KerbalName = name, Trait = trait, Reason = string.Empty }, Channel.Control, Delivery.ReliableOrdered);

@@ -90,7 +90,8 @@ using var sigint = PosixSignalRegistration.Create(PosixSignal.SIGINT, ctx => { c
 using var sigterm = PosixSignalRegistration.Create(PosixSignal.SIGTERM, ctx => { ctx.Cancel = true; stop.Cancel(); });
 while (!stop.IsCancellationRequested)
 {
-    server.Poll();
+    try { server.Poll(); }
+    catch (Exception e) { Log("Error in the server loop: " + e); }
     Thread.Sleep(10);
 }
 server.Stop();

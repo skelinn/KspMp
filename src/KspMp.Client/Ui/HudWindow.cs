@@ -18,6 +18,7 @@ namespace KspMp.Ui
         private readonly ChatPanel _chat;
         private Rect _rect = new Rect(0, 60, Width, 0);
         private bool _keyboardLocked;
+        private readonly System.Collections.Generic.List<KspMp.Systems.NoticeSystem.Notice> _noticeScratch = new System.Collections.Generic.List<KspMp.Systems.NoticeSystem.Notice>();
         // The addon is created before KSP has settled on a resolution, so anchoring to the right edge in the
         // field initialiser would put the window wherever the loading screen happened to be wide.
         private bool _placed;
@@ -102,9 +103,13 @@ namespace KspMp.Ui
             if (notices == null || notices.Notices.Count == 0) return;
             Theme.Separator();
             GUILayout.Label("NOTICES", Theme.Head);
-            for (var i = 0; i < notices.Notices.Count; i++)
+            // A button's action may dismiss a notice; the list is walked from a copy so the pass stays
+            // consistent with its layout pass.
+            _noticeScratch.Clear();
+            _noticeScratch.AddRange(notices.Notices);
+            for (var i = 0; i < _noticeScratch.Count; i++)
             {
-                var notice = notices.Notices[i];
+                var notice = _noticeScratch[i];
                 var text = Theme.Tint(notice.Text, notice.Colour);
                 if (notice.CountdownUntil >= 0) text += Theme.Tint("  " + (notice.CountdownText ?? "in") + " " + notice.SecondsLeft + "s", Theme.Dim);
                 GUILayout.Label(text, Theme.Value);
@@ -115,7 +120,9 @@ namespace KspMp.Ui
                     var action = notice.Actions[a];
                     // An action with nothing to run is a state label ("waiting for the launch..."), not a button.
                     if (action.OnClick == null) GUILayout.Label(Theme.Tint(action.Label, Theme.Dim), Theme.Chip);
-                    else if (GUILayout.Button(action.Label, action.Primary ? Theme.Primary : GUI.skin.button, GUILayout.Height(Theme.ControlHeight))) action.OnClick();
+                    // Run after the GUI pass: an action that loads a scene or saves the game from inside the
+                    // window callback tears the scene down under the rest of this frame's OnGUI.
+                    else if (GUILayout.Button(action.Label, action.Primary ? Theme.Primary : GUI.skin.button, GUILayout.Height(Theme.ControlHeight))) _addon.Defer(action.OnClick);
                 }
                 GUILayout.FlexibleSpace();
                 GUILayout.EndHorizontal();
@@ -275,10 +282,12 @@ namespace KspMp.Ui
 
         private void SetKeyboardLock(bool locked)
         {
-            if (locked == _keyboardLocked) return;
+            // Against the lock stack, not a cached flag: KSP clears every lock on a scene change, and typing in
+            // chat after that used to stage the rocket.
+            var has = InputLockManager.GetControlLock(KeyboardLockId) != ControlTypes.None;
             _keyboardLocked = locked;
-            if (locked) InputLockManager.SetControlLock(ControlTypes.KEYBOARDINPUT, KeyboardLockId);
-            else InputLockManager.RemoveControlLock(KeyboardLockId);
+            if (locked && !has) InputLockManager.SetControlLock(ControlTypes.KEYBOARDINPUT, KeyboardLockId);
+            else if (!locked && has) InputLockManager.RemoveControlLock(KeyboardLockId);
         }
     }
 }

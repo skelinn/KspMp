@@ -265,6 +265,33 @@ type. The receiver empties every seat and re-seats from the list (kerbals not `A
 then refreshes the crew dialog. The crew tab's own event (`onEditorShipCrewModified`) marks the bench dirty,
 and the manifest text is part of the snapshot hash so a seating change alone is shared.
 
+### Fourth review pass (2026-09-07) - networking, persistence, the UI, and reconnecting
+
+- Steam: a guest never noticed the host had gone (only the host tracked silent peers); the guest now drops
+  the session after 25 s without a packet. A player who restarts KSP comes back as the same Steam id, and
+  their new hello on the old session was ignored; the server starts the session over. A player reconnecting
+  from a new connection while their old session lingered was rejected, with advice to delete their settings
+  file; the old session is evicted instead.
+- Every byte blob on the wire had a 16-bit length (LiteNetLib's PutBytesWithLength), so a snapshot over
+  64 KiB was silently truncated and never loaded; `NetBlob` writes 32-bit lengths. Protocol 7.
+- The introducer is asked again every three seconds until it answers; a hello is repeated a few times and
+  then given up on. Transport callbacks are guarded on both sides.
+- Server: the saved warp rate is not restored (the warp service starts at 1x, and the clock ran at 1000x with
+  nobody warping); a dead or missing kerbal can be claimed and comes back; file replacement is atomic
+  (`File.Replace`); the save loop saves each part on its own and skips a bad blob instead of retrying it every
+  minute; a vessel file named for another id than the vessel inside is renamed; removing a vessel frees its
+  crew in the roster; a request for an unowned vessel goes to whoever is aboard and flying it; the dedicated
+  host's loop survives a handler throw.
+- UI: `Theme.End` without a `Begin` is a no-op (the exception guard used to restore an all-zero matrix and
+  blank every window); notices are cleared on disconnect and a pending invite is dismissed with its system;
+  the chat keyboard lock is checked against the lock stack; notice buttons run their action on the next
+  Update, outside the GUI pass; player colours are handed out in order of first sight; Alt+M and Alt+F10
+  persist.
+- Reconnecting mid-flight: our own vessel comes back from the server unowned and used to be rebuilt under us
+  from a stale snapshot; it is claimed back and re-sent instead. A client whose registry is empty after
+  re-activation, or that saw no sync eight seconds after its Welcome, asks the server for the world again
+  (`SyncRequest`). A disconnect next to somebody's craft restores the parts it had hardened.
+
 ### Boarding, EVA, death
 - EVA: stock hatch → `FlightEVA.fetch.spawnEVA(...)`; `onCrewOnEva` gives the new EVA vessel (`vessel.isEVA`). Client sends `CrewEva` + the EVA vessel's proto once the EVA FSM is ready (LMP waits for it). Only the avatar's owner may EVA their avatar (`onAttemptEva` handler + `ControlTypes.EVA_INPUT` lock). Presence → `OnEva`; source vessel roles recomputed (pilot EVA → handover).
 - Boarding: postfix `KerbalEVA.proceedAndBoard`/`BoardPart`/`BoardSeat` (LMP `KerbalEVA_proceedAndBoard.cs`, `KerbalEVA_BoardSeat.cs`) → `CrewBoard`; boarding client sends `VesselRemove` for its EVA vessel and applies the crew locally (`part.AddCrewmember`); the owner's next proto confirms; presence → `InFlight`.

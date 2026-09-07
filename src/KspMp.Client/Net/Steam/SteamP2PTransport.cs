@@ -186,6 +186,16 @@ namespace KspMp.Net.Steam
         private void DropSilentPeers()
         {
             var cutoff = DateTime.UtcNow.AddSeconds(-PeerSilenceSeconds);
+            // The joining side: the host pushes a time sample twice a second, so silence means it is gone.
+            // Without this a guest whose host quit stayed "connected" for good.
+            if (!_isServer && _connected && _lastHeard.TryGetValue(_hostSteamId, out var heardHost) && heardHost < cutoff)
+            {
+                _connected = false;
+                IsRunning = false;
+                _log("The host has not answered for " + PeerSilenceSeconds + " s; the Steam session is over.");
+                PeerDisconnected?.Invoke(PeerId.Server, "The host stopped answering over Steam");
+                return;
+            }
             List<ulong> gone = null;
             foreach (var pair in _lastHeard)
                 if (pair.Value < cutoff && _peerBySteam.ContainsKey(pair.Key))

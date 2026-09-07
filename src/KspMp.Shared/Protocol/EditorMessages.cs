@@ -49,8 +49,8 @@ namespace KspMp.Shared.Protocol
             w.Put(Revision);
             w.Put(ShipName ?? string.Empty);
             w.Put(PartCount);
-            w.PutBytesWithLength(CraftDeflated ?? Array.Empty<byte>());
-            w.PutBytesWithLength(ManifestDeflated ?? Array.Empty<byte>());
+            w.PutBlob(CraftDeflated ?? Array.Empty<byte>());
+            w.PutBlob(ManifestDeflated ?? Array.Empty<byte>());
             w.Put(SessionOwnerClientId);
         }
 
@@ -61,8 +61,8 @@ namespace KspMp.Shared.Protocol
             Revision = r.GetInt();
             ShipName = r.GetString();
             PartCount = r.GetInt();
-            CraftDeflated = r.GetBytesWithLength();
-            ManifestDeflated = r.GetBytesWithLength();
+            CraftDeflated = r.GetBlob();
+            ManifestDeflated = r.GetBlob();
             SessionOwnerClientId = r.GetInt();
         }
     }

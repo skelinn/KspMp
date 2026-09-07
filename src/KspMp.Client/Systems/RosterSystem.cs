@@ -84,6 +84,8 @@ namespace KspMp.Systems
 
         protected override void OnActivate()
         {
+            _activatedAt = Time.realtimeSinceStartup;
+            _askedAgain = false;
             Net.RegisterHandler(MessageId.KerbalProto, OnKerbalProto);
             Net.RegisterHandler(MessageId.KerbalStatus, OnKerbalStatus);
             Net.RegisterHandler(MessageId.KerbalRemoved, OnKerbalRemoved);
@@ -186,6 +188,7 @@ namespace KspMp.Systems
         {
             var msg = Envelope.Read<SyncCompleteMsg>(body);
             Synced = true;
+            Addon.SyncedOnce = true;
             ServerKerbalCount = msg.Kerbals;
             _bootstrapPending = msg.Kerbals == 0;
             Log.Info("Sync complete: " + msg.Kerbals + " kerbal(s), " + msg.Vessels + " vessel(s)" + (_bootstrapPending ? "; this universe has no roster yet, ours will seed it" : ""));
@@ -363,7 +366,18 @@ namespace KspMp.Systems
         public override void Update()
         {
             if (_reviveAt.Count > 0) ReviveDue();
+            // The Welcome comes on one channel and the sync on another; if the sync beat the Welcome its
+            // messages were dropped before any handler existed. Ask again rather than wait forever.
+            if (!Synced && !_askedAgain && Net.IsConnected && Time.realtimeSinceStartup - _activatedAt > 8f)
+            {
+                _askedAgain = true;
+                Log.Info("No sync after 8 s; asking the server for the world again");
+                Net.Send(MessageId.SyncRequest, new SyncRequestMsg(), Channel.Control, Delivery.ReliableOrdered);
+            }
         }
+
+        private float _activatedAt;
+        private bool _askedAgain;
 
         private readonly List<string> _due = new List<string>();
 
@@ -385,7 +399,9 @@ namespace KspMp.Systems
             var roster = HighLogic.CurrentGame != null ? HighLogic.CurrentGame.CrewRoster : null;
             if (roster == null || !roster.Exists(name)) return;
             var pcm = roster[name];
-            if (pcm.rosterStatus == ProtoCrewMember.RosterStatus.Available) return;
+            // Even when the local status is already Available (the server freed the crew of the removed
+            // vessel before our death report reached it): the Available we send is what settles the race for
+            // everyone else, who may have applied our Dead after the server's Available.
             try
             {
                 // Set quietly and report by hand: the ordinary report is suppressed while the Kerbal still
