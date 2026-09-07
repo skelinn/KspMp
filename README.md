@@ -214,8 +214,9 @@ Worth knowing before you play, roughly in the order you would hit them.
   a piece whose pilot is somebody else goes back to that pilot the moment they are no longer aboard the same
   craft. For three minutes after a separation the approach rule leaves the pair alone, so nobody's ship is
   pulled out from under them while they drift apart. Ask for control with **Request control** otherwise.
-- **Crew manifests are local.** Only the launcher's seating counts: the manifest is not synced, so seat your
-  friend's Kerbal on your side before you launch, not theirs.
+- **Crew seating is shared by part type.** Who sits where travels with the bench, so whoever launches a
+  shared craft launches it with the seating you both saw. Seats are matched by part type and rank, so a craft
+  with two identical crewed parts may swap their occupants on the other machine.
 - **Stock docking magnets do not fire on a teleported approach.** The test harness closes the last centimetres
   itself, through `ModuleDockingNode.DockToVessel`, which is what the mod patches. A hand-flown dock has not been
   tried, so it is not known whether this affects normal play or only the harness.

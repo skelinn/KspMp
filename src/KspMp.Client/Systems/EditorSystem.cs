@@ -74,6 +74,7 @@ namespace KspMp.Systems
             Net.RegisterHandler(MessageId.EditorSnapshot, OnSnapshot);
             Net.RegisterHandler(MessageId.EditorPresence, OnPresence);
             GameEvents.onEditorShipModified.Add(OnShipModified);
+            GameEvents.onEditorShipCrewModified.Add(OnCrewModified);
             GameEvents.onEditorRestart.Add(OnEditorRestart);
             GameEvents.onEditorLoad.Add(OnEditorLoad);
             _facility = EditorDriver.editorFacility == EditorFacility.SPH ? EditorFacilityKind.Sph : EditorFacilityKind.Vab;
@@ -94,6 +95,7 @@ namespace KspMp.Systems
             Net.UnregisterHandler(MessageId.EditorSnapshot, OnSnapshot);
             Net.UnregisterHandler(MessageId.EditorPresence, OnPresence);
             GameEvents.onEditorShipModified.Remove(OnShipModified);
+            GameEvents.onEditorShipCrewModified.Remove(OnCrewModified);
             GameEvents.onEditorRestart.Remove(OnEditorRestart);
             GameEvents.onEditorLoad.Remove(OnEditorLoad);
             _others.Clear();
@@ -145,6 +147,90 @@ namespace KspMp.Systems
 
         // ---- local changes going out ----
 
+        private void OnCrewModified(VesselCrewManifest manifest)
+        {
+            if (Applying || !_joined) return;
+            _dirtyAt = Time.realtimeSinceStartup;
+        }
+
+        /// <summary>
+        /// Who sits where, as text: one line per seated kerbal, "part name#nth part of that name|seat|kerbal".
+        /// Part ids are no use across machines - KSP renumbers parts as it loads a craft - so a seat is named by
+        /// the part's type and its rank among parts of that type, which survives the load for any craft that
+        /// does not have two identical crewed parts (and merely swaps seats between those when it does).
+        /// </summary>
+        private static string ManifestText()
+        {
+            var manifest = ShipConstruction.ShipManifest;
+            if (manifest == null || manifest.PartManifests == null) return "";
+            var sb = new StringBuilder();
+            var seen = new Dictionary<string, int>(StringComparer.Ordinal);
+            for (var i = 0; i < manifest.PartManifests.Count; i++)
+            {
+                var pm = manifest.PartManifests[i];
+                if (pm == null || pm.PartInfo == null) continue;
+                var name = pm.PartInfo.name;
+                seen.TryGetValue(name, out var nth);
+                seen[name] = nth + 1;
+                var crew = pm.GetPartCrew();
+                if (crew == null) continue;
+                for (var seat = 0; seat < crew.Length; seat++)
+                    if (crew[seat] != null && !string.IsNullOrEmpty(crew[seat].name))
+                        sb.Append(name).Append('#').Append(nth).Append('|').Append(seat).Append('|').Append(crew[seat].name).Append('\n');
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>The other builder's seating, applied to our crew tab. Runs after ReplaceWorkbench, under Applying.</summary>
+        private static int ApplyManifestText(string text)
+        {
+            var manifest = ShipConstruction.ShipManifest;
+            if (manifest == null || manifest.PartManifests == null || HighLogic.CurrentGame == null) return 0;
+            var roster = HighLogic.CurrentGame.CrewRoster;
+            // Empty every seat first; the sender's list is the whole truth.
+            for (var i = 0; i < manifest.PartManifests.Count; i++)
+            {
+                var pm = manifest.PartManifests[i];
+                var crew = pm != null ? pm.GetPartCrew() : null;
+                if (crew == null) continue;
+                for (var seat = 0; seat < crew.Length; seat++)
+                    if (crew[seat] != null) pm.RemoveCrewFromSeat(seat);
+            }
+            var seated = 0;
+            var lines = (text ?? "").Split('\n');
+            for (var l = 0; l < lines.Length; l++)
+            {
+                var line = lines[l];
+                if (line.Length == 0) continue;
+                var bar1 = line.IndexOf('|');
+                var bar2 = bar1 >= 0 ? line.IndexOf('|', bar1 + 1) : -1;
+                var hash = line.IndexOf('#');
+                if (bar1 < 0 || bar2 < 0 || hash < 0 || hash > bar1) continue;
+                var name = line.Substring(0, hash);
+                if (!int.TryParse(line.Substring(hash + 1, bar1 - hash - 1), out var nth)) continue;
+                if (!int.TryParse(line.Substring(bar1 + 1, bar2 - bar1 - 1), out var seat)) continue;
+                var kerbal = line.Substring(bar2 + 1);
+                if (!roster.Exists(kerbal)) continue;
+                var pcm = roster[kerbal];
+                if (pcm.rosterStatus != ProtoCrewMember.RosterStatus.Available) continue;   // flying, dead: not seatable here
+                var found = 0;
+                for (var i = 0; i < manifest.PartManifests.Count; i++)
+                {
+                    var pm = manifest.PartManifests[i];
+                    if (pm == null || pm.PartInfo == null || pm.PartInfo.name != name) continue;
+                    if (found++ != nth) continue;
+                    var crew = pm.GetPartCrew();
+                    if (crew == null || seat < 0 || seat >= crew.Length) break;
+                    pm.AddCrewToSeat(pcm, seat);
+                    seated++;
+                    break;
+                }
+            }
+            if (KSP.UI.CrewAssignmentDialog.Instance != null)
+                KSP.UI.CrewAssignmentDialog.Instance.RefreshCrewLists(manifest, false, true);
+            return seated;
+        }
+
         private void OnShipModified(ShipConstruct ship)
         {
             if (Applying || !_joined) return;
@@ -175,7 +261,8 @@ namespace KspMp.Systems
                 var node = editor.ship.SaveShip();
                 if (node == null) return;
                 var text = ProtoCodec.ToText(node);
-                var hash = HashOf(text);
+                var manifestText = ManifestText();
+                var hash = HashOf(text + "\n" + manifestText);
                 if (hash == _lastSentHash)   // nothing actually changed (KSP fires the event generously)
                 {
                     Log.Info("Nothing new to share: the craft reads the same as what was last sent");
@@ -186,6 +273,8 @@ namespace KspMp.Systems
 
                 var raw = Encoding.UTF8.GetBytes(text);
                 var craft = DeflateCodec.Compress(raw, 0, raw.Length);
+                var manifestRaw = Encoding.UTF8.GetBytes(manifestText);
+                var manifestBytes = manifestRaw.Length == 0 ? Array.Empty<byte>() : DeflateCodec.Compress(manifestRaw, 0, manifestRaw.Length);
                 Net.Send(MessageId.EditorSnapshot, new EditorSnapshotMsg
                 {
                     Facility = _facility,
@@ -193,7 +282,7 @@ namespace KspMp.Systems
                     ShipName = editor.ship.shipName,
                     PartCount = editor.ship.parts != null ? editor.ship.parts.Count : 0,
                     CraftDeflated = craft,
-                    ManifestDeflated = Array.Empty<byte>(),
+                    ManifestDeflated = manifestBytes,
                     SessionOwnerClientId = _sessionOwner,
                 }, Channel.Bulk, Delivery.ReliableOrdered);
                 SnapshotsSent++;
@@ -259,6 +348,18 @@ namespace KspMp.Systems
                 // no merging in a whole-craft model, so the honest thing is to say so, loudly enough to notice.
                 var pendingEdit = _dirtyAt >= 0 && HeldPart() == null;   // a held part is kept, so nothing is lost
                 ReplaceWorkbench(editor, ship);
+                if (msg.ManifestDeflated != null && msg.ManifestDeflated.Length > 0)
+                {
+                    try
+                    {
+                        var seated = ApplyManifestText(Encoding.UTF8.GetString(DeflateCodec.Decompress(msg.ManifestDeflated, 0, msg.ManifestDeflated.Length)));
+                        Log.Info("Applied the other builder's seating: " + seated + " kerbal(s) in their seats");
+                    }
+                    catch (Exception e)
+                    {
+                        Log.Exception("Applying the shared crew seating", e);
+                    }
+                }
                 if (pendingEdit)
                 {
                     _dirtyAt = -1f;
@@ -411,7 +512,7 @@ namespace KspMp.Systems
             try
             {
                 var node = editor.ship.SaveShip();
-                return node == null ? "" : HashOf(ProtoCodec.ToText(node));
+                return node == null ? "" : HashOf(ProtoCodec.ToText(node) + "\n" + ManifestText());
             }
             catch (Exception e)
             {

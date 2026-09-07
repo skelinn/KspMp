@@ -256,6 +256,15 @@ it. When the removed vessel is the one this player is sitting in, its parts are 
   system runs inside a save that is not the multiplayer sandbox; seeded snapshots stay dirty so a proto KSP
   dropped at game start is loaded again. Protocol 6.
 
+### Crew seating on a shared bench - as built
+
+`EditorSnapshotMsg.ManifestDeflated` had always been empty. It now carries the crew tab as text, one line per
+seated kerbal: `part name#nth part of that name|seat|kerbal`. Part ids are no use across machines (KSP
+renumbers parts as it loads a craft), so a seat is named by the part's type and its rank among parts of that
+type. The receiver empties every seat and re-seats from the list (kerbals not `Available` here are skipped),
+then refreshes the crew dialog. The crew tab's own event (`onEditorShipCrewModified`) marks the bench dirty,
+and the manifest text is part of the snapshot hash so a seating change alone is shared.
+
 ### Boarding, EVA, death
 - EVA: stock hatch → `FlightEVA.fetch.spawnEVA(...)`; `onCrewOnEva` gives the new EVA vessel (`vessel.isEVA`). Client sends `CrewEva` + the EVA vessel's proto once the EVA FSM is ready (LMP waits for it). Only the avatar's owner may EVA their avatar (`onAttemptEva` handler + `ControlTypes.EVA_INPUT` lock). Presence → `OnEva`; source vessel roles recomputed (pilot EVA → handover).
 - Boarding: postfix `KerbalEVA.proceedAndBoard`/`BoardPart`/`BoardSeat` (LMP `KerbalEVA_proceedAndBoard.cs`, `KerbalEVA_BoardSeat.cs`) → `CrewBoard`; boarding client sends `VesselRemove` for its EVA vessel and applies the crew locally (`part.AddCrewmember`); the owner's next proto confirms; presence → `InFlight`.
