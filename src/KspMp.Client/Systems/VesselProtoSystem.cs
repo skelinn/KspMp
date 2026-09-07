@@ -212,14 +212,16 @@ namespace KspMp.Systems
         /// created, and the vessel itself unless the revert brings it back under the same id, and forget the
         /// persistent ids we made unique so the reloaded vessel gets fresh ones again.
         /// </summary>
-        public void OnReverting(string what, bool vesselComesBack)
+        public void OnReverting(string what, bool vesselComesBack, Guid launched)
         {
-            var active = FlightGlobals.ActiveVessel;
+            // 'launched' is the vessel the revert acts on (RevertGuard.LaunchedVesselId): the one this flight
+            // began with, whatever the player has switched to since.
+            var keep = vesselComesBack ? launched : Guid.Empty;
             var withdrawn = 0;
             for (var i = 0; i < _createdThisFlight.Count; i++)
             {
                 var id = _createdThisFlight[i];
-                if (vesselComesBack && active != null && id == active.id) continue;
+                if (id == keep) continue;
                 // Landed debris has its authority released, so "still ours" is the wrong test: withdraw
                 // everything the server still lists that nobody else has taken over. What somebody else
                 // simulates exists in their world whatever ours reverts to.
@@ -227,14 +229,14 @@ namespace KspMp.Systems
                 SendRemove(id, what.ToLowerInvariant());
                 withdrawn++;
             }
-            if (!vesselComesBack && active != null && Registry.IsMine(active.id) && !_createdThisFlight.Contains(active.id))
+            if (!vesselComesBack && launched != Guid.Empty && Registry.IsKnown(launched) && !Registry.IsOwnedByOther(launched) && !_createdThisFlight.Contains(launched))
             {
-                SendRemove(active.id, what.ToLowerInvariant());
+                SendRemove(launched, what.ToLowerInvariant());
                 withdrawn++;
             }
             _createdThisFlight.Clear();
-            if (active != null) _idsMadeUnique.Remove(active.id);
-            _keepThroughRevert = vesselComesBack && active != null && Registry.IsMine(active.id) ? active.id : Guid.Empty;
+            if (launched != Guid.Empty) _idsMadeUnique.Remove(launched);
+            _keepThroughRevert = vesselComesBack && launched != Guid.Empty && Registry.IsMine(launched) ? launched : Guid.Empty;
 
             // The revert reloads the world as KSP saved it at launch. Other players' vessels launched since
             // are not in that save, and their copies in it are stale; every snapshot we hold is applied again
@@ -248,7 +250,7 @@ namespace KspMp.Systems
                 refreshed++;
             }
             Log.Info(what + ": withdrew " + withdrawn + " vessel(s) this flight had created, " + refreshed + " other snapshot(s) will be applied again"
-                     + (vesselComesBack && active != null ? "; " + active.GetDisplayName() + " keeps its id and comes back on the pad" : ""));
+                     + (vesselComesBack && launched != Guid.Empty ? "; " + launched.ToString().Substring(0, 8) + " keeps its id and comes back on the pad" : ""));
         }
 
         /// <summary>

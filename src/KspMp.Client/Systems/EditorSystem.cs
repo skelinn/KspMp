@@ -28,6 +28,14 @@ namespace KspMp.Systems
         /// had just been put down but not yet sent. Now a put-down part is on the wire on the next frame or so.
         /// </summary>
         public const float SendDebounceSeconds = 0.05f;
+
+        /// <summary>
+        /// Never more often than this. A part action slider (fuel, thrust limiter) fires the modified event
+        /// on every step while the part stays in the ship, and each step would otherwise be a full craft
+        /// snapshot; four a second is plenty for the other builder to follow a drag.
+        /// </summary>
+        public const float MinSendIntervalSeconds = 0.25f;
+        private float _lastSentAt = -10f;
         public const float PresenceIntervalSeconds = 0.1f;
 
         private readonly Dictionary<int, EditorPresenceMsg> _others = new Dictionary<int, EditorPresenceMsg>();
@@ -99,7 +107,7 @@ namespace KspMp.Systems
             // snapshot taken mid-drag is the craft with that part missing: the other builder watches it vanish,
             // their own copy of it is destroyed, and when they in turn pick something up the same happens
             // back. The drop or the delete fires onEditorShipModified again, and that is when it goes out.
-            if (_dirtyAt >= 0 && now - _dirtyAt >= SendDebounceSeconds && HeldPart() == null)
+            if (_dirtyAt >= 0 && now - _dirtyAt >= SendDebounceSeconds && now - _lastSentAt >= MinSendIntervalSeconds && HeldPart() == null)
             {
                 _dirtyAt = -1f;
                 SendSnapshot();
@@ -164,6 +172,7 @@ namespace KspMp.Systems
                     return;
                 }
                 _lastSentHash = hash;
+                _lastSentAt = Time.realtimeSinceStartup;
 
                 var raw = Encoding.UTF8.GetBytes(text);
                 var craft = DeflateCodec.Compress(raw, 0, raw.Length);
@@ -238,7 +247,7 @@ namespace KspMp.Systems
                 }
                 // An edit made but not yet sent is about to be replaced by the other builder's craft. There is
                 // no merging in a whole-craft model, so the honest thing is to say so, loudly enough to notice.
-                var pendingEdit = _dirtyAt >= 0;
+                var pendingEdit = _dirtyAt >= 0 && HeldPart() == null;   // a held part is kept, so nothing is lost
                 ReplaceWorkbench(editor, ship);
                 if (pendingEdit)
                 {

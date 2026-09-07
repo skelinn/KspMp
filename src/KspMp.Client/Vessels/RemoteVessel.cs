@@ -30,6 +30,8 @@ namespace KspMp.Vessels
         public float LastStateSentAt;
         /// <summary>Set when we are handed the vessel, cleared once we have actually sent state for it.</summary>
         public bool AnnounceFirstStateSent;
+        /// <summary>The one-time log line from Vessel_CheckKill has been written for this vessel.</summary>
+        public bool KeepAliveLogged;
 
         public string ShortId => Id.ToString().Substring(0, 8);
         public string Label => (string.IsNullOrEmpty(Name) ? "vessel" : Name) + " " + ShortId;

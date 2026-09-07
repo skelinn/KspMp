@@ -411,7 +411,8 @@ placement. Held means selected *and* not in the ship.
 The third session found the other half of the editor story. Sharing was debounced by 0.4 s, and a snapshot
 from the other builder applied inside that window replaced the craft and destroyed the part just put down
 but not yet sent, so "the host cannot move parts" was really "whoever sends more often wins". The debounce is
-now 0.05 s, and the remaining race (two players moving parts in the same instant) is documented rather than
+now 0.05 s with sends capped at four a second (a part action slider fires the modified event on every step
+while the part stays in the ship), and the remaining race (two players moving parts in the same instant) is documented rather than
 solved: the snapshot model shares the craft, not the edit. And the editor is a state machine whose empty
 bench sits in `st_podSelect`, with a root-parts-only greyout filter and an input lock that only leaving that
 state lifts (`EditorLogic.cs:3140-3145`, `:3275-3280`). A craft arriving on an empty bench now runs

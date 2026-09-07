@@ -237,6 +237,8 @@ namespace KspMp.Vessels
                         // Vessel.Die() leaves the active vessel's parts alone (Vessel.cs:8696); blowing the parts
                         // up is how KSP itself loses an active vessel, and what follows is stock behaviour.
                         VesselImmortal.Set(vessel, false);
+                        // The deaths this causes are the owner's to report, and they already have.
+                        if (roster != null) roster.QuietCrewOf(vessel, 10f);
                         var parts = vessel.parts != null ? vessel.parts.ToArray() : new Part[0];
                         for (var i = 0; i < parts.Length; i++)
                             if (parts[i] != null) parts[i].explode();

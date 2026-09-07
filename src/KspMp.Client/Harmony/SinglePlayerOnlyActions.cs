@@ -1,3 +1,4 @@
+using System;
 using HarmonyLib;
 
 namespace KspMp.Harmony
@@ -36,14 +37,32 @@ namespace KspMp.Harmony
         {
             if (!MultiplayerGuard.Connected) return true;
             var addon = KspMpAddon.Instance;
-            var active = FlightGlobals.ActiveVessel;
-            if (active != null && addon.Vessels.IsOwnedByOther(active.id))
-                return Refuse(what, "only the pilot of " + active.GetDisplayName() + " can do that");
-            if (active != null && addon.Control.OthersAboard(active.id))
-                return Refuse(what, "somebody else is still aboard " + active.GetDisplayName());
-            Log.Info(what + ": allowed" + (active != null ? " for " + active.GetDisplayName() : ""));
-            addon.VesselProto.OnReverting(what, vesselComesBack);
+            // A revert acts on the vessel this flight launched - KSP restores PostInitState.ActiveVesselID -
+            // not on whatever the player has switched to since (a spent stage, say).
+            var launched = LaunchedVesselId();
+            var label = LabelOf(launched);
+            if (launched != Guid.Empty && addon.Vessels.IsOwnedByOther(launched))
+                return Refuse(what, "only the pilot of " + label + " can do that");
+            if (launched != Guid.Empty && addon.Control.OthersAboard(launched))
+                return Refuse(what, "somebody else is still aboard " + label);
+            Log.Info(what + ": allowed" + (launched != Guid.Empty ? " for " + label : ""));
+            addon.VesselProto.OnReverting(what, vesselComesBack, launched);
             return true;
+        }
+
+        private static Guid LaunchedVesselId()
+        {
+            var backup = FlightDriver.PostInitState;
+            if (backup != null && backup.ActiveVesselID != Guid.Empty) return backup.ActiveVesselID;
+            var active = FlightGlobals.ActiveVessel;
+            return active != null ? active.id : Guid.Empty;
+        }
+
+        private static string LabelOf(Guid id)
+        {
+            if (id == Guid.Empty) return "the vessel";
+            var vessel = FlightGlobals.FindVessel(id);
+            return vessel != null ? vessel.GetDisplayName() : "vessel " + id.ToString().Substring(0, 8);
         }
 
         private static bool Refuse(string what, string why)

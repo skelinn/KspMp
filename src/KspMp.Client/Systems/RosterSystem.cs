@@ -27,6 +27,24 @@ namespace KspMp.Systems
         public const float ReviveSeconds = 5f;
         private readonly Dictionary<string, float> _reviveAt = new Dictionary<string, float>(StringComparer.Ordinal);
 
+        /// <summary>
+        /// Kerbals whose status changes are not ours to report for a while: the crew of a vessel somebody
+        /// else simulates that we are about to blow up locally because the server removed it. Their deaths
+        /// happen on the owner's machine and are reported from there; ours would race those reports, and the
+        /// registry entry that ShouldReport relies on is already gone by then.
+        /// </summary>
+        private readonly Dictionary<string, float> _quietUntil = new Dictionary<string, float>(StringComparer.Ordinal);
+
+        public void QuietCrewOf(Vessel vessel, float seconds)
+        {
+            if (vessel == null) return;
+            var crew = vessel.loaded ? vessel.GetVesselCrew() : vessel.protoVessel != null ? vessel.protoVessel.GetVesselCrew() : null;
+            if (crew == null) return;
+            var until = Time.realtimeSinceStartup + seconds;
+            for (var i = 0; i < crew.Count; i++)
+                if (crew[i] != null && !IsMyAvatar(crew[i].name)) _quietUntil[crew[i].name] = until;
+        }
+
         public RosterSystem(KspMpAddon addon) : base(addon) { }
 
         public override string Name => "Roster";
@@ -94,6 +112,8 @@ namespace KspMp.Systems
             GameEvents.onCrewTransferSelected.Remove(OnCrewTransferSelected);
             GameEvents.onLevelWasLoadedGUIReady.Remove(OnLevelLoaded);
             _kerbals.Clear();
+            _reviveAt.Clear();
+            _quietUntil.Clear();
             Synced = false;
         }
 
@@ -360,7 +380,6 @@ namespace KspMp.Systems
                 if (IsMyAvatar(name))
                 {
                     Addon.Notices.Post("revive", "Your Kerbal " + name + " is back at the astronaut complex", Ui.Theme.Accent, ttlSeconds: 10f);
-                    Addon.Chat.AddLocal("Your Kerbal " + name + " is back at the astronaut complex.");
                 }
             }
             catch (Exception e)
@@ -399,6 +418,11 @@ namespace KspMp.Systems
         {
             if (Applying || pcm == null || !HighLogic.LoadedSceneIsGame || VesselLoader.IsLoadingRemote || !Net.IsConnected) return false;
             if (IsOtherPlayersAvatar(pcm.name)) return false;
+            if (_quietUntil.TryGetValue(pcm.name, out var quietUntil))
+            {
+                if (Time.realtimeSinceStartup < quietUntil) return false;
+                _quietUntil.Remove(pcm.name);
+            }
             // Changes to crew aboard a vessel somebody else simulates are theirs to report.
             if (FlightGlobals.fetch != null)
             {
