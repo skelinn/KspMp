@@ -103,6 +103,7 @@ namespace KspMp
         public float BoardAfterSeconds = -1f;
         public float JetpackAfterSeconds = -1f;
         public float RevertAfterSeconds = -1f;
+        public float CrashAfterSeconds = -1f;
         public float RevertToEditorAfterSeconds = -1f;
         /// <summary>null = leave the setting alone.</summary>
         public bool? EvaSyncOverride;
@@ -281,6 +282,9 @@ namespace KspMp
                         break;
                     case "-kspmp-jetpack" when i + 1 < args.Length:
                         if (float.TryParse(args[++i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var packAfter)) options.JetpackAfterSeconds = packAfter;
+                        break;
+                    case "-kspmp-crash" when i + 1 < args.Length:
+                        if (float.TryParse(args[++i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var crashAfter)) options.CrashAfterSeconds = crashAfter;
                         break;
                     case "-kspmp-revert" when i + 1 < args.Length:
                         if (float.TryParse(args[++i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var revertAfter)) options.RevertAfterSeconds = revertAfter;

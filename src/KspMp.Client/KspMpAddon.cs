@@ -56,6 +56,7 @@ namespace KspMp
         private float _boardAt = -1f;
         private float _jetpackAt = -1f;
         private float _revertAt = -1f;
+        private float _crashAt = -1f;
         private float _revertEditorAt = -1f;
         private float _giveControlAt = -1f;
         private float _requestControlAt = -1f;
@@ -223,6 +224,8 @@ namespace KspMp
                 _jetpackAt = Time.realtimeSinceStartup + Launch.JetpackAfterSeconds;
             if (scene == GameScenes.FLIGHT && Launch.RevertAfterSeconds >= 0 && _revertAt < 0)
                 _revertAt = Time.realtimeSinceStartup + Launch.RevertAfterSeconds;
+            if (scene == GameScenes.FLIGHT && Launch.CrashAfterSeconds >= 0 && _crashAt < 0)
+                _crashAt = Time.realtimeSinceStartup + Launch.CrashAfterSeconds;
             if (scene == GameScenes.FLIGHT && Launch.RevertToEditorAfterSeconds >= 0 && _revertEditorAt < 0)
                 _revertEditorAt = Time.realtimeSinceStartup + Launch.RevertToEditorAfterSeconds;
             if (scene == GameScenes.FLIGHT && Launch.GiveControlAfterSeconds >= 0 && _giveControlAt < 0)
@@ -252,7 +255,7 @@ namespace KspMp
 
         private System.Collections.IEnumerator AutoLaunchAfterDelay(float seconds)
         {
-            yield return new WaitForSeconds(seconds);
+            yield return new WaitForSecondsRealtime(seconds);
             var launchSite = !string.IsNullOrEmpty(Launch.LaunchSite)
                 ? Launch.LaunchSite
                 : Launch.LaunchCraft.Replace(System.IO.Path.DirectorySeparatorChar, '/')
@@ -265,7 +268,7 @@ namespace KspMp
             {
                 if (!KspMp.Vessels.LaunchSiteGuard.IsBlocked(launchSite, Vessels, out var blocked)) { held = string.Empty; break; }
                 if (blocked != held) { Log.Info("Auto-launch: holding off - " + blocked); held = blocked; }
-                yield return new WaitForSeconds(3f);
+                yield return new WaitForSecondsRealtime(3f);
             }
             if (!string.IsNullOrEmpty(held))
             {
@@ -438,7 +441,7 @@ namespace KspMp
         /// </summary>
         private System.Collections.IEnumerator AutoMoveNear(float delaySeconds)
         {
-            yield return new WaitForSeconds(Mathf.Max(delaySeconds, 0f));
+            yield return new WaitForSecondsRealtime(Mathf.Max(delaySeconds, 0f));
             var ours = FlightGlobals.ActiveVessel;
             if (ours == null) { Log.Warn("Auto-near: no active vessel"); yield break; }
             var target = Testing.TestRendezvous.FindDockingTarget(ours, id => id != ours.id && Vessels.IsKnown(id) && Vessels.OwnerOf(id) != 0);
@@ -449,7 +452,7 @@ namespace KspMp
 
         private System.Collections.IEnumerator AutoDockSequence(float delaySeconds)
         {
-            yield return new WaitForSeconds(delaySeconds);
+            yield return new WaitForSecondsRealtime(delaySeconds);
             var ours = FlightGlobals.ActiveVessel;
             if (ours == null) { Log.Warn("Auto-dock: no active vessel"); yield break; }
 
@@ -464,7 +467,7 @@ namespace KspMp
             if (Launch.DockRendezvous)
             {
                 if (!Testing.TestRendezvous.MoveNear(ours, target, 30f)) yield break;
-                yield return new WaitForSeconds(10f);
+                yield return new WaitForSecondsRealtime(10f);
             }
 
             var aligned = false;
@@ -498,7 +501,7 @@ namespace KspMp
                 if (!target.loaded)
                 {
                     Log.Info("Auto-dock: waiting for " + target.GetDisplayName() + " to load (attempt " + attempt + ")");
-                    yield return new WaitForSeconds(4f);
+                    yield return new WaitForSecondsRealtime(4f);
                     continue;
                 }
                 var weOwnBoth = Vessels.IsMine(ours.id) && Vessels.IsMine(target.id);
@@ -509,7 +512,7 @@ namespace KspMp
                 {
                     // Only the client simulating both ships can put them together; the other one waits for the
                     // server to hand the pair over, which the approach reports keep requesting.
-                    yield return new WaitForSeconds(5f);
+                    yield return new WaitForSecondsRealtime(5f);
                     continue;
                 }
                 // Both ships are ours to move, so KSP's own docking logic should be engaging by now. Dump
@@ -537,7 +540,7 @@ namespace KspMp
                 // approach scan never pairs teleported ports, so waiting longer only burns attempts.
                 if (aligned && attempt >= 3 && Testing.TestRendezvous.ForceDock(ours, target))
                 {
-                    yield return new WaitForSeconds(3f);
+                    yield return new WaitForSecondsRealtime(3f);
                     continue;
                 }
                 // One velocity write fades within a frame or two as KSP re-derives part velocities, so a
@@ -545,7 +548,7 @@ namespace KspMp
                 // approach twice a second instead, without teleporting anything.
                 for (var tick = 0; tick < 12; tick++)
                 {
-                    yield return new WaitForSeconds(0.5f);
+                    yield return new WaitForSecondsRealtime(0.5f);
                     var closingOurs = FlightGlobals.FindVessel(ourVesselId);
                     var closingTarget = FlightGlobals.FindVessel(target.id);
                     if (closingOurs == null || closingTarget == null) break;
@@ -581,7 +584,7 @@ namespace KspMp
         /// </summary>
         private System.Collections.IEnumerator AutoUndock(Guid mergedVesselId, float delaySeconds)
         {
-            yield return new WaitForSeconds(Mathf.Max(delaySeconds, 0f));
+            yield return new WaitForSecondsRealtime(Mathf.Max(delaySeconds, 0f));
             var merged = FlightGlobals.FindVessel(mergedVesselId);
             if (merged == null) { Log.Warn("Auto-undock: the merged vessel is gone"); yield break; }
             var partsBefore = merged.parts != null ? merged.parts.Count : 0;
@@ -596,7 +599,7 @@ namespace KspMp
 
             for (var tick = 0; tick < 10; tick++)
             {
-                yield return new WaitForSeconds(2f);
+                yield return new WaitForSecondsRealtime(2f);
                 var still = FlightGlobals.FindVessel(mergedVesselId);
                 var count = still != null && still.parts != null ? still.parts.Count : -1;
                 if (still != null && count < partsBefore)
@@ -677,13 +680,13 @@ namespace KspMp
         /// <summary>Test harness: capture the screen, so the interface can be looked at without being there.</summary>
         private System.Collections.IEnumerator AutoScreenshot(float delaySeconds)
         {
-            yield return new WaitForSeconds(Mathf.Max(delaySeconds, 0f));
+            yield return new WaitForSecondsRealtime(Mathf.Max(delaySeconds, 0f));
             var path = System.IO.Path.Combine(KSPUtil.ApplicationRootPath, "kspmp-screenshot.png");
             try { if (System.IO.File.Exists(path)) System.IO.File.Delete(path); }
             catch (Exception e) { Log.Exception("Clearing the old screenshot", e); }
             ScreenCapture.CaptureScreenshot(path);
             // CaptureScreenshot finishes at the end of some later frame, so the file is not there yet.
-            yield return new WaitForSeconds(4f);
+            yield return new WaitForSecondsRealtime(4f);
             Log.Info("Screenshot " + (System.IO.File.Exists(path) ? "written to " : "FAILED for ") + path);
         }
 
@@ -697,7 +700,7 @@ namespace KspMp
         /// <summary>Test harness: open the VAB or SPH so two clients end up on one shared workbench.</summary>
         private System.Collections.IEnumerator AutoOpenEditor(float delaySeconds)
         {
-            yield return new WaitForSeconds(Mathf.Max(delaySeconds, 0f));
+            yield return new WaitForSecondsRealtime(Mathf.Max(delaySeconds, 0f));
             var wantSph = Launch.EditorFacilityName != null
                           && Launch.EditorFacilityName.Equals("SPH", StringComparison.OrdinalIgnoreCase);
             var facility = wantSph ? EditorFacility.SPH : EditorFacility.VAB;
@@ -708,7 +711,7 @@ namespace KspMp
 
         private System.Collections.IEnumerator AutoLoadCraft(float delaySeconds)
         {
-            yield return new WaitForSeconds(Mathf.Max(delaySeconds, 0f));
+            yield return new WaitForSecondsRealtime(Mathf.Max(delaySeconds, 0f));
             LoadCraftIntoEditor();
         }
 
@@ -749,7 +752,7 @@ namespace KspMp
         /// </summary>
         private System.Collections.IEnumerator AutoDeletePart(float delaySeconds)
         {
-            yield return new WaitForSeconds(Mathf.Max(delaySeconds, 0f));
+            yield return new WaitForSecondsRealtime(Mathf.Max(delaySeconds, 0f));
             var editor = EditorLogic.fetch;
             if (editor == null || editor.ship == null || editor.ship.parts == null || editor.ship.parts.Count < 2)
             {
@@ -787,7 +790,7 @@ namespace KspMp
         /// <summary>Joins the first other player's workbench, or goes back to our own.</summary>
         private System.Collections.IEnumerator AutoEditorSession(float delaySeconds, bool join)
         {
-            yield return new WaitForSeconds(Mathf.Max(delaySeconds, 0f));
+            yield return new WaitForSecondsRealtime(Mathf.Max(delaySeconds, 0f));
             if (Editor == null || !Editor.Active) { Log.Warn("Auto-editor: not in an editor session"); yield break; }
             if (!join) { Log.Info("Auto-editor: leaving the shared workbench"); Editor.LeaveSession(); yield break; }
             foreach (var session in Builders.Sessions)
@@ -804,7 +807,7 @@ namespace KspMp
         {
             while (HighLogic.LoadedScene == GameScenes.EDITOR)
             {
-                yield return new WaitForSeconds(Mathf.Max(everySeconds, 1f));
+                yield return new WaitForSecondsRealtime(Mathf.Max(everySeconds, 1f));
                 LogEditorState();
             }
         }
@@ -928,6 +931,16 @@ namespace KspMp
             {
                 _evaAt = -1f;
                 AutoEva();
+            }
+            if (_crashAt >= 0 && Time.realtimeSinceStartup >= _crashAt && HighLogic.LoadedSceneIsFlight && FlightGlobals.ready)
+            {
+                _crashAt = -1f;
+                var doomed = FlightGlobals.ActiveVessel;
+                if (doomed != null && doomed.parts != null)
+                {
+                    Log.Info("Auto-crash: blowing up " + doomed.GetDisplayName() + " (" + doomed.parts.Count + " parts)");
+                    foreach (var part in doomed.parts.ToArray()) if (part != null) part.explode();
+                }
             }
             if (_revertAt >= 0 && Time.realtimeSinceStartup >= _revertAt && HighLogic.LoadedSceneIsFlight && FlightGlobals.ready)
             {

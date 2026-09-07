@@ -18,6 +18,15 @@ namespace KspMp.Systems
         private bool _bootstrapPending;
         private bool _avatarUploadPending;
 
+        /// <summary>
+        /// How long a dead or missing Kerbal stays that way. Stock KSP brings a missing Kerbal back after
+        /// hours of game time, which in a shared timeline nobody can warp through alone; a player whose avatar
+        /// died would be locked out of launching until everyone agreed to warp. So whoever reported the death
+        /// brings the Kerbal back to the astronaut complex shortly after, and reports that too.
+        /// </summary>
+        public const float ReviveSeconds = 5f;
+        private readonly Dictionary<string, float> _reviveAt = new Dictionary<string, float>(StringComparer.Ordinal);
+
         public RosterSystem(KspMpAddon addon) : base(addon) { }
 
         public override string Name => "Roster";
@@ -309,6 +318,81 @@ namespace KspMp.Systems
             }
         }
 
+        public override void Update()
+        {
+            if (_reviveAt.Count > 0) ReviveDue();
+        }
+
+        private readonly List<string> _due = new List<string>();
+
+        private void ReviveDue()
+        {
+            var now = Time.realtimeSinceStartup;
+            _due.Clear();
+            foreach (var pair in _reviveAt) if (now >= pair.Value) _due.Add(pair.Key);
+            for (var i = 0; i < _due.Count; i++)
+            {
+                _reviveAt.Remove(_due[i]);
+                Revive(_due[i], "did not survive");
+            }
+        }
+
+        /// <summary>Puts a Kerbal back in the astronaut complex, and says so; the status change is reported like any other.</summary>
+        private void Revive(string name, string what)
+        {
+            var roster = HighLogic.CurrentGame != null ? HighLogic.CurrentGame.CrewRoster : null;
+            if (roster == null || !roster.Exists(name)) return;
+            var pcm = roster[name];
+            if (pcm.rosterStatus == ProtoCrewMember.RosterStatus.Available) return;
+            try
+            {
+                // Set quietly and report by hand: the ordinary report is suppressed while the Kerbal still
+                // counts as aboard a vessel somebody else simulates, and a vessel takes a few frames to die.
+                SetApplying(() =>
+                {
+                    pcm.rosterStatus = ProtoCrewMember.RosterStatus.Available;
+                    if (pcm.type != ProtoCrewMember.KerbalType.Crew && pcm.type != ProtoCrewMember.KerbalType.Tourist) pcm.type = ProtoCrewMember.KerbalType.Crew;
+                });
+                if (Net.IsConnected)
+                    Net.Send(MessageId.KerbalStatus, new KerbalStatusMsg { Name = name, Status = (byte)ProtoCrewMember.RosterStatus.Available, InactiveTimeEnd = pcm.inactiveTimeEnd }, Channel.Control, Delivery.ReliableOrdered);
+                if (_kerbals.TryGetValue(name, out var remote)) remote.Status = (byte)ProtoCrewMember.RosterStatus.Available;
+                Log.Info(name + " " + what + " and is back at the astronaut complex");
+                if (IsMyAvatar(name))
+                {
+                    Addon.Notices.Post("revive", "Your Kerbal " + name + " is back at the astronaut complex", Ui.Theme.Accent, ttlSeconds: 10f);
+                    Addon.Chat.AddLocal("Your Kerbal " + name + " is back at the astronaut complex.");
+                }
+            }
+            catch (Exception e)
+            {
+                Log.Exception("Reviving " + name, e);
+            }
+        }
+
+        /// <summary>
+        /// A vessel somebody else simulates is gone (destroyed, recovered, reverted away). Its crew changes are
+        /// theirs to report, except for our own avatar, which nobody else reports and which would otherwise stay
+        /// assigned to a vessel that no longer exists, so we could never launch again.
+        /// </summary>
+        public bool AvatarAboard(Vessel vessel)
+        {
+            if (!HasAvatar || vessel == null) return false;
+            var crew = vessel.loaded ? vessel.GetVesselCrew() : vessel.protoVessel != null ? vessel.protoVessel.GetVesselCrew() : null;
+            if (crew == null) return false;
+            for (var i = 0; i < crew.Count; i++)
+                if (crew[i] != null && IsMyAvatar(crew[i].name)) return true;
+            return false;
+        }
+
+        public void ReturnAvatar(string why)
+        {
+            if (!HasAvatar) return;
+            // Shortly, not now: the status change is only reported once the vessel is out of FlightGlobals, and
+            // KSP tears a dying vessel down over a few frames.
+            Log.Info("Our Kerbal " + AvatarName + " was aboard a vessel that is gone (" + why + "); returning them to the astronaut complex");
+            _reviveAt[AvatarName] = Time.realtimeSinceStartup + 2f;
+        }
+
         // ---- local game events ----
 
         private bool ShouldReport(ProtoCrewMember pcm)
@@ -350,8 +434,13 @@ namespace KspMp.Systems
             if (from == to || !ShouldReport(pcm)) return;
             Net.Send(MessageId.KerbalStatus, new KerbalStatusMsg { Name = pcm.name, Status = (byte)to, InactiveTimeEnd = pcm.inactiveTimeEnd }, Channel.Control, Delivery.ReliableOrdered);
             if (_kerbals.TryGetValue(pcm.name, out var remote)) remote.Status = (byte)to;
-            if (IsMyAvatar(pcm.name) && (to == ProtoCrewMember.RosterStatus.Dead || to == ProtoCrewMember.RosterStatus.Missing))
-                Addon.Chat.AddLocal("Your Kerbal " + pcm.name + " is " + to.ToString().ToLowerInvariant() + ". You are back at Mission Control" + (to == ProtoCrewMember.RosterStatus.Missing ? " until they respawn." : "."));
+            if (to == ProtoCrewMember.RosterStatus.Dead || to == ProtoCrewMember.RosterStatus.Missing)
+            {
+                _reviveAt[pcm.name] = Time.realtimeSinceStartup + ReviveSeconds;
+                if (IsMyAvatar(pcm.name))
+                    Addon.Chat.AddLocal("Your Kerbal " + pcm.name + " is " + to.ToString().ToLowerInvariant() + ". They will be back at the astronaut complex in a moment.");
+            }
+            else _reviveAt.Remove(pcm.name);
         }
 
         private void OnKerbalChanged(ProtoCrewMember pcm)

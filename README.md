@@ -191,6 +191,7 @@ Options added for the shared-building, shared-flight and EVA work, on top of tho
     -kspmp-reverteditor D     revert to the VAB D seconds into the flight
     -kspmp-launchafter D      wait D seconds at the space centre before -kspmp-launch (default 3), so one
                               player can launch after the other's flight has begun
+    -kspmp-crash D            blow up the active vessel D seconds into the flight (every part explodes)
 
 ## Known gaps
 
@@ -254,6 +255,10 @@ Worth knowing before you play, roughly in the order you would hit them.
 - **Nametags** name other players' craft and Kerbals in each player's colour, out to 5 km (1 km for a Kerbal).
   Turn them off in Alt+M.
 - A vessel with nobody's Kerbal aboard is simulated by whoever is nearest; uncrewed probes can be flown by anyone.
+- **Dying.** A Kerbal who dies is back at the astronaut complex five seconds later, for everyone. Stock KSP
+  brings a missing Kerbal back after hours of game time, which nobody can warp through alone on a shared
+  timeline, so a player whose Kerbal died would otherwise be locked out of launching. If the craft you are
+  riding in is destroyed on its pilot's machine, it is destroyed on yours too, and your Kerbal comes home.
 - Another player's rocket stays in your sky all the way up. KSP deletes any vessel it is not simulating once it
   is out of physics range and still in the atmosphere; for a vessel somebody else flies that is switched off,
   since they stream where it is.

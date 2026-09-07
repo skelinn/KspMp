@@ -225,15 +225,32 @@ namespace KspMp.Vessels
                 var vessel = FlightGlobals.fetch != null ? FlightGlobals.FindVessel(vesselId) : null;
                 if (vessel != null)
                 {
+                    var roster = KspMpAddon.Instance != null ? KspMpAddon.Instance.Roster : null;
+                    var avatarAboard = roster != null && roster.AvatarAboard(vessel);
                     if (vessel.isActiveVessel)
                     {
-                        Log.Warn("Server removed our active vessel (" + why + "); keeping it loaded");
+                        // The vessel we are sitting in no longer exists for anybody else: its pilot crashed it,
+                        // recovered it, or reverted it away. Keeping a copy alive here left the player flying a
+                        // ghost, with their Kerbal assigned to it for good. It dies here the way it did there,
+                        // and KSP does what it does when the active vessel is lost.
+                        Log.Warn("Server removed the vessel we are aboard, " + vessel.GetDisplayName() + " (" + why + "); it is gone here too");
+                        // Vessel.Die() leaves the active vessel's parts alone (Vessel.cs:8696); blowing the parts
+                        // up is how KSP itself loses an active vessel, and what follows is stock behaviour.
+                        VesselImmortal.Set(vessel, false);
+                        var parts = vessel.parts != null ? vessel.parts.ToArray() : new Part[0];
+                        for (var i = 0; i < parts.Length; i++)
+                            if (parts[i] != null) parts[i].explode();
+                        if (avatarAboard) roster.ReturnAvatar(why);
+                        flightState?.protoVessels.RemoveAll(p => p == null || p.vesselID == vesselId);
                         return;
                     }
                     Log.Info("Removing vessel " + vessel.GetDisplayName() + " (" + why + ")");
                     if (vessel.loaded) vessel.Unload();
                     FlightGlobals.RemoveVessel(vessel);
                     UnityEngine.Object.Destroy(vessel.gameObject);
+                    // After the vessel is out of FlightGlobals, so the roster reports the change (crew aboard a
+                    // vessel somebody else simulates is otherwise theirs to report, and they never report our avatar).
+                    if (avatarAboard) roster.ReturnAvatar(why);
                 }
                 flightState?.protoVessels.RemoveAll(p => p == null || p.vesselID == vesselId);
                 RefreshMarkers();

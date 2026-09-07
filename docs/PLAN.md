@@ -185,6 +185,16 @@ says it will cost them the editor; nobody is ever pulled out of a build. The joi
 `flightState.protoVessels` is written from the save file and never contains a vessel that arrived over the
 network - which is why the original join path could not have worked even in the right scene.
 
+### Death - as built
+
+Whoever reports a Kerbal's death (the machine simulating the vessel they were in; a player's own avatar is only
+ever reported by that player) brings the Kerbal back to `Available` five seconds later (`RosterSystem.ReviveDue`)
+and reports that too, by hand rather than through the status event, since the event's report is suppressed
+while the Kerbal still counts as aboard a vessel somebody else simulates. A player's avatar aboard a vessel the
+server removes is returned the same way (`VesselLoader.Remove` -> `ReturnAvatar`), because nobody else reports
+it. When the removed vessel is the one this player is sitting in, its parts are exploded locally
+(`Vessel.Die()` leaves an active vessel's parts alone) so KSP runs its own lost-vessel flow.
+
 ### Boarding, EVA, death
 - EVA: stock hatch → `FlightEVA.fetch.spawnEVA(...)`; `onCrewOnEva` gives the new EVA vessel (`vessel.isEVA`). Client sends `CrewEva` + the EVA vessel's proto once the EVA FSM is ready (LMP waits for it). Only the avatar's owner may EVA their avatar (`onAttemptEva` handler + `ControlTypes.EVA_INPUT` lock). Presence → `OnEva`; source vessel roles recomputed (pilot EVA → handover).
 - Boarding: postfix `KerbalEVA.proceedAndBoard`/`BoardPart`/`BoardSeat` (LMP `KerbalEVA_proceedAndBoard.cs`, `KerbalEVA_BoardSeat.cs`) → `CrewBoard`; boarding client sends `VesselRemove` for its EVA vessel and applies the crew locally (`part.AddCrewmember`); the owner's next proto confirms; presence → `InFlight`.
