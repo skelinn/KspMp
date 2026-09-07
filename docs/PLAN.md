@@ -310,6 +310,26 @@ and the manifest text is part of the snapshot hash so a seating change alone is 
   fails loudly when the UDP port cannot be opened, reports the port actually bound, and is offered without
   Steam. Server config values out of range fall back to defaults.
 
+### Decoupling, seen from the other machine - as built (2026-09-07)
+
+"Decoupling felt very buggy." On the co-pilot's machine it went: the mirrored stage fired the decoupler (so
+the animation and sound did play), KSP created the separated piece locally, the mod destroyed that piece one
+frame later ("the owner's copy arrives as its own snapshot"), and then the owner's snapshot of a piece born
+that same frame failed to load because its orbit was not computed yet - so the boosters separated, vanished,
+and came back seconds later somewhere else. Players not aboard saw no animation at all: their copy was torn
+down and rebuilt with fewer parts.
+
+Now a piece that splits off somebody else's vessel here is kept, frozen, as a *phantom*
+(`VesselProtoSystem._phantoms`); when the owner's snapshot arrives naming the same part flight ids, the
+phantom is adopted as that vessel (`vessel.id` is reassigned, the registry entry gets its replica) with no
+load at all. Phantoms nobody claims within three seconds are discarded as before. A snapshot whose orbit
+produces no position returns `Outcome.InvalidOrbit` and is retried a quarter of a second later with the
+orbit from the owner's latest state. And the pilot's stage, part buttons and action groups now go to
+everyone in flight (`ControlService.RelayActionToFlying`), not only those aboard, and are mirrored on any
+loaded copy of the vessel: the stage manager only works the active vessel, so a copy watched from outside is
+staged part by part (`Part.force_activate` on the stage's parts), which is what the stage manager does
+underneath. The echo gate on the pilot's side fires for anyone else in flight (`PresenceSystem.OthersInFlight`).
+
 ### Boarding, EVA, death
 - EVA: stock hatch → `FlightEVA.fetch.spawnEVA(...)`; `onCrewOnEva` gives the new EVA vessel (`vessel.isEVA`). Client sends `CrewEva` + the EVA vessel's proto once the EVA FSM is ready (LMP waits for it). Only the avatar's owner may EVA their avatar (`onAttemptEva` handler + `ControlTypes.EVA_INPUT` lock). Presence → `OnEva`; source vessel roles recomputed (pilot EVA → handover).
 - Boarding: postfix `KerbalEVA.proceedAndBoard`/`BoardPart`/`BoardSeat` (LMP `KerbalEVA_proceedAndBoard.cs`, `KerbalEVA_BoardSeat.cs`) → `CrewBoard`; boarding client sends `VesselRemove` for its EVA vessel and applies the crew locally (`part.AddCrewmember`); the owner's next proto confirms; presence → `InFlight`.

@@ -20,7 +20,15 @@ namespace KspMp.Systems
         private readonly Dictionary<Guid, float> _modifiedAt = new Dictionary<Guid, float>();
         private readonly List<Vessel> _newVessels = new List<Vessel>();
         private readonly List<Vessel> _stillNew = new List<Vessel>();
-        private readonly List<Vessel> _splitOff = new List<Vessel>();
+        /// <summary>
+        /// Pieces that came off a vessel somebody else simulates, on this machine, waiting for the owner's own
+        /// snapshot of them. They used to be destroyed on the spot and the owner's copy loaded a moment later,
+        /// so a booster visibly separated, vanished, and reappeared somewhere else - "decoupling felt buggy".
+        /// Kept, frozen, they are adopted as the owner's vessel when its snapshot names the same parts.
+        /// </summary>
+        private sealed class Phantom { public Vessel Vessel; public float At; }
+        private readonly List<Phantom> _phantoms = new List<Phantom>();
+        public const float PhantomSeconds = 3f;
         private float _splitOffUntil = -1f;
         private readonly Dictionary<Guid, float> _newSince = new Dictionary<Guid, float>();
         /// <summary>How long a new vessel may keep us waiting for a valid orbit before it is announced anyway.</summary>
@@ -136,7 +144,7 @@ namespace KspMp.Systems
                 remote.ProtoDirty = false;
                 return;
             }
-            if (OrbitIsMissing(proto))
+            if (OrbitIsMissing(proto) || remote.OrbitFromState)
             {
                 // Announced before KSP had given it an orbit - a kerbal stepping out of a hatch does that. The
                 // owner's state stream carries a good one within half a second, so use that rather than let the
@@ -166,8 +174,19 @@ namespace KspMp.Systems
                 SendProto(active, ProtoReason.Modified);
                 return;
             }
+            if (FlightGlobals.FindVessel(proto.vesselID) == null && TryAdoptPhantom(proto, remote)) return;
             // A vessel we sit in but do not simulate is still refreshed when its parts change - see VesselLoader.
             var outcome = VesselLoader.Load(proto, false, !Registry.IsMine(remote));
+            if (outcome == VesselLoader.Outcome.InvalidOrbit)
+            {
+                // Born this frame on the owner's machine; its state stream carries a real orbit within a
+                // tenth of a second. Try again with that rather than give up until the next snapshot.
+                remote.ProtoDirty = true;
+                remote.OrbitFromState = true;
+                remote.NextApplyAt = Time.realtimeSinceStartup + 0.25f;
+                return;
+            }
+            remote.OrbitFromState = false;
             remote.ProtoDirty = outcome == VesselLoader.Outcome.Deferred;
             if (outcome != VesselLoader.Outcome.Deferred && outcome != VesselLoader.Outcome.Failed && proto.protoPartSnapshots != null)
             {
@@ -403,8 +422,7 @@ namespace KspMp.Systems
                         // owner's copy of them arrives as its own snapshot. A timed window missed the ones that
                         // broke off later, and each of those became a duplicate vessel in the world.
                         Registry.Tombstone(vessel.id);
-                        Log.Info("Discarding " + vessel.GetDisplayName() + ": its parts belong to " + from.Label + ", which " + NameOf(from.OwnerClientId) + " simulates");
-                        VesselLoader.Discard(vessel);
+                        KeepPhantom(vessel, from);
                         continue;
                     }
                     if (!ReadyToAnnounce(vessel, now)) { _stillNew.Add(vessel); continue; }
@@ -469,7 +487,7 @@ namespace KspMp.Systems
             if (Time.realtimeSinceStartup < _splitOffUntil)
             {
                 Registry.Tombstone(vessel.id);
-                _splitOff.Add(vessel);
+                KeepPhantom(vessel, null);
                 return;
             }
             _newVessels.Add(vessel);
@@ -483,17 +501,69 @@ namespace KspMp.Systems
         /// </summary>
         public void ExpectSplitOff(float seconds) => _splitOffUntil = Time.realtimeSinceStartup + seconds;
 
+        private void KeepPhantom(Vessel vessel, RemoteVessel from)
+        {
+            if (vessel == null) return;
+            for (var i = 0; i < _phantoms.Count; i++) if (_phantoms[i].Vessel == vessel) return;
+            VesselImmortal.Set(vessel, true);   // it is somebody else's; it must not explode or fall apart here
+            _phantoms.Add(new Phantom { Vessel = vessel, At = Time.realtimeSinceStartup });
+            var name = vessel.GetDisplayName();
+            if (string.IsNullOrEmpty(name)) name = "a piece";
+            Log.Info("Keeping " + name + " (" + (vessel.parts != null ? vessel.parts.Count : 0) + " parts), which split off "
+                     + (from != null ? from.Label + ", " + NameOf(from.OwnerClientId) + "'s" : "somebody else's vessel") + ", until their copy of it arrives");
+        }
+
+        /// <summary>Phantoms nobody claimed in time are not the owner's after all (or their copy failed): discard them.</summary>
         private void DiscardSplitOff()
         {
-            if (_splitOff.Count == 0) return;
-            foreach (var vessel in _splitOff)
+            if (_phantoms.Count == 0) return;
+            var now = Time.realtimeSinceStartup;
+            for (var i = _phantoms.Count - 1; i >= 0; i--)
             {
-                if (vessel == null) continue;
-                if (vessel.isActiveVessel) { Log.Warn("Not discarding " + vessel.GetDisplayName() + ": it became the active vessel"); continue; }
-                Log.Info("Discarding " + vessel.GetDisplayName() + ": it split off a vessel someone else simulates, and their copy of it arrives as its own snapshot");
-                VesselLoader.Discard(vessel);
+                var phantom = _phantoms[i];
+                if (phantom.Vessel == null) { _phantoms.RemoveAt(i); continue; }
+                if (now - phantom.At < PhantomSeconds) continue;
+                _phantoms.RemoveAt(i);
+                if (phantom.Vessel.isActiveVessel) { Log.Warn("Not discarding " + phantom.Vessel.GetDisplayName() + ": it became the active vessel"); continue; }
+                Log.Info("Discarding " + phantom.Vessel.GetDisplayName() + ": it split off a vessel someone else simulates and their copy never named it");
+                VesselLoader.Discard(phantom.Vessel);
             }
-            _splitOff.Clear();
+        }
+
+        /// <summary>
+        /// The owner's snapshot of a piece that already exists here as a phantom: make the phantom that vessel
+        /// instead of loading a second copy over it. Part flight ids are the same on every machine, which is
+        /// how the pieces were recognised as theirs in the first place.
+        /// </summary>
+        private bool TryAdoptPhantom(ProtoVessel proto, RemoteVessel remote)
+        {
+            if (_phantoms.Count == 0 || proto.protoPartSnapshots == null || proto.protoPartSnapshots.Count == 0) return false;
+            var ids = new HashSet<uint>();
+            foreach (var snap in proto.protoPartSnapshots) ids.Add(snap.flightID);
+            for (var i = 0; i < _phantoms.Count; i++)
+            {
+                var vessel = _phantoms[i].Vessel;
+                if (vessel == null || vessel.parts == null || vessel.parts.Count != ids.Count) continue;
+                var same = true;
+                for (var p = 0; p < vessel.parts.Count && same; p++)
+                    same = vessel.parts[p] != null && ids.Contains(vessel.parts[p].flightID);
+                if (!same) continue;
+                _phantoms.RemoveAt(i);
+                var oldId = vessel.id;
+                vessel.id = proto.vesselID;
+                vessel.vesselName = proto.vesselName;
+                vessel.vesselType = proto.vesselType;
+                vessel.protoVessel = proto;
+                proto.vesselRef = vessel;
+                remote.PartIds = ids;
+                remote.ProtoDirty = false;
+                remote.OrbitFromState = false;
+                Registry.SyncReplica(remote);
+                Applied++;
+                Log.Info("Adopted " + vessel.GetDisplayName() + " " + oldId.ToString().Substring(0, 8) + " as " + remote.Label + ": the piece that came off here is their copy of it");
+                return true;
+            }
+            return false;
         }
 
         /// <summary>

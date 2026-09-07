@@ -241,8 +241,10 @@ Worth knowing before you play, roughly in the order you would hit them.
   A craft arriving on an empty bench takes the editor out of its "pick a pod" state, so every part is
   available to whoever joined, not just the ones KSP allows as a first part.
 - **Flying together.** The pilot simulates the craft; what they stage, toggle or press is mirrored onto every
-  copy aboard, so a co-pilot sees the engines light, the chutes open and the escape tower leave at the same
-  moment. The pieces that separate are theirs, and arrive as the pilot's own snapshots. The pilot's tank
+  loaded copy of it - a co-pilot's, and a friend's watching from outside or on EVA beside it - so everyone
+  sees the engines light, the chutes open and the boosters leave at the same moment. The pieces that
+  separate are the pilot's; the copies that came off on your machine are adopted as theirs when the pilot's
+  snapshot names them, so nothing blinks out and back. The pilot's tank
   levels are streamed to everyone aboard once a second, so a co-pilot's gauges read the same as the pilot's.
 - **On EVA.** Everyone sees everyone's Kerbals, with name tags, and a jetpack's plumes and hiss show on every
   machine: the owner streams what the pack is doing and the others light the same effects KSP would.

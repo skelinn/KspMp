@@ -29,6 +29,14 @@ namespace KspMp.Systems
         public PresenceMsg Mine => _mine;
         public IReadOnlyDictionary<int, PresenceMsg> Others => _others;
 
+        /// <summary>Anyone else in the flight scene (aboard anything, or on EVA): they have loaded copies of our vessels to mirror on.</summary>
+        public bool OthersInFlight()
+        {
+            foreach (var p in _others.Values)
+                if (p.State == PresenceState.InFlight || p.State == PresenceState.OnEva) return true;
+            return false;
+        }
+
         protected override void OnActivate()
         {
             Net.RegisterHandler(MessageId.Presence, OnPresence);

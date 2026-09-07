@@ -308,6 +308,27 @@ namespace KspMp.Server.Vessels
             return sent;
         }
 
+        /// <summary>
+        /// Stages, part buttons, action groups and SAS modes go to everyone in flight, not only those aboard: a
+        /// player watching from outside the rocket has a loaded copy of it too, and mirroring the action on
+        /// that copy is what lets them see the decoupler fire instead of the copy being torn down and rebuilt.
+        /// </summary>
+        public int RelayActionToFlying<T>(ClientSession from, Guid vesselId, MessageId id, T message, Channel channel, Delivery delivery) where T : INetSerializable
+        {
+            if (!_server.Authority.IsOwnedBy(vesselId, from.ClientId)) return 0;
+            var sent = 0;
+            foreach (var target in _server.HandshakenClients)
+            {
+                if (target.ClientId == from.ClientId) continue;
+                var aboard = _roles.TryGetValue(vesselId, out var roles) && roles.Aboard.Contains(target.ClientId);
+                var flying = target.Presence.State == PresenceState.InFlight || target.Presence.State == PresenceState.OnEva;
+                if (!aboard && !flying) continue;
+                _server.Send(target.Peer, id, message, channel, delivery);
+                sent++;
+            }
+            return sent;
+        }
+
         /// <summary>The owner's merged control state goes to everyone else aboard.</summary>
         public void RelayStateToAboard(ClientSession from, Guid vesselId, CtrlInputMsg state)
         {

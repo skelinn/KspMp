@@ -15,6 +15,8 @@ namespace KspMp.Vessels
             Skipped,
             Failed,
             Deferred,
+            /// <summary>The snapshot's orbit produced no position: taken the frame the vessel was born. Worth a retry with a state.</summary>
+            InvalidOrbit,
         }
 
         /// <summary>True while a remote snapshot is being instantiated, so vessel-create events are not mistaken for local launches.</summary>
@@ -199,10 +201,10 @@ namespace KspMp.Vessels
             if (proto.vesselRef.situation > Vessel.Situations.PRELAUNCH) proto.vesselRef.orbitDriver.updateFromParameters();
             if (double.IsNaN(proto.vesselRef.orbitDriver.pos.x))
             {
-                Log.Warn("Snapshot of " + label + " has an invalid orbit");
+                Log.Warn("Snapshot of " + label + " has an invalid orbit; waiting for a state to take one from");
                 Discard(proto.vesselRef);
                 Restore(previous, label, reloadingActive);
-                return Outcome.Failed;
+                return Outcome.InvalidOrbit;
             }
             if (reloadingActive)
             {

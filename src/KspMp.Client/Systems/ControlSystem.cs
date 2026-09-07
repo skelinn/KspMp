@@ -417,11 +417,14 @@ namespace KspMp.Systems
         private Vessel ActionTarget(Guid vesselId, int fromClientId, out bool mirrored)
         {
             mirrored = false;
-            var vessel = ActiveVesselOrNull;
-            if (vessel == null || vessel.id != vesselId) return null;
-            if (Addon.Vessels.IsMine(vesselId)) return vessel;
+            if (!HighLogic.LoadedSceneIsFlight || FlightGlobals.fetch == null) return null;
+            var vessel = FlightGlobals.FindVessel(vesselId);
+            if (vessel == null || !vessel.loaded) return null;
+            if (Addon.Vessels.IsMine(vesselId)) return vessel.isActiveVessel ? vessel : null;   // ours to act on only at the controls
             if (fromClientId != 0 && Addon.Vessels.OwnerOf(vesselId) == fromClientId)
             {
+                // The owner's action on their vessel, mirrored on our loaded copy - whether we sit in it or
+                // watch it from outside. What comes off it is adopted as the owner's when their snapshot lands.
                 mirrored = true;
                 Addon.VesselProto.ExpectSplitOff(1f);
                 return vessel;
@@ -437,11 +440,20 @@ namespace KspMp.Systems
             var vessel = ActionTarget(msg.VesselId, msg.FromClientId, out var mirrored);
             if (vessel == null) return;
             var stage = msg.Stage;
-            Apply((mirrored ? "stage " + stage + " fired by " : "stage by ") + NameOf(msg.FromClientId), () =>
+            Apply((mirrored ? "stage " + stage + " fired by " : "stage by ") + NameOf(msg.FromClientId) + (vessel.isActiveVessel ? "" : " on their " + vessel.GetDisplayName()), () =>
             {
                 // Mirroring: fire the very stage the pilot fired. Relaying a co-pilot's press: our own next stage
                 // is the truth, since we are the one simulating this vessel.
-                if (mirrored && stage >= 0) KSP.UI.Screens.StageManager.ActivateStage(stage);
+                if (mirrored && !vessel.isActiveVessel)
+                {
+                    // The stage manager only works the active vessel; a copy we watch from outside is staged
+                    // part by part, which is what the stage manager does underneath.
+                    if (stage < 0) stage = vessel.currentStage - 1;
+                    foreach (var part in vessel.parts.ToArray())
+                        if (part != null && part.inverseStage == stage) part.force_activate();
+                    if (vessel.currentStage > stage) vessel.currentStage = stage;
+                }
+                else if (mirrored && stage >= 0) KSP.UI.Screens.StageManager.ActivateStage(stage);
                 else KSP.UI.Screens.StageManager.ActivateNextStage();
             });
         }
@@ -468,8 +480,9 @@ namespace KspMp.Systems
         private void OnSasMode(NetDataReader body)
         {
             var msg = Envelope.Read<SasModeMsg>(body);
-            var vessel = ActionTarget(msg.VesselId, msg.FromClientId, out _);
+            var vessel = ActionTarget(msg.VesselId, msg.FromClientId, out var mirroredSas);
             if (vessel == null || vessel.Autopilot == null) return;
+            if (mirroredSas && !vessel.isActiveVessel) return;   // SAS only matters on the vessel at our controls
             Apply("SAS mode " + (VesselAutopilot.AutopilotMode)msg.Mode + " by " + NameOf(msg.FromClientId), () =>
             {
                 if (msg.Enabled != vessel.ActionGroups[KSPActionGroup.SAS]) vessel.ActionGroups.SetGroup(KSPActionGroup.SAS, msg.Enabled);

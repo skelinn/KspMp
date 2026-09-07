@@ -38,7 +38,9 @@ namespace KspMp.Harmony
             // pilot (where IsMine is false anyway) and the pilot applying a co-pilot's relayed action - and the
             // relayed one must be echoed, because the co-pilot's own copy did nothing but send it, and every
             // other co-pilot has heard nothing at all.
-            return addon.Vessels.IsMine(vessel.id) && addon.Control.OthersAboard(vessel.id);
+            // Anyone else in flight, not only those aboard: a friend watching from outside (or on EVA beside
+            // us) has a loaded copy of this vessel that mirrors the action too.
+            return addon.Vessels.IsMine(vessel.id) && (addon.Control.OthersAboard(vessel.id) || (addon.Presence != null && addon.Presence.OthersInFlight()));
         }
     }
 
