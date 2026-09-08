@@ -33,7 +33,7 @@ namespace KspMp.Systems
         public bool OthersInFlight()
         {
             foreach (var p in _others.Values)
-                if (p.State == PresenceState.InFlight || p.State == PresenceState.OnEva) return true;
+                if (p.State == PresenceState.InFlight || p.State == PresenceState.OnEva || p.State == PresenceState.Spectating) return true;
             return false;
         }
 
@@ -265,6 +265,7 @@ namespace KspMp.Systems
         {
             switch (p.State)
             {
+                case PresenceState.Spectating: return "watching " + (string.IsNullOrEmpty(p.VesselName) ? "a craft" : p.VesselName);
                 case PresenceState.InFlight: return "aboard " + p.VesselName;
                 case PresenceState.OnEva: return "on EVA";
                 case PresenceState.Editor: return "in the " + ((GameScenes)p.Scene == GameScenes.EDITOR ? "editor" : "VAB");
@@ -369,6 +370,19 @@ namespace KspMp.Systems
                     }
                 }
             }
+            // In flight without our kerbal aboard anything: watching whatever the camera is on. This used to
+            // read as "mission control", so the pilot's staging and throttle were not sent to us and our copy
+            // of their rocket showed no plumes, no noise and no chutes.
+            var watching = HighLogic.LoadedSceneIsFlight && FlightGlobals.fetch != null ? FlightGlobals.ActiveVessel : null;
+            if (watching != null)
+                return new PresenceMsg
+                {
+                    ClientId = Net.ClientId,
+                    State = PresenceState.Spectating,
+                    VesselId = watching.id,
+                    VesselName = watching.GetDisplayName(),
+                    Scene = scene,
+                };
             return new PresenceMsg
             {
                 ClientId = Net.ClientId,

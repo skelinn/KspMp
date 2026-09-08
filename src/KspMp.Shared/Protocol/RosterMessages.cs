@@ -121,6 +121,8 @@ namespace KspMp.Shared.Protocol
         InFlight = 1,
         OnEva = 2,
         Editor = 3,
+        /// <summary>In the flight scene with a loaded copy of a vessel, but not aboard it (their kerbal died, or is elsewhere).</summary>
+        Spectating = 4,
     }
 
     /// <summary>Client -> server: send the roster and vessels again.</summary>

@@ -330,6 +330,20 @@ loaded copy of the vessel: the stage manager only works the active vessel, so a 
 staged part by part (`Part.force_activate` on the stage's parts), which is what the stage manager does
 underneath. The echo gate on the pilot's side fires for anyone else in flight (`PresenceSystem.OthersInFlight`).
 
+### From the first real session (2026-09-07) - as built
+
+The host's log of the first Steam session with a friend showed three things the harness had not. Climbing
+out of a friend's rocket killed the kerbal 130 ms later on the climber's machine and broke the rocket into
+three on the friend's: a live object meeting a replica. Replica parts are kinematic now and swept to their
+pose (`Rigidbody.MovePosition`) rather than teleported, and a posed kerbal keeps only its trigger colliders.
+A player in the flight scene whose kerbal was not aboard anything reported "mission control", so the pilot's
+staging and throttle were never sent to them and their copy of the rocket showed no plumes, no noise and no
+chutes on re-entry; that is `PresenceState.Spectating` now (protocol 8), and it receives the pilot's actions
+and control state for the vessel it watches. And the boarding report read the kerbal's name after KSP had
+already moved it, found nothing, and said nothing, so the owner never seated the player and the next
+snapshot rebuilt their copy without them; the name is read in a prefix now. Also: the rails altitude cap no
+longer holds physics warp at 1x, and staging-column edits in the VAB are shared.
+
 ### Boarding, EVA, death
 - EVA: stock hatch → `FlightEVA.fetch.spawnEVA(...)`; `onCrewOnEva` gives the new EVA vessel (`vessel.isEVA`). Client sends `CrewEva` + the EVA vessel's proto once the EVA FSM is ready (LMP waits for it). Only the avatar's owner may EVA their avatar (`onAttemptEva` handler + `ControlTypes.EVA_INPUT` lock). Presence → `OnEva`; source vessel roles recomputed (pilot EVA → handover).
 - Boarding: postfix `KerbalEVA.proceedAndBoard`/`BoardPart`/`BoardSeat` (LMP `KerbalEVA_proceedAndBoard.cs`, `KerbalEVA_BoardSeat.cs`) → `CrewBoard`; boarding client sends `VesselRemove` for its EVA vessel and applies the crew locally (`part.AddCrewmember`); the owner's next proto confirms; presence → `InFlight`.

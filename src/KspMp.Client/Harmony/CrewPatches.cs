@@ -35,18 +35,42 @@ namespace KspMp.Harmony
     [HarmonyPatch(typeof(KerbalEVA), "proceedAndBoard")]
     internal static class KerbalEVA_ProceedAndBoard
     {
-        private static void Postfix(KerbalEVA __instance, Part p)
+        // Read before KSP boards: by the time the method returns the kerbal has left its EVA vessel, and the
+        // report found no kerbal to name and said nothing - the owner never seated the player, whose copy of
+        // the craft was then rebuilt without them.
+        private static void Prefix(KerbalEVA __instance, out BoardingInfo __state) => __state = BoardingInfo.Of(__instance);
+
+        private static void Postfix(KerbalEVA __instance, Part p, BoardingInfo __state)
         {
-            ReportBoarding(__instance, p, seatIndex: -1);
+            ReportBoarding(__state, p, seatIndex: -1);
         }
 
-        internal static void ReportBoarding(KerbalEVA eva, Part target, int seatIndex)
+        internal struct BoardingInfo
+        {
+            public string KerbalName;
+            public System.Guid EvaVesselId;
+
+            public static BoardingInfo Of(KerbalEVA eva)
+            {
+                var info = new BoardingInfo();
+                if (eva == null || eva.vessel == null) return info;
+                info.EvaVesselId = eva.vessel.id;
+                var crew = eva.vessel.GetVesselCrew();
+                if (crew != null && crew.Count > 0 && crew[0] != null) info.KerbalName = crew[0].name;
+                return info;
+            }
+        }
+
+        internal static void ReportBoarding(BoardingInfo who, Part target, int seatIndex)
         {
             var addon = KspMpAddon.Instance;
-            if (addon == null || addon.Network == null || !addon.Network.IsConnected || eva == null || target == null || target.vessel == null) return;
+            if (addon == null || addon.Network == null || !addon.Network.IsConnected || target == null || target.vessel == null) return;
             if (!addon.Vessels.IsOwnedByOther(target.vessel.id)) return;   // ours to do locally
-            var kerbal = eva.vessel != null ? eva.vessel.GetVesselCrew() : null;
-            if (kerbal == null || kerbal.Count == 0 || kerbal[0] == null) return;
+            if (string.IsNullOrEmpty(who.KerbalName))
+            {
+                Log.Warn("Boarding " + target.vessel.GetDisplayName() + " could not be reported: the kerbal's name was not known before the board");
+                return;
+            }
             try
             {
                 addon.Network.Send(MessageId.CrewBoard, new CrewBoardMsg
@@ -54,10 +78,10 @@ namespace KspMp.Harmony
                     ToVesselId = target.vessel.id,
                     PartFlightId = target.flightID,
                     SeatIndex = seatIndex,
-                    KerbalName = kerbal[0].name,
-                    EvaVesselId = eva.vessel.id,
+                    KerbalName = who.KerbalName,
+                    EvaVesselId = who.EvaVesselId,
                 }, Channel.Control, Delivery.ReliableOrdered);
-                Log.Info("Told " + target.vessel.GetDisplayName() + "'s owner that " + kerbal[0].name + " is boarding");
+                Log.Info("Told " + target.vessel.GetDisplayName() + "'s owner that " + who.KerbalName + " is boarding");
             }
             catch (Exception e)
             {
@@ -69,12 +93,14 @@ namespace KspMp.Harmony
     [HarmonyPatch(typeof(KerbalEVA), nameof(KerbalEVA.BoardSeat))]
     internal static class KerbalEVA_BoardSeat
     {
-        private static void Postfix(KerbalEVA __instance, KerbalSeat seat, bool __result)
+        private static void Prefix(KerbalEVA __instance, out KerbalEVA_ProceedAndBoard.BoardingInfo __state) => __state = KerbalEVA_ProceedAndBoard.BoardingInfo.Of(__instance);
+
+        private static void Postfix(KerbalEVA __instance, KerbalSeat seat, bool __result, KerbalEVA_ProceedAndBoard.BoardingInfo __state)
         {
             if (!__result || seat == null) return;
             // An external command seat is a part module, not a numbered seat in a pod, so there is no index to
             // send: -1 means "the first free one", which for a one-seat part is the only one.
-            KerbalEVA_ProceedAndBoard.ReportBoarding(__instance, seat.part, seatIndex: -1);
+            KerbalEVA_ProceedAndBoard.ReportBoarding(__state, seat.part, seatIndex: -1);
         }
     }
 }

@@ -321,7 +321,8 @@ namespace KspMp.Server.Vessels
             {
                 if (target.ClientId == from.ClientId) continue;
                 var aboard = _roles.TryGetValue(vesselId, out var roles) && roles.Aboard.Contains(target.ClientId);
-                var flying = target.Presence.State == PresenceState.InFlight || target.Presence.State == PresenceState.OnEva;
+                var flying = target.Presence.State == PresenceState.InFlight || target.Presence.State == PresenceState.OnEva
+                             || target.Presence.State == PresenceState.Spectating;
                 if (!aboard && !flying) continue;
                 _server.Send(target.Peer, id, message, channel, delivery);
                 sent++;
@@ -329,10 +330,16 @@ namespace KspMp.Server.Vessels
             return sent;
         }
 
-        /// <summary>The owner's merged control state goes to everyone else aboard.</summary>
+        /// <summary>The owner's merged control state goes to everyone else aboard, and to anyone watching this vessel from outside: their copy's engines burn by this throttle.</summary>
         public void RelayStateToAboard(ClientSession from, Guid vesselId, CtrlInputMsg state)
         {
             if (!_server.Authority.IsOwnedBy(vesselId, from.ClientId) || !_roles.TryGetValue(vesselId, out var roles)) return;
+            foreach (var watcher in _server.HandshakenClients)
+            {
+                if (watcher.ClientId == from.ClientId || roles.Aboard.Contains(watcher.ClientId)) continue;
+                if (watcher.Presence.State != PresenceState.Spectating || watcher.Presence.VesselId != vesselId) continue;
+                _server.Send(watcher.Peer, MessageId.CtrlState, state, Channel.State, Delivery.Sequenced);
+            }
             foreach (var clientId in roles.Aboard)
             {
                 if (clientId == from.ClientId) continue;
