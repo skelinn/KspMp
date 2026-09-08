@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading;
 using KspMp.Server;
 using KspMp.Server.Universe;
 using KspMp.Shared.Protocol;
@@ -17,14 +18,26 @@ namespace KspMp.Net
     /// game, which connects to 127.0.0.1 like anybody else, because a host cannot send Steam packets to
     /// itself. Steam takes everyone else, without anyone touching a router. Either can fail to start without
     /// taking the other down.
+    ///
+    /// The server runs on its own thread. Polled once a frame it went quiet for every scene load the host
+    /// made - twenty seconds on a slow machine - during which nobody else got time, warp, chat or each
+    /// other's positions, and a guest's KSP could give the host up for dead. The server touches nothing of
+    /// Unity's; only Steam's callback pump stays on the main thread.
     /// </summary>
     public sealed class InProcessHost : IDisposable
     {
+        private const int PollIntervalMs = 10;
+
         private ServerCore _server;
         private CompositeTransport _transport;
         private Steam.SteamP2PTransport _steam;
+        private Thread _thread;
+        private volatile bool _stopping;
+        private readonly object _gate = new object();
 
         public bool Running => _server != null;
+        /// <summary>True when the serving thread died; the main thread then polls in its place.</summary>
+        public bool ThreadFaulted { get; private set; }
         /// <summary>The Steam ID friends need to join, or 0 when hosting is UDP-only.</summary>
         public ulong SteamId { get; private set; }
         public int Port { get; private set; }
@@ -61,7 +74,7 @@ namespace KspMp.Net
 
                 if (Steam.SteamP2P.TryInitialise())
                 {
-                    _steam = new Steam.SteamP2PTransport(true, 0, expectedSteamIds, m => Log.Info("[host/steam] " + m));
+                    _steam = new Steam.SteamP2PTransport(true, 0, expectedSteamIds, m => Log.Info("[host/steam] " + m)) { RunCallbacks = false };
                     transports.Add(_steam);
                     SteamId = Steam.SteamP2P.LocalSteamId;
                 }
@@ -77,6 +90,10 @@ namespace KspMp.Net
                 // by the composite transport and left the host "hosting" a game it could not enter itself.
                 if (udp.LocalPort == 0) throw new InvalidOperationException("UDP port " + config.Port + " could not be opened - is another KspMp server already using it?");
                 Port = udp.LocalPort;
+                _stopping = false;
+                ThreadFaulted = false;
+                _thread = new Thread(Serve) { IsBackground = true, Name = "KspMp host" };
+                _thread.Start();
 
                 Log.Info("Hosting on UDP " + Port + (SteamId != 0 ? ", and over Steam as " + SteamId : "")
                          + "; world in " + dir);
@@ -91,31 +108,74 @@ namespace KspMp.Net
         }
 
         /// <summary>Lets a friend in without restarting the game. False when Steam is not hosting.</summary>
-        public bool Allow(ulong steamId) => _steam != null && _steam.Allow(steamId);
+        public bool Allow(ulong steamId)
+        {
+            if (_steam == null) return false;
+            lock (_gate) return _steam.Allow(steamId);
+        }
 
-        /// <summary>Call once a frame, alongside the client's own polling.</summary>
+        private void Serve()
+        {
+            try
+            {
+                while (!_stopping)
+                {
+                    lock (_gate)
+                    {
+                        if (_server == null || _stopping) break;
+                        try { _server.Poll(); }
+                        catch (Exception e) { Log.Exception("Hosted server", e); }
+                    }
+                    Thread.Sleep(PollIntervalMs);
+                }
+            }
+            catch (Exception e)
+            {
+                // Not an exception from the server (those are caught above): the thread itself failed. The
+                // main thread takes over polling, so the game goes on, slower during scene loads.
+                ThreadFaulted = true;
+                Log.Exception("The hosting thread stopped; serving from the main thread instead", e);
+            }
+        }
+
+        /// <summary>Call once a frame: pumps Steam's callbacks, and serves from here only if the thread is gone.</summary>
         public void Poll()
         {
             if (_server == null) return;
-            try { _server.Poll(); }
-            catch (Exception e) { Log.Exception("Hosted server", e); }
+            if (_steam != null) Steam.SteamP2P.Poll();
+            if (_thread != null && _thread.IsAlive && !ThreadFaulted) return;
+            lock (_gate)
+            {
+                if (_server == null) return;
+                try { _server.Poll(); }
+                catch (Exception e) { Log.Exception("Hosted server", e); }
+            }
         }
 
         public void Stop()
         {
-            if (_server != null)
+            _stopping = true;
+            if (_thread != null)
             {
-                try { _server.Stop(); }
-                catch (Exception e) { Log.Exception("Stopping the hosted server", e); }
-                _server = null;
+                if (_thread.IsAlive && !_thread.Join(3000)) Log.Warn("The hosting thread did not stop in time");
+                _thread = null;
             }
-            if (_transport != null)
+            lock (_gate)
             {
-                try { _transport.Dispose(); }
-                catch (Exception e) { Log.Exception("Disposing host transports", e); }
-                _transport = null;
+                if (_server != null)
+                {
+                    try { _server.Stop(); }
+                    catch (Exception e) { Log.Exception("Stopping the hosted server", e); }
+                    _server = null;
+                }
+                if (_transport != null)
+                {
+                    try { _transport.Dispose(); }
+                    catch (Exception e) { Log.Exception("Disposing host transports", e); }
+                    _transport = null;
+                }
+                _steam = null;
             }
-            _steam = null;
             SteamId = 0;
         }
 

@@ -902,6 +902,11 @@ namespace KspMp
         private void OnWelcomedForLaunchOptions(Shared.Protocol.WelcomeMsg welcome)
         {
             if (!string.IsNullOrEmpty(Launch.Say)) Chat.Send(Launch.Say);
+            // Two players both called "Kerbonaut" (the default after a fresh PluginData) cannot tell each
+            // other's rows apart in any list. Once, after the first successful connection.
+            if (string.Equals((Settings.PlayerName ?? "").Trim(), Settings.DefaultPlayerName, System.StringComparison.OrdinalIgnoreCase) && Notices != null)
+                Notices.Post("name", "You are playing as '" + Settings.DefaultPlayerName + "'. Type your name in the KspMp window at the main menu (\"Your name\") before the next game so your friends can tell who is who.",
+                             Ui.Theme.Warn, ttlSeconds: 30f);
             if (welcome.NeedsAvatar && !string.IsNullOrEmpty(Launch.AvatarName))
             {
                 Log.Info("Auto-claiming avatar " + Launch.AvatarName + " (" + Launch.AvatarTrait + ")");

@@ -186,24 +186,19 @@ namespace KspMp.Ui
                 {
                     GUILayout.Label(Theme.Tint("in the " + facility, Theme.Dim), Theme.Chip);
                 }
-                else if (_confirmJoin == session.OwnerClientId)
-                {
-                    GUILayout.Label(Theme.Tint("your craft will be set aside", Theme.Warn), Theme.Chip);
-                    if (GUILayout.Button("Join anyway", Theme.Primary, GUILayout.Height(Theme.ControlHeight))) { editor.JoinSession(session.OwnerClientId); _confirmJoin = 0; }
-                    if (GUILayout.Button("Cancel", GUILayout.Height(Theme.ControlHeight))) _confirmJoin = 0;
-                }
                 else if (GUILayout.Button("Join", GUILayout.Height(Theme.ControlHeight)))
                 {
-                    // Joining replaces what is on your bench, so say so when there is something to lose.
-                    if (editor.OnOwnBench && editor.OwnBenchHasParts()) _confirmJoin = session.OwnerClientId;
-                    else editor.JoinSession(session.OwnerClientId);
+                    // One click. Whatever is on your bench is set aside, not lost, and comes back when you
+                    // leave; the "Join anyway / Cancel" step this used to have read as a button that did
+                    // nothing to a player who had a pod down ("had to spam it").
+                    Log.Info("Join clicked: " + NameOf(session.OwnerClientId) + "'s bench");
+                    var owner = session.OwnerClientId;
+                    _addon.Defer(() => editor.JoinSession(owner));
                 }
                 GUILayout.FlexibleSpace();
                 GUILayout.EndHorizontal();
             }
         }
-
-        private int _confirmJoin;
 
         /// <summary>Who is flying what, and the buttons that move that around.</summary>
         private void DrawFlight()

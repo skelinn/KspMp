@@ -39,7 +39,8 @@ namespace KspMp.Systems
         {
             get
             {
-                if (!_hasState || _state.RateIndex == 0) return "1x";
+                if (!_hasState || _state.RateIndex == 0)
+                    return _hasState && _state.LimitingClientId != 0 ? "1x, held by " + NameOf(_state.LimitingClientId) : "1x";
                 var text = _state.Rate + "x" + (_state.Mode == WarpMode.Physics ? " physics" : "");
                 if (_state.RequesterClientId != 0) text += " by " + NameOf(_state.RequesterClientId);
                 if (_state.LimitingClientId != 0) text += ", limited by " + NameOf(_state.LimitingClientId);
@@ -116,7 +117,19 @@ namespace KspMp.Systems
         {
             _state = Envelope.Read<WarpStateMsg>(body);
             _hasState = true;
+            var wished = _desired > 0;
             if (_state.RateIndex == 0) _desired = 0;   // warp ended for everyone; a wish does not outlive it
+            if (_state.RateIndex == 0 && _state.LimitingClientId != 0)
+            {
+                // Pressing the warp key and watching nothing happen looked broken. Say who is holding
+                // everyone at 1x: somebody in the atmosphere or moving over the surface cannot rails-warp,
+                // and in this timeline neither can anyone else until they can.
+                var held = _state.LimitingClientId == Net.ClientId
+                    ? "Warp held at 1x by you: your craft cannot warp where it is (atmosphere or moving over the surface)"
+                    : "Warp held at 1x: " + NameOf(_state.LimitingClientId) + "'s craft cannot warp where it is";
+                if (wished || _state.LimitingClientId == Net.ClientId)
+                    ScreenMessages.PostScreenMessage(held, 5f, ScreenMessageStyle.UPPER_CENTER);
+            }
             Addon.TimeSync.OnWarpState(_state.Ut, _state.Rate);
             Log.Info("Warp state: " + StatusText);
             Apply();

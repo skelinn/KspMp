@@ -197,9 +197,9 @@ Options added for the shared-building, shared-flight and EVA work, on top of tho
 
 Worth knowing before you play, roughly in the order you would hit them.
 
-- **Hosting from inside the game runs on the game's main thread**, so while the host's KSP loads a scene
-  (tens of seconds) nothing is relayed between the other players; they see each other freeze and then catch
-  up. A dedicated server (`KspMp.Server.Host`) does not have this.
+- **Hosting from inside the game keeps serving while the host loads a scene** (the server has its own
+  thread), but the host's own rocket is not simulated during the load, so the others see it hold still and
+  then catch up. A dedicated server (`KspMp.Server.Host`) is still the smoother option for three or more.
 - **The introducer trusts registrations.** Two hosts using the same join code overwrite each other; pick a
   code nobody else would.
 - **A host must know a joining player's Steam ID up front.** Steam discards packets from a session nobody

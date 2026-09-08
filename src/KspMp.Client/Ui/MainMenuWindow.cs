@@ -41,6 +41,7 @@ namespace KspMp.Ui
 
             if (net.State == ConnectionState.Disconnected)
             {
+                DrawIdentity(settings);
                 DrawDirectConnect(net, settings);
                 DrawSteam(net, settings);
             }
@@ -111,14 +112,23 @@ namespace KspMp.Ui
             Theme.Separator();
         }
 
+        /// <summary>The name the other players see. Above both ways to connect: it was tucked into the direct-connect box and Steam players never set it.</summary>
+        private void DrawIdentity(Settings settings)
+        {
+            Theme.BeginSection("YOU");
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Your name", Theme.FieldKey, GUILayout.Width(LabelColumn));
+            settings.PlayerName = GUILayout.TextField(settings.PlayerName ?? "", 24);
+            GUILayout.EndHorizontal();
+            var unnamed = string.Equals((settings.PlayerName ?? "").Trim(), Settings.DefaultPlayerName, System.StringComparison.OrdinalIgnoreCase);
+            GUILayout.Label(unnamed ? Theme.Tint("Pick a name: every player starts as '" + Settings.DefaultPlayerName + "', and two of those cannot be told apart.", Theme.Warn)
+                                    : "Shown to the other players, in chat and over your Kerbal.", Theme.Caption);
+            Theme.EndSection();
+        }
+
         private void DrawDirectConnect(ClientNetwork net, Settings settings)
         {
             Theme.BeginSection("DIRECT CONNECT");
-
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("Your name", Theme.FieldKey, GUILayout.Width(LabelColumn));
-            settings.PlayerName = GUILayout.TextField(settings.PlayerName, 24);
-            GUILayout.EndHorizontal();
 
             GUILayout.BeginHorizontal();
             GUILayout.Label("Address", Theme.FieldKey, GUILayout.Width(LabelColumn));

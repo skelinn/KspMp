@@ -52,6 +52,12 @@ namespace KspMp.Net.Steam
         }
 
         public bool IsRunning { get; private set; }
+        /// <summary>
+        /// Whether Poll pumps Steam's callbacks. Steam wants that done from one thread, the game's; a transport
+        /// polled from the hosting thread leaves it to the main thread and only moves packets, which Steam is
+        /// happy to do from anywhere.
+        /// </summary>
+        public bool RunCallbacks = true;
 
         /// <summary>
         /// Lets a player in while the game is already running. Steam throws away packets from anyone whose
@@ -112,7 +118,7 @@ namespace KspMp.Net.Steam
         public void Poll()
         {
             if (!IsRunning) return;
-            SteamP2P.Poll();
+            if (RunCallbacks) SteamP2P.Poll();
 
             for (var channel = 0; channel < Channels; channel++)
                 while (SteamNative.SteamAPI_ISteamNetworking_IsP2PPacketAvailable(SteamP2P.Networking, out var size, channel))

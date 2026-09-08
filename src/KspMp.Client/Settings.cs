@@ -8,7 +8,8 @@ namespace KspMp
     {
         private const string NodeName = "KSPMP_SETTINGS";
 
-        public string PlayerName = "Kerbonaut";
+        public const string DefaultPlayerName = "Kerbonaut";
+        public string PlayerName = DefaultPlayerName;
         public Guid PlayerId = Guid.Empty;
         public string LastServer = "127.0.0.1";
         /// <summary>Password for LastServer, so it does not have to be retyped every session.</summary>

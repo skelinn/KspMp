@@ -344,6 +344,27 @@ already moved it, found nothing, and said nothing, so the owner never seated the
 snapshot rebuilt their copy without them; the name is read in a prefix now. Also: the rails altitude cap no
 longer holds physics warp at 1x, and staging-column edits in the VAB are shared.
 
+### Second pass on the first real session (2026-09-08) - as built
+
+Three things the players felt rather than saw in the log. "Join had to be spammed": the host's log shows
+one join message reaching the server, so the earlier clicks never sent one - the likeliest reason is the
+"Join anyway / Cancel" confirmation the button turned into when a pod was on the bench, which read as a
+button doing nothing. The craft is stashed and restored on Leave regardless, so the confirmation is gone:
+one click joins (deferred out of the GUI pass), a notice says the craft is set aside, and the click itself
+is logged so the next log tells. "Time warp is very buggy": a rails warp that somebody in the atmosphere
+holds at 1x was applied silently; the status chip now reads "1x, held by George" and a screen message
+says whose craft cannot warp where it is. Both players were called "Kerbonaut" (the default after a fresh
+PluginData): the name field sits in its own section above both ways to connect, and a player still called
+that is told so by a notice on their first successful connection.
+
+And the in-game host now serves from its own thread (`InProcessHost.Serve`). Polled once a frame, the
+server went quiet for every scene load the host made - twenty seconds on a slow machine - during which
+nobody else got time, warp, chat, or each other's positions, and a guest's KSP could give the host up for
+dead; that is the "unsyncs a lot" feeling. The server touches nothing of Unity's; Steam's callback pump
+stays on the main thread (`SteamP2PTransport.RunCallbacks = false` for the hosted transport, pumped from
+`InProcessHost.Poll`), and Steam's packet calls are thread-safe. Allow/Stop take the same lock as the
+serving loop; if the thread ever dies the main thread polls in its place and says so.
+
 ### Boarding, EVA, death
 - EVA: stock hatch → `FlightEVA.fetch.spawnEVA(...)`; `onCrewOnEva` gives the new EVA vessel (`vessel.isEVA`). Client sends `CrewEva` + the EVA vessel's proto once the EVA FSM is ready (LMP waits for it). Only the avatar's owner may EVA their avatar (`onAttemptEva` handler + `ControlTypes.EVA_INPUT` lock). Presence → `OnEva`; source vessel roles recomputed (pilot EVA → handover).
 - Boarding: postfix `KerbalEVA.proceedAndBoard`/`BoardPart`/`BoardSeat` (LMP `KerbalEVA_proceedAndBoard.cs`, `KerbalEVA_BoardSeat.cs`) → `CrewBoard`; boarding client sends `VesselRemove` for its EVA vessel and applies the crew locally (`part.AddCrewmember`); the owner's next proto confirms; presence → `InFlight`.

@@ -66,6 +66,7 @@ namespace KspMp.Systems
 
         private bool _skewing;
         private float _nextSnapAllowedAt;
+        private float _nextSnapLogAt;
 
         private void ResetSkew()
         {
@@ -125,7 +126,13 @@ namespace KspMp.Systems
                 Planetarium.SetUniversalTime(ServerUt);
                 Corrections++;
                 ResetSkew();
-                Log.Info("UT snapped to server time (drift was " + drift.ToString("F3") + " s" + (rateMismatch ? ", local warp " + localRate + "x vs server " + Rate + "x" : "") + ")");
+                // The editor's clock stands still, so it is snapped every second to keep the game's UT current
+                // for the launch; saying so every second is noise there.
+                if (HighLogic.LoadedSceneIsFlight || now >= _nextSnapLogAt)
+                {
+                    _nextSnapLogAt = now + 10f;
+                    Log.Info("UT snapped to server time (drift was " + drift.ToString("F3") + " s" + (rateMismatch ? ", local warp " + localRate + "x vs server " + Rate + "x" : "") + ")");
+                }
             }
             else if (HighLogic.LoadedSceneIsFlight)
             {

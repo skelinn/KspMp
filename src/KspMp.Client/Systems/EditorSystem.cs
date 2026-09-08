@@ -548,7 +548,11 @@ namespace KspMp.Systems
         /// </summary>
         public void JoinSession(int ownerClientId)
         {
-            if (!_joined || ownerClientId == Net.ClientId || ownerClientId == _sessionOwner) return;
+            if (!_joined || ownerClientId == Net.ClientId || ownerClientId == _sessionOwner)
+            {
+                Log.Warn("Join of #" + ownerClientId + "'s bench ignored: " + (!_joined ? "our bench is not open" : ownerClientId == Net.ClientId ? "that is our own bench" : "we are already there"));
+                return;
+            }
             _stash = StashWorkbench();
             _sessionOwner = ownerClientId;
             _revision = 0;
@@ -567,6 +571,12 @@ namespace KspMp.Systems
             }
             Net.Send(MessageId.EditorSessionJoin, new EditorSessionJoinMsg { OwnerClientId = ownerClientId }, Channel.Control, Delivery.ReliableOrdered);
             Log.Info("Joining " + NameOf(ownerClientId) + "'s workbench" + (_stash != null ? " (ours is stashed)" : ""));
+            if (_stash != null)
+            {
+                var stashed = KSP.Localization.Localizer.Format(_stash.GetValue("ship") ?? "");
+                Addon.Notices.Post("bench-stash", "Your craft" + (string.IsNullOrEmpty(stashed) ? "" : " '" + stashed + "'") + " is set aside; it comes back when you leave "
+                                                  + NameOf(ownerClientId) + "'s bench", Ui.Theme.Ink, ttlSeconds: 12f);
+            }
         }
 
         /// <summary>Back to our own bench, with whatever we had stashed when we left it.</summary>
