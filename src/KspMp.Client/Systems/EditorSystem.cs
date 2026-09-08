@@ -75,6 +75,7 @@ namespace KspMp.Systems
             Net.RegisterHandler(MessageId.EditorPresence, OnPresence);
             GameEvents.onEditorShipModified.Add(OnShipModified);
             GameEvents.onEditorShipCrewModified.Add(OnCrewModified);
+            GameEvents.StageManager.OnGUIStageSequenceModified.Add(OnStageSequenceModified);
             GameEvents.onEditorRestart.Add(OnEditorRestart);
             GameEvents.onEditorLoad.Add(OnEditorLoad);
             _facility = EditorDriver.editorFacility == EditorFacility.SPH ? EditorFacilityKind.Sph : EditorFacilityKind.Vab;
@@ -96,6 +97,7 @@ namespace KspMp.Systems
             Net.UnregisterHandler(MessageId.EditorPresence, OnPresence);
             GameEvents.onEditorShipModified.Remove(OnShipModified);
             GameEvents.onEditorShipCrewModified.Remove(OnCrewModified);
+            GameEvents.StageManager.OnGUIStageSequenceModified.Remove(OnStageSequenceModified);
             GameEvents.onEditorRestart.Remove(OnEditorRestart);
             GameEvents.onEditorLoad.Remove(OnEditorLoad);
             _others.Clear();
@@ -146,6 +148,13 @@ namespace KspMp.Systems
         }
 
         // ---- local changes going out ----
+
+        /// <summary>Dragging icons in the staging column changes the craft without firing onEditorShipModified.</summary>
+        private void OnStageSequenceModified()
+        {
+            if (Applying || !_joined) return;
+            _dirtyAt = Time.realtimeSinceStartup;
+        }
 
         private void OnCrewModified(VesselCrewManifest manifest)
         {

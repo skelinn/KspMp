@@ -87,10 +87,10 @@ namespace KspMp.Server.Services
                 requester = pair.Key;
             }
 
-            if (index > 0)
+            if (index > 0 && mode == WarpMode.Rails)
             {
-                // A client's cap applies to physics warp too: a KSP that refused the shared rate reports what it
-                // accepted, and that is the ceiling whichever mode it is in.
+                // Rails only: the cap a client reports is its altitude limit for rails warp, which is 0 in the
+                // atmosphere - applying it to physics warp held everyone at 1x whenever anyone was flying low.
                 foreach (var pair in _wishes)
                 {
                     if (pair.Value.MaxRails < 0 || pair.Value.MaxRails >= index) continue;

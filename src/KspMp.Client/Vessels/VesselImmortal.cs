@@ -73,8 +73,12 @@ namespace KspMp.Vessels
             if (vessel.parts == null) return;
             foreach (var part in vessel.parts)
             {
-                if (part == null || part.rb == null) continue;
-                part.rb.isKinematic = frozen;
+                if (part == null) continue;
+                if (part.rb != null) part.rb.isKinematic = frozen;
+                // A posed kerbal must not touch anything: as a kinematic body at the hatch it shoved the live
+                // rocket on its owner's machine hard enough to break it apart. Triggers (ladders) stay.
+                foreach (var collider in part.GetComponentsInChildren<UnityEngine.Collider>(true))
+                    if (collider != null && !collider.isTrigger) collider.enabled = !frozen;
             }
         }
 
@@ -104,6 +108,7 @@ namespace KspMp.Vessels
             foreach (var part in vessel.parts)
             {
                 if (part == null) continue;
+                if (part.rb != null) part.rb.isKinematic = false;
                 if (SavedValues.TryGetValue(part, out var saved))
                 {
                     part.crashTolerance = saved.CrashTolerance;
@@ -122,6 +127,9 @@ namespace KspMp.Vessels
         {
             foreach (var part in vessel.parts)
             {
+                // Kinematic: a replica is moved into place by its owner's states, not by physics here. As a
+                // dynamic body it was teleported each step and crushed a live kerbal climbing out of it.
+                if (part != null && part.rb != null && !part.rb.isKinematic) part.rb.isKinematic = true;
                 if (part == null || float.IsPositiveInfinity(part.crashTolerance)) continue;
                 if (!SavedValues.ContainsKey(part))
                     SavedValues[part] = new Saved { CrashTolerance = part.crashTolerance, MaxPressure = part.maxPressure };

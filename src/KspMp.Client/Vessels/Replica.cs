@@ -141,13 +141,22 @@ namespace KspMp.Vessels
             {
                 var part = parts[i];
                 var partRotation = rotation * part.orgRot;
+                var full = part.physicalSignificance == Part.PhysicalSignificance.FULL;
+                if (!vessel.packed && part.rb != null && part.rb.isKinematic && full)
+                {
+                    // A kinematic body is swept to its new pose rather than teleported, so a live kerbal
+                    // touching it is carried along instead of crushed.
+                    part.rb.MoveRotation(partRotation);
+                    part.rb.MovePosition(position + (Vector3d)(rotation * part.orgPos));
+                    continue;
+                }
                 part.partTransform.rotation = partRotation;
-                if (vessel.packed || part.physicalSignificance == Part.PhysicalSignificance.FULL)
+                if (vessel.packed || full)
                     part.partTransform.position = position + (Vector3d)(rotation * part.orgPos);
                 if (!vessel.packed && part.rb != null)
                 {
                     part.rb.rotation = partRotation;
-                    if (part.physicalSignificance == Part.PhysicalSignificance.FULL) part.rb.position = part.partTransform.position;
+                    if (full) part.rb.position = part.partTransform.position;
                 }
                 part.ResumeVelocity();
             }
