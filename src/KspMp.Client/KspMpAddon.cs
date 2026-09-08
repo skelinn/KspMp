@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Collections.Generic;
 using KspMp.Harmony;
 using KspMp.Net;
@@ -79,6 +80,7 @@ namespace KspMp
             Instance = this;
             DontDestroyOnLoad(gameObject);
 
+            Log.OpenFile(Path.Combine(Path.GetDirectoryName(Settings.FilePath), "kspmp.log"));
             Log.Info("KspMp " + Version + " starting. KSP " + Versioning.GetVersionString() + ", Unity " + Application.unityVersion
                      + ", " + Application.platform + ", runtime " + Environment.Version);
 

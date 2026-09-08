@@ -365,6 +365,11 @@ stays on the main thread (`SteamP2PTransport.RunCallbacks = false` for the hoste
 `InProcessHost.Poll`), and Steam's packet calls are thread-safe. Allow/Stop take the same lock as the
 serving loop; if the thread ever dies the main thread polls in its place and says so.
 
+The server names whoever cannot rails-warp at all (cap 0) whenever nobody warps, so the chip's "held by"
+lasts as long as the reason does, and the holder is told once. And the mod writes its own log,
+`GameData/KspMp/PluginData/kspmp.log` (`Log.OpenFile`, truncated per run, shared under a lock with the
+hosting thread): asking a friend for a forty-megabyte KSP.log never produced one.
+
 ### Boarding, EVA, death
 - EVA: stock hatch → `FlightEVA.fetch.spawnEVA(...)`; `onCrewOnEva` gives the new EVA vessel (`vessel.isEVA`). Client sends `CrewEva` + the EVA vessel's proto once the EVA FSM is ready (LMP waits for it). Only the avatar's owner may EVA their avatar (`onAttemptEva` handler + `ControlTypes.EVA_INPUT` lock). Presence → `OnEva`; source vessel roles recomputed (pilot EVA → handover).
 - Boarding: postfix `KerbalEVA.proceedAndBoard`/`BoardPart`/`BoardSeat` (LMP `KerbalEVA_proceedAndBoard.cs`, `KerbalEVA_BoardSeat.cs`) → `CrewBoard`; boarding client sends `VesselRemove` for its EVA vessel and applies the crew locally (`part.AddCrewmember`); the owner's next proto confirms; presence → `InFlight`.
