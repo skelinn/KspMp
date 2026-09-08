@@ -85,6 +85,26 @@ public class WarpNegotiationTests
     }
 
     [Fact]
+    public void WhoeverCannotWarpAtAllIsNamedWhileTheyCannot()
+    {
+        var hub = new LoopbackHub();
+        using var server = NewServer(hub);
+        var a = Join(hub, server, "Alice");
+        var b = Join(hub, server, "Bob", a);
+
+        Want(b, 0, WarpMode.Rails, maxRails: 0); // Bob is in the atmosphere: no rails warp for anyone
+        Want(a, 5);
+        TestClient.Pump(server, a, b);
+        var state = a.Last<WarpStateMsg>()!.Value;
+        Assert.Equal(1f, state.Rate);
+        Assert.Equal(b.ClientId, state.LimitingClientId);   // and it stays said after Alice's wish is dropped
+
+        Want(b, 0, WarpMode.Rails, maxRails: -1); // Bob reaches space
+        TestClient.Pump(server, a, b);
+        Assert.Equal(0, a.Last<WarpStateMsg>()!.Value.LimitingClientId);
+    }
+
+    [Fact]
     public void PhysicsWarpIsComparedByRateAndHostModeIgnoresOthers()
     {
         var hub = new LoopbackHub();

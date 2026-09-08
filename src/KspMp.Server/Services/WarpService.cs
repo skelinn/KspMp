@@ -106,6 +106,15 @@ namespace KspMp.Server.Services
                 }
             }
 
+            if (index == 0 && limiting == 0)
+            {
+                // Nobody is warping: still name anyone who could not, so the others' warp chip reads
+                // "1x, held by George" for as long as George is in the atmosphere, not for the two seconds
+                // between somebody's wish and the next cap report.
+                foreach (var pair in _wishes)
+                    if (pair.Value.MaxRails == 0) { limiting = pair.Key; break; }
+            }
+
             var changed = mode != Mode || index != RateIndex || requester != RequesterClientId || limiting != LimitingClientId;
             Mode = mode;
             RateIndex = index;

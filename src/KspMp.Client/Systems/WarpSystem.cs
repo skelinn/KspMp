@@ -20,6 +20,7 @@ namespace KspMp.Systems
         private bool _hasState;
         private int _desired;
         private WarpMode _desiredMode;
+        private int _lastLimiting;
         private int _reportedCap = int.MinValue;
         private float _nextCapCheckAt;
         private float _sceneLoadedAt;
@@ -127,9 +128,11 @@ namespace KspMp.Systems
                 var held = _state.LimitingClientId == Net.ClientId
                     ? "Warp held at 1x by you: your craft cannot warp where it is (atmosphere or moving over the surface)"
                     : "Warp held at 1x: " + NameOf(_state.LimitingClientId) + "'s craft cannot warp where it is";
-                if (wished || _state.LimitingClientId == Net.ClientId)
+                // The one holding it is told once, when it starts being them; a player who asked is told every time.
+                if (wished || (_state.LimitingClientId == Net.ClientId && _state.LimitingClientId != _lastLimiting))
                     ScreenMessages.PostScreenMessage(held, 5f, ScreenMessageStyle.UPPER_CENTER);
             }
+            _lastLimiting = _state.LimitingClientId;
             Addon.TimeSync.OnWarpState(_state.Ut, _state.Rate);
             Log.Info("Warp state: " + StatusText);
             Apply();
