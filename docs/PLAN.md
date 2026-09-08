@@ -370,6 +370,12 @@ lasts as long as the reason does, and the holder is told once. And the mod write
 `GameData/KspMp/PluginData/kspmp.log` (`Log.OpenFile`, truncated per run, shared under a lock with the
 hosting thread): asking a friend for a forty-megabyte KSP.log never produced one.
 
+A boarding report names the seat the kerbal took on their machine; when that seat is filled differently
+on the owner's copy the owner now tries any seat in the part, then any seat aboard, and a repeated
+report for a kerbal already aboard is a no-op. A kerbal seated nowhere on the owner's side is a kerbal
+the owner's next snapshot removes from the boarder's copy, which is what "I was not in the rocket any
+more" was.
+
 ### Boarding, EVA, death
 - EVA: stock hatch → `FlightEVA.fetch.spawnEVA(...)`; `onCrewOnEva` gives the new EVA vessel (`vessel.isEVA`). Client sends `CrewEva` + the EVA vessel's proto once the EVA FSM is ready (LMP waits for it). Only the avatar's owner may EVA their avatar (`onAttemptEva` handler + `ControlTypes.EVA_INPUT` lock). Presence → `OnEva`; source vessel roles recomputed (pilot EVA → handover).
 - Boarding: postfix `KerbalEVA.proceedAndBoard`/`BoardPart`/`BoardSeat` (LMP `KerbalEVA_proceedAndBoard.cs`, `KerbalEVA_BoardSeat.cs`) → `CrewBoard`; boarding client sends `VesselRemove` for its EVA vessel and applies the crew locally (`part.AddCrewmember`); the owner's next proto confirms; presence → `InFlight`.

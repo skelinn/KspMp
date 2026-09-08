@@ -124,10 +124,30 @@ namespace KspMp.Systems
                     Log.Warn("Cannot seat " + msg.KerbalName + ": they are not in our roster");
                     return;
                 }
-                var seated = msg.SeatIndex >= 0 ? part.AddCrewmemberAt(crew, msg.SeatIndex) : part.AddCrewmemberAt(crew, FirstFreeSeat(part));
+                if (FindPartWith(vessel, msg.KerbalName, out _) != null)
+                {
+                    // Already aboard here (a repeated report): nothing to do, and nothing to complain about.
+                    Log.Info(msg.KerbalName + " is already aboard " + vessel.GetDisplayName());
+                    return;
+                }
+                // The seat they took on their machine first; failing that (a seat our copy has filled
+                // differently) any seat in the part, then any seat on the craft. A kerbal seated nowhere
+                // here is a kerbal our next snapshot removes from their copy.
+                var seated = msg.SeatIndex >= 0 && part.AddCrewmemberAt(crew, msg.SeatIndex);
+                if (!seated) seated = part.AddCrewmemberAt(crew, FirstFreeSeat(part));
                 if (!seated)
                 {
-                    Log.Warn("Cannot seat " + msg.KerbalName + " on " + vessel.GetDisplayName() + ": no free seat");
+                    for (var i = 0; i < vessel.parts.Count && !seated; i++)
+                    {
+                        var other = vessel.parts[i];
+                        if (other == part || other.CrewCapacity <= 0) continue;
+                        seated = other.AddCrewmemberAt(crew, FirstFreeSeat(other));
+                        if (seated) Log.Info(msg.KerbalName + " took a seat in " + other.partInfo.title + " instead: " + part.partInfo.title + " is full here");
+                    }
+                }
+                if (!seated)
+                {
+                    Log.Warn("Cannot seat " + msg.KerbalName + " on " + vessel.GetDisplayName() + ": no free seat anywhere aboard");
                     return;
                 }
                 crew.rosterStatus = ProtoCrewMember.RosterStatus.Assigned;
