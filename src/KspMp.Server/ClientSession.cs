@@ -13,6 +13,8 @@ namespace KspMp.Server
         /// <summary>Hello was refused; a disconnect is pending and further messages are ignored.</summary>
         public bool Rejected;
         public DateTime ConnectedAtUtc = DateTime.UtcNow;
+        /// <summary>When the last message came in: tells a live session from a dead one when the same player id shows up twice.</summary>
+        public DateTime LastHeardUtc = DateTime.UtcNow;
         public string AvatarKerbalName = "";
         public PresenceMsg Presence;
 

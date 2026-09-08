@@ -186,6 +186,7 @@ namespace KspMp.Server
         private void OnReceived(PeerId from, byte[] buffer, int offset, int length, Channel channel)
         {
             if (!_clients.TryGetValue(from, out var client) || client.Rejected) return;
+            client.LastHeardUtc = DateTime.UtcNow;
             // LiteNetLib's third argument is the end position, not a length. It merges several small messages
             // into one datagram, so every message after the first arrives at a non-zero offset - and passing the
             // length there would cut it short by exactly that offset.
@@ -433,6 +434,15 @@ namespace KspMp.Server
                 // has not timed out yet. The old one goes, the new one is let in - the player is not told to
                 // delete their settings file over it.
                 var stale = HandshakenClients.FirstOrDefault(c => c.PlayerId == hello.PlayerId && c != client);
+                if (stale != null && (DateTime.UtcNow - stale.LastHeardUtc).TotalSeconds < 5)
+                {
+                    // The other session is alive and talking: this is a second machine with a copied
+                    // PluginData/settings.cfg, not a reconnect. Evicting the live player (the host, typically)
+                    // is the one thing not to do.
+                    Reject(client, "Another player is already connected with your player id (" + stale.DisplayName + "). The mod folder was copied between installs including "
+                                   + "GameData/KspMp/PluginData/settings.cfg. Delete that file on this machine only and connect again; you will pick a Kerbal afresh.");
+                    return;
+                }
                 if (stale != null)
                 {
                     _log(stale.DisplayName + " connected again from another connection; dropping the old one");
