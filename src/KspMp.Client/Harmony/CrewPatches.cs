@@ -42,7 +42,13 @@ namespace KspMp.Harmony
 
         private static void Postfix(KerbalEVA __instance, Part p, BoardingInfo __state)
         {
-            ReportBoarding(__state, p, seatIndex: -1);
+            // The seat KSP put the kerbal in here, so the owner seats them in the same one: a different seat
+            // on the owner's copy read as "crew changed" and rebuilt this copy right after boarding.
+            var seat = -1;
+            if (p != null && p.protoModuleCrew != null && !string.IsNullOrEmpty(__state.KerbalName))
+                foreach (var pcm in p.protoModuleCrew)
+                    if (pcm != null && pcm.name == __state.KerbalName) { seat = pcm.seatIdx; break; }
+            ReportBoarding(__state, p, seat);
         }
 
         internal struct BoardingInfo
