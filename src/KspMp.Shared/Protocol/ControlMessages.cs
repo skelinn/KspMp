@@ -245,6 +245,39 @@ namespace KspMp.Shared.Protocol
     }
 
     /// <summary>A part right-click button (BaseEvent) pressed by someone aboard who is not the physics owner.</summary>
+    /// <summary>A part-menu field (a thrust limiter slider, a fuel-flow toggle, a cycle) set to a value, as text.</summary>
+    public struct PartFieldMsg : INetSerializable
+    {
+        public Guid VesselId;
+        public int FromClientId;
+        public uint PartFlightId;
+        /// <summary>Index into the part's module list; -1 for a field on the part itself.</summary>
+        public int ModuleIndex;
+        public string FieldName;
+        /// <summary>The value in invariant-culture text; the receiver converts it to the field's type.</summary>
+        public string Value;
+
+        public void Serialize(NetDataWriter w)
+        {
+            w.PutGuidRaw(VesselId);
+            w.Put(FromClientId);
+            w.Put(PartFlightId);
+            w.Put(ModuleIndex);
+            w.Put(FieldName ?? string.Empty);
+            w.Put(Value ?? string.Empty);
+        }
+
+        public void Deserialize(NetDataReader r)
+        {
+            VesselId = r.GetGuidRaw();
+            FromClientId = r.GetInt();
+            PartFlightId = r.GetUInt();
+            ModuleIndex = r.GetInt();
+            FieldName = r.GetString();
+            Value = r.GetString();
+        }
+    }
+
     public struct PartEventMsg : INetSerializable
     {
         public Guid VesselId;

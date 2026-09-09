@@ -215,11 +215,10 @@ Worth knowing before you play, roughly in the order you would hit them.
   names, and the server tells everyone in chat when two players' differ (and when their KSP versions do), but
   it cannot say which part is missing where, and a craft using a part the other side lacks still fails while
   loading on their machine. A stock install on both sides is the safe option.
-- **A co-pilot's part-menu sliders and toggles change their copy only.** Staging, action groups, SAS,
-  the navball buttons, the brakes key and part-menu buttons (Deploy, Decouple, ...) reach the pilot; a
-  thrust limiter, a fuel-flow toggle, a resource transfer or a crew transfer made by a co-pilot does not, and
-  the pilot's next snapshot puts it back. The pilot's own changes of that kind reach the co-pilot with the
-  next snapshot (within about thirty seconds), not at once.
+- **A co-pilot's resource transfers and crew transfers change their copy only.** Staging, action groups,
+  SAS, the navball buttons, the brakes key, part-menu buttons (Deploy, Decouple, ...) and part-menu
+  sliders and toggles (thrust limiter, fuel flow, ...) reach the pilot; a resource transfer or a crew
+  transfer made by a co-pilot does not, and the pilot's next snapshot puts it back.
 - **Docking hands the merged craft to whoever docked, and it stays theirs until someone leaves it.** Only
   the player simulating the merged craft can undock; the piece that comes off is theirs as a new vessel, and
   a piece whose pilot is somebody else goes back to that pilot the moment they are no longer aboard the same

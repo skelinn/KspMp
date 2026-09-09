@@ -187,6 +187,33 @@ namespace KspMp.Harmony
         }
     }
 
+    /// <summary>
+    /// A part-menu slider, toggle or cycle (thrust limiter, fuel flow, ...). They all write through
+    /// SetFieldValue. A co-pilot's change is applied to their copy at once and sent to the pilot, whose
+    /// copy is the one that matters; the pilot's change is echoed so the co-pilot's copy follows without
+    /// waiting for the next snapshot.
+    /// </summary>
+    [HarmonyPatch(typeof(UIPartActionFieldItem), "SetFieldValue", typeof(object))]
+    internal static class UIPartActionFieldItem_SetFieldValue
+    {
+        private static bool Prefix(UIPartActionFieldItem __instance, object newValue)
+        {
+            var part = __instance.part;
+            var field = __instance.field;
+            var vessel = part != null ? part.vessel : null;
+            if (field == null) return true;
+            var verdict = ControlGate.For(vessel);
+            if (verdict == ControlGate.Verdict.Blocked) { ControlGate.Blocked(field.guiName); return false; }
+            if (verdict == ControlGate.Verdict.Relay || ControlGate.Echo(vessel))
+            {
+                var module = __instance.partModule;
+                var index = module != null ? part.Modules.IndexOf(module) : -1;
+                KspMpAddon.Instance.Control.SendPartField(vessel.id, part.flightID, index, field.name, ControlSystem.FieldValueText(newValue));
+            }
+            return true;
+        }
+    }
+
     [HarmonyPatch(typeof(UIPartActionButton), nameof(UIPartActionButton.OnClick))]
     internal static class UIPartActionButton_OnClick
     {

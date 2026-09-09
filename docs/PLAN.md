@@ -434,6 +434,13 @@ spawned craft), with a re-entrancy flag so a button click is not echoed twice. R
 for every player action, grep the key handler in `FlightInputHandler` and the UI class for what they
 actually call.
 
+Part-menu fields are shared too (`PartFieldMsg`, id 624): every slider, toggle and cycle in a part's
+menu writes through `UIPartActionFieldItem.SetFieldValue`, which is patched with the same gate as the
+buttons. A co-pilot's change is applied to their copy at once and sent to the pilot, who applies it (and
+its symmetry twins) and echoes it; the pilot's change is echoed so the co-pilot's copy follows without
+waiting for a snapshot. Values travel as invariant text and are converted to the field's type on
+arrival. `-kspmp-partfield Module:field:value:D` in the harness.
+
 ### Boarding, EVA, death
 - EVA: stock hatch → `FlightEVA.fetch.spawnEVA(...)`; `onCrewOnEva` gives the new EVA vessel (`vessel.isEVA`). Client sends `CrewEva` + the EVA vessel's proto once the EVA FSM is ready (LMP waits for it). Only the avatar's owner may EVA their avatar (`onAttemptEva` handler + `ControlTypes.EVA_INPUT` lock). Presence → `OnEva`; source vessel roles recomputed (pilot EVA → handover).
 - Boarding: postfix `KerbalEVA.proceedAndBoard`/`BoardPart`/`BoardSeat` (LMP `KerbalEVA_proceedAndBoard.cs`, `KerbalEVA_BoardSeat.cs`) → `CrewBoard`; boarding client sends `VesselRemove` for its EVA vessel and applies the crew locally (`part.AddCrewmember`); the owner's next proto confirms; presence → `InFlight`.

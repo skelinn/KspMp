@@ -52,6 +52,7 @@ namespace KspMp
         private float _stageAt = -1f;
         private float _toggleAt = -1f;
         private float _partEventAt = -1f;
+        private float _partFieldAt = -1f;
         private bool _moveNearStarted;
         private float _evaAt = -1f;
         private float _boardAt = -1f;
@@ -221,6 +222,8 @@ namespace KspMp
                 _toggleAt = Time.realtimeSinceStartup + Launch.ToggleAfterSeconds;
             if (scene == GameScenes.FLIGHT && Launch.PartEventAfterSeconds >= 0 && _partEventAt < 0)
                 _partEventAt = Time.realtimeSinceStartup + Launch.PartEventAfterSeconds;
+            if (scene == GameScenes.FLIGHT && Launch.PartFieldAfterSeconds >= 0 && _partFieldAt < 0)
+                _partFieldAt = Time.realtimeSinceStartup + Launch.PartFieldAfterSeconds;
             if (scene == GameScenes.FLIGHT && Launch.MoveNearAfterSeconds >= 0 && !_moveNearStarted)
             {
                 _moveNearStarted = true;
@@ -423,6 +426,46 @@ namespace KspMp
         /// Fires a part-menu action by name. A real player clicks the button (which the UIPartActionButton patch
         /// intercepts); this takes the same relay path directly so the flow can be tested without a mouse.
         /// </summary>
+        /// <summary>
+        /// Sets a part-menu field by module class and field name, taking the same path a slider does: the
+        /// value is set here and, depending on who flies the craft, relayed to the pilot or echoed to the others.
+        /// </summary>
+        private void AutoPartField()
+        {
+            var vessel = FlightGlobals.ActiveVessel;
+            if (vessel == null || vessel.parts == null) return;
+            foreach (var part in vessel.parts)
+            {
+                for (var m = 0; m < part.Modules.Count; m++)
+                {
+                    var module = part.Modules[m];
+                    // By prefix: "ModuleEngines" finds ModuleEnginesFX too.
+                    if (module.moduleName == null || !module.moduleName.StartsWith(Launch.PartFieldModule, StringComparison.Ordinal)) continue;
+                    var field = module.Fields[Launch.PartFieldName];
+                    if (field == null) continue;
+                    try
+                    {
+                        var type = field.FieldInfo.FieldType;
+                        var value = type == typeof(bool) ? (object)bool.Parse(Launch.PartFieldValue) : Convert.ChangeType(Launch.PartFieldValue, type, System.Globalization.CultureInfo.InvariantCulture);
+                        Log.Info("Auto-partfield: " + Launch.PartFieldName + " = " + Launch.PartFieldValue + " on " + part.partInfo.title + " (" + module.moduleName + ")");
+                        module.Fields.SetValue(Launch.PartFieldName, value);
+                        if (Vessels.IsOwnedByOther(vessel.id) && Control.IAmAboard(vessel.id) || Vessels.IsMine(vessel.id) && Control.OthersAboard(vessel.id))
+                            Control.SendPartField(vessel.id, part.flightID, m, Launch.PartFieldName, KspMp.Systems.ControlSystem.FieldValueText(value));
+                    }
+                    catch (Exception e)
+                    {
+                        Log.Exception("Auto-partfield", e);
+                    }
+                    return;
+                }
+            }
+            var modules = new List<string>();
+            foreach (var part in vessel.parts)
+                for (var m = 0; m < part.Modules.Count; m++)
+                    if (!modules.Contains(part.Modules[m].moduleName)) modules.Add(part.Modules[m].moduleName);
+            Log.Warn("Auto-partfield: no " + Launch.PartFieldModule + " with a field " + Launch.PartFieldName + " on " + vessel.GetDisplayName() + ". Modules: " + string.Join(", ", modules.ToArray()));
+        }
+
         private void AutoPartEvent()
         {
             var vessel = FlightGlobals.ActiveVessel;
@@ -992,6 +1035,11 @@ namespace KspMp
             {
                 _partEventAt = -1f;
                 AutoPartEvent();
+            }
+            if (_partFieldAt >= 0 && Time.realtimeSinceStartup >= _partFieldAt && HighLogic.LoadedSceneIsFlight && FlightGlobals.ready)
+            {
+                _partFieldAt = -1f;
+                AutoPartField();
             }
             if (_evaAt >= 0 && Time.realtimeSinceStartup >= _evaAt && HighLogic.LoadedSceneIsFlight && FlightGlobals.ready)
             {

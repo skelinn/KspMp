@@ -96,5 +96,7 @@ namespace KspMp.Shared.Protocol
         ActionGroup = 621,
         SasMode = 622,
         PartEvent = 623,
+        /// <summary>A part-menu field (slider, toggle, cycle) set by a player: relayed like a part event.</summary>
+        PartField = 624,
     }
 }

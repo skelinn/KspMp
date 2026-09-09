@@ -345,6 +345,14 @@ namespace KspMp.Server
                     else if (Control.ForwardToOwner(client, ev.VesselId, MessageId.PartEvent, ev, Channel.Control, Delivery.ReliableOrdered)) _log(client.DisplayName + " pressed " + ev.EventName + " on vessel " + ev.VesselId.ToString().Substring(0, 8));
                     break;
                 }
+                case MessageId.PartField:
+                {
+                    var pf = Envelope.Read<PartFieldMsg>(body);
+                    pf.FromClientId = client.ClientId;
+                    if (Authority.IsOwnedBy(pf.VesselId, client.ClientId)) Control.RelayActionToFlying(client, pf.VesselId, MessageId.PartField, pf, Channel.Control, Delivery.ReliableOrdered);
+                    else if (Control.ForwardToOwner(client, pf.VesselId, MessageId.PartField, pf, Channel.Control, Delivery.ReliableOrdered)) _log(client.DisplayName + " set " + pf.FieldName + " = " + pf.Value + " on vessel " + pf.VesselId.ToString().Substring(0, 8));
+                    break;
+                }
                 case MessageId.EditorJoin:
                     Editor.HandleJoin(client, Envelope.Read<EditorJoinMsg>(body));
                     break;

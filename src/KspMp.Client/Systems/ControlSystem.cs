@@ -109,6 +109,7 @@ namespace KspMp.Systems
             Net.RegisterHandler(MessageId.ActionGroup, OnActionGroup);
             Net.RegisterHandler(MessageId.SasMode, OnSasMode);
             Net.RegisterHandler(MessageId.PartEvent, OnPartEvent);
+            Net.RegisterHandler(MessageId.PartField, OnPartField);
             Net.RegisterHandler(MessageId.ControlRequest, OnControlRequest);
             Net.RegisterHandler(MessageId.ControlDecline, OnControlDecline);
         }
@@ -122,6 +123,7 @@ namespace KspMp.Systems
             Net.UnregisterHandler(MessageId.ActionGroup, OnActionGroup);
             Net.UnregisterHandler(MessageId.SasMode, OnSasMode);
             Net.UnregisterHandler(MessageId.PartEvent, OnPartEvent);
+            Net.UnregisterHandler(MessageId.PartField, OnPartField);
             Net.UnregisterHandler(MessageId.ControlRequest, OnControlRequest);
             Net.UnregisterHandler(MessageId.ControlDecline, OnControlDecline);
             Unhook();
@@ -369,6 +371,53 @@ namespace KspMp.Systems
         public void SendSasMode(Guid vesselId, int mode, bool enabled)
         {
             Net.Send(MessageId.SasMode, new SasModeMsg { VesselId = vesselId, Mode = mode, Enabled = enabled }, Channel.Control, Delivery.ReliableOrdered);
+        }
+
+        public void SendPartField(Guid vesselId, uint partFlightId, int moduleIndex, string fieldName, string value)
+        {
+            Net.Send(MessageId.PartField, new PartFieldMsg { VesselId = vesselId, PartFlightId = partFlightId, ModuleIndex = moduleIndex, FieldName = fieldName, Value = value }, Channel.Control, Delivery.ReliableOrdered);
+        }
+
+        /// <summary>A field value as it travels: invariant text, whatever its type.</summary>
+        public static string FieldValueText(object value) =>
+            value == null ? "" : value is IFormattable f ? f.ToString(null, System.Globalization.CultureInfo.InvariantCulture) : value.ToString();
+
+        private static object FieldValueFrom(string text, Type type)
+        {
+            if (type == typeof(string)) return text;
+            if (type.IsEnum) return Enum.Parse(type, text, true);
+            if (type == typeof(bool)) return bool.Parse(text);
+            return Convert.ChangeType(text, type, System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>Sets a field on a part (or one of its modules), the way the part menu does, without a menu.</summary>
+        private static bool SetField(Part part, int moduleIndex, string fieldName, string value)
+        {
+            var fields = moduleIndex >= 0 && moduleIndex < part.Modules.Count ? part.Modules[moduleIndex].Fields : moduleIndex < 0 ? part.Fields : null;
+            var field = fields != null ? fields[fieldName] : null;
+            if (field == null) return false;
+            return fields.SetValue(fieldName, FieldValueFrom(value, field.FieldInfo.FieldType));
+        }
+
+        private void OnPartField(NetDataReader body)
+        {
+            var msg = Envelope.Read<PartFieldMsg>(body);
+            var vessel = ActionTarget(msg.VesselId, msg.FromClientId, out var mirrored);
+            if (vessel == null) return;
+            Part part = null;
+            for (var i = 0; i < vessel.parts.Count; i++)
+                if (vessel.parts[i].flightID == msg.PartFlightId) { part = vessel.parts[i]; break; }
+            if (part == null) { Log.Warn("Part " + msg.PartFlightId + " not found for field " + msg.FieldName); return; }
+            Apply(msg.FieldName + " = " + msg.Value + " on " + part.partInfo.title + " by " + NameOf(msg.FromClientId), () =>
+            {
+                if (!SetField(part, msg.ModuleIndex, msg.FieldName, msg.Value)) throw new InvalidOperationException("field " + msg.FieldName + " not found");
+                // The part menu sets symmetry twins too; the sender's message names only the part they clicked.
+                if (part.symmetryCounterparts != null)
+                    foreach (var twin in part.symmetryCounterparts)
+                        if (twin != null) SetField(twin, msg.ModuleIndex, msg.FieldName, msg.Value);
+            });
+            if (!mirrored && Addon.Vessels.IsMine(vessel.id) && OthersAboard(vessel.id))
+                SendPartField(vessel.id, msg.PartFlightId, msg.ModuleIndex, msg.FieldName, msg.Value);
         }
 
         public void SendPartEvent(Guid vesselId, uint partFlightId, int moduleIndex, string eventName, bool quiet = false)

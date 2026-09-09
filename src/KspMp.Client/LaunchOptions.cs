@@ -89,6 +89,9 @@ namespace KspMp
         public bool ToggleViaSet;
         public string PartEventName;
         public float PartEventAfterSeconds = -1f;
+        /// <summary>-kspmp-partfield Module:field:value:D - D seconds into the flight, set a part-menu field the way the menu does.</summary>
+        public string PartFieldModule, PartFieldName, PartFieldValue;
+        public float PartFieldAfterSeconds = -1f;
         public float UndockAfterSeconds = -1f;
         public string EditorFacilityName;
         public float EditorAfterSeconds = -1f;
@@ -239,6 +242,18 @@ namespace KspMp
                         var colon = spec.LastIndexOf(':');
                         options.PartEventName = colon > 0 ? spec.Substring(0, colon) : spec;
                         if (colon > 0 && float.TryParse(spec.Substring(colon + 1), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var eventAfter)) options.PartEventAfterSeconds = eventAfter;
+                        break;
+                    }
+                    case "-kspmp-partfield" when i + 1 < args.Length:
+                    {
+                        var parts = args[++i].Split(':');
+                        if (parts.Length >= 4)
+                        {
+                            options.PartFieldModule = parts[0];
+                            options.PartFieldName = parts[1];
+                            options.PartFieldValue = parts[2];
+                            if (float.TryParse(parts[3], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var fieldAfter)) options.PartFieldAfterSeconds = fieldAfter;
+                        }
                         break;
                     }
                     case "-kspmp-undock" when i + 1 < args.Length:
