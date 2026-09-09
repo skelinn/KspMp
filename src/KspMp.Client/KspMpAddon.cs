@@ -58,6 +58,8 @@ namespace KspMp
         private float _jetpackAt = -1f;
         private float _revertAt = -1f;
         private float _crashAt = -1f;
+        private float _recoverAt = -1f;
+        private bool _recoverDone;
         private bool _revertDone, _crashDone;   // one-shot: a revert reloads the flight scene, which would re-arm them
         private float _revertEditorAt = -1f;
         private float _giveControlAt = -1f;
@@ -234,6 +236,8 @@ namespace KspMp
                 _revertAt = Time.realtimeSinceStartup + Launch.RevertAfterSeconds;
             if (scene == GameScenes.FLIGHT && Launch.CrashAfterSeconds >= 0 && _crashAt < 0 && !_crashDone)
                 _crashAt = Time.realtimeSinceStartup + Launch.CrashAfterSeconds;
+            if (scene == GameScenes.FLIGHT && Launch.RecoverAfterSeconds >= 0 && _recoverAt < 0 && !_recoverDone)
+                _recoverAt = Time.realtimeSinceStartup + Launch.RecoverAfterSeconds;
             if (scene == GameScenes.FLIGHT && Launch.RevertToEditorAfterSeconds >= 0 && _revertEditorAt < 0 && !_revertDone)
                 _revertEditorAt = Time.realtimeSinceStartup + Launch.RevertToEditorAfterSeconds;
             if (scene == GameScenes.FLIGHT && Launch.GiveControlAfterSeconds >= 0 && _giveControlAt < 0)
@@ -984,6 +988,22 @@ namespace KspMp
             {
                 _evaAt = -1f;
                 AutoEva();
+            }
+            if (_recoverAt >= 0 && Time.realtimeSinceStartup >= _recoverAt && HighLogic.LoadedSceneIsFlight && FlightGlobals.ready)
+            {
+                _recoverAt = -1f;
+                _recoverDone = true;
+                var vessel = FlightGlobals.ActiveVessel;
+                if (vessel != null)
+                {
+                    Log.Info("Auto-recover: recovering " + vessel.GetDisplayName());
+                    try
+                    {
+                        vessel.BackupVessel();
+                        GameEvents.OnVesselRecoveryRequested.Fire(vessel);
+                    }
+                    catch (Exception e) { Log.Exception("Auto-recover", e); }
+                }
             }
             if (_crashAt >= 0 && Time.realtimeSinceStartup >= _crashAt && HighLogic.LoadedSceneIsFlight && FlightGlobals.ready)
             {

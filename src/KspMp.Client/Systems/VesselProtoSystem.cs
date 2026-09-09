@@ -59,6 +59,7 @@ namespace KspMp.Systems
             GameEvents.onPartDeCoupleNewVesselComplete.Add(OnSplit);
             GameEvents.onVesselWillDestroy.Add(OnVesselWillDestroy);
             GameEvents.onVesselRecovered.Add(OnVesselRecovered);
+            GameEvents.OnVesselRecoveryRequested.Add(OnRecoveryRequested);
             GameEvents.onVesselTerminated.Add(OnVesselTerminated);
             GameEvents.onGameSceneLoadRequested.Add(OnSceneLoadRequested);
             GameEvents.onLevelWasLoadedGUIReady.Add(OnLevelLoaded);
@@ -85,6 +86,7 @@ namespace KspMp.Systems
             _splitParent.Clear();
             GameEvents.onVesselWillDestroy.Remove(OnVesselWillDestroy);
             GameEvents.onVesselRecovered.Remove(OnVesselRecovered);
+            GameEvents.OnVesselRecoveryRequested.Remove(OnRecoveryRequested);
             GameEvents.onVesselTerminated.Remove(OnVesselTerminated);
             GameEvents.onGameSceneLoadRequested.Remove(OnSceneLoadRequested);
             GameEvents.onLevelWasLoadedGUIReady.Remove(OnLevelLoaded);
@@ -656,14 +658,30 @@ namespace KspMp.Systems
             if (Registry.IsMine(vessel.id)) SendRemove(vessel.id, "destroyed");
         }
 
+        /// <summary>
+        /// The Recover button, pressed. KSP recovers the vessel only once the space centre has loaded, and the
+        /// scene change before that reported us gone from the flight: the server handed the rocket to the
+        /// friend still aboard, then refused our removal because it was no longer ours, and the recovered
+        /// rocket came back to us on the pad with a recovered Kerbal inside. Say it is gone now, first.
+        /// </summary>
+        private void OnRecoveryRequested(Vessel vessel)
+        {
+            if (vessel == null || !Registry.IsMine(vessel.id)) return;
+            Log.Info("Recovery of " + vessel.GetDisplayName() + " requested; telling the server before the scene changes");
+            SendRemove(vessel.id, "recovered");
+        }
+
         private void OnVesselRecovered(ProtoVessel proto, bool quick)
         {
+            // Ours only: the flight-scene button already said so (the id is no longer known), and another
+            // player's vessel is theirs to report.
+            if (proto == null || !Registry.IsMine(proto.vesselID)) return;
             if (proto != null) SendRemove(proto.vesselID, "recovered");
         }
 
         private void OnVesselTerminated(ProtoVessel proto)
         {
-            if (proto != null) SendRemove(proto.vesselID, "terminated");
+            if (proto != null && Registry.IsMine(proto.vesselID)) SendRemove(proto.vesselID, "terminated");
         }
 
         private void OnSceneLoadRequested(GameScenes scene)

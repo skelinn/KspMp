@@ -105,6 +105,8 @@ namespace KspMp
         public float JetpackAfterSeconds = -1f;
         public float RevertAfterSeconds = -1f;
         public float CrashAfterSeconds = -1f;
+        /// <summary>-kspmp-recover D: D seconds into the flight, recover the active vessel (as the Recover button does).</summary>
+        public float RecoverAfterSeconds = -1f;
         public float RevertToEditorAfterSeconds = -1f;
         /// <summary>-kspmp-resync D: D seconds after entering the game, press Resync once.</summary>
         public float ResyncAfterSeconds = -1f;
@@ -288,6 +290,9 @@ namespace KspMp
                         break;
                     case "-kspmp-jetpack" when i + 1 < args.Length:
                         if (float.TryParse(args[++i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var packAfter)) options.JetpackAfterSeconds = packAfter;
+                        break;
+                    case "-kspmp-recover" when i + 1 < args.Length:
+                        if (float.TryParse(args[++i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var recoverAfter)) options.RecoverAfterSeconds = recoverAfter;
                         break;
                     case "-kspmp-crash" when i + 1 < args.Length:
                         if (float.TryParse(args[++i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var crashAfter)) options.CrashAfterSeconds = crashAfter;

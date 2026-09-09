@@ -285,12 +285,31 @@ namespace KspMp.Vessels
                 {
                     var roster = KspMpAddon.Instance != null ? KspMpAddon.Instance.Roster : null;
                     var avatarAboard = roster != null && roster.AvatarAboard(vessel);
+                    if (vessel.isActiveVessel && (why == "recovered" || why == "terminated"))
+                    {
+                        // Its owner recovered it (or ended the flight from the tracking station): nothing
+                        // exploded anywhere, and our Kerbal walked off it on the owner's machine. Blowing our
+                        // copy up here killed our Kerbal for ten seconds and looked like a crash. Leave for the
+                        // space centre instead; the copy left in the save is discarded on the next load.
+                        Log.Info("The vessel we are aboard, " + vessel.GetDisplayName() + ", was " + why + " by its owner; leaving for the space centre");
+                        VesselImmortal.Set(vessel, false);
+                        if (roster != null) roster.QuietCrewOf(vessel, 10f);
+                        if (avatarAboard) roster.ReturnAvatar(why);
+                        flightState?.protoVessels.RemoveAll(p => p == null || p.vesselID == vesselId);
+                        var addon = KspMpAddon.Instance;
+                        if (addon != null)
+                        {
+                            addon.Notices?.Post("recovered", "The craft you were aboard was " + why + " by its pilot; you are back at the space centre", KspMp.Ui.Theme.Ink, ttlSeconds: 12f);
+                            addon.Defer(() => { if (HighLogic.LoadedSceneIsFlight) HighLogic.LoadScene(GameScenes.SPACECENTER); });
+                        }
+                        return;
+                    }
                     if (vessel.isActiveVessel)
                     {
                         // The vessel we are sitting in no longer exists for anybody else: its pilot crashed it,
-                        // recovered it, or reverted it away. Keeping a copy alive here left the player flying a
-                        // ghost, with their Kerbal assigned to it for good. It dies here the way it did there,
-                        // and KSP does what it does when the active vessel is lost.
+                        // or reverted it away. Keeping a copy alive here left the player flying a ghost, with
+                        // their Kerbal assigned to it for good. It dies here the way it did there, and KSP does
+                        // what it does when the active vessel is lost.
                         Log.Warn("Server removed the vessel we are aboard, " + vessel.GetDisplayName() + " (" + why + "); it is gone here too");
                         // Vessel.Die() leaves the active vessel's parts alone (Vessel.cs:8696); blowing the parts
                         // up is how KSP itself loses an active vessel, and what follows is stock behaviour.
