@@ -14,6 +14,9 @@ namespace KspMp.Shared.Protocol
         public string KspVersion;
         /// <summary>Hex SHA-256 of the server password, or empty when the server has none.</summary>
         public string PasswordHash;
+        /// <summary>How many parts this install has loaded, and a hash of their names: two installs whose parts differ cannot load each other's craft.</summary>
+        public int PartCount;
+        public string PartsHash;
 
         public void Serialize(NetDataWriter w)
         {
@@ -23,6 +26,8 @@ namespace KspMp.Shared.Protocol
             w.Put(PlayerName ?? string.Empty);
             w.Put(KspVersion ?? string.Empty);
             w.Put(PasswordHash ?? string.Empty);
+            w.Put(PartCount);
+            w.Put(PartsHash ?? string.Empty);
         }
 
         public void Deserialize(NetDataReader r)
@@ -33,6 +38,8 @@ namespace KspMp.Shared.Protocol
             PlayerName = r.GetString();
             KspVersion = r.GetString();
             PasswordHash = r.GetString();
+            PartCount = r.GetInt();
+            PartsHash = r.GetString();
         }
     }
 

@@ -220,6 +220,8 @@ namespace KspMp.Net
                 PlayerName = _settings.PlayerName,
                 KspVersion = Versioning.GetVersionString(),
                 PasswordHash = PasswordHash.Of(Password),
+                PartCount = GameDataSignature.PartCount,
+                PartsHash = GameDataSignature.PartsHash,
             }, Channel.Control, Delivery.ReliableOrdered);
         }
 

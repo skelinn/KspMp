@@ -403,6 +403,11 @@ flight invite for a vessel the server removed. The pilot's own vessel is exempt 
 button and KSP's recovery of it at the space centre (`_recoveringOurs`), or KSP would find nothing to
 recover. The returning-Kerbal notice is worded by what happened ("was recovered", not "did not survive").
 
+The handshake carries a signature of the installed parts (`GameDataSignature`: count plus an FNV-1a hash
+of the sorted part names; `HelloMsg.PartCount/PartsHash`, protocol 9), and the server says in chat, once
+per newcomer, whose parts differ from whose (and whose KSP version differs). It cannot say which part;
+KSP still fails the load on the machine that lacks it, but now the players know why before they build.
+
 ### Boarding, EVA, death
 - EVA: stock hatch → `FlightEVA.fetch.spawnEVA(...)`; `onCrewOnEva` gives the new EVA vessel (`vessel.isEVA`). Client sends `CrewEva` + the EVA vessel's proto once the EVA FSM is ready (LMP waits for it). Only the avatar's owner may EVA their avatar (`onAttemptEva` handler + `ControlTypes.EVA_INPUT` lock). Presence → `OnEva`; source vessel roles recomputed (pilot EVA → handover).
 - Boarding: postfix `KerbalEVA.proceedAndBoard`/`BoardPart`/`BoardSeat` (LMP `KerbalEVA_proceedAndBoard.cs`, `KerbalEVA_BoardSeat.cs`) → `CrewBoard`; boarding client sends `VesselRemove` for its EVA vessel and applies the crew locally (`part.AddCrewmember`); the owner's next proto confirms; presence → `InFlight`.

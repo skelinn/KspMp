@@ -15,6 +15,26 @@ public class ServerLobbyTests
     }
 
     [Fact]
+    public void PlayersWhoseInstalledPartsDifferAreToldAtOnce()
+    {
+        var hub = new LoopbackHub();
+        using var server = NewServer(hub);
+        var a = new TestClient(hub, "Alice", partCount: 400, partsHash: "aaaa0000");
+        a.Start();
+        TestClient.Pump(server, a);
+        var b = new TestClient(hub, "Bob", partCount: 412, partsHash: "bbbb0000");
+        b.Start();
+        TestClient.Pump(server, a, b);
+        Assert.Contains(a.Messages<ChatMsg>(), m => m.FromClientId == 0 && m.Text.Contains("installed parts differ") && m.Text.Contains("412 parts against 400"));
+        Assert.Contains(b.Messages<ChatMsg>(), m => m.FromClientId == 0 && m.Text.Contains("installed parts differ"));
+
+        var c = new TestClient(hub, "Carol", partCount: 412, partsHash: "bbbb0000");   // same as Bob: one notice, about Alice
+        c.Start();
+        TestClient.Pump(server, a, b, c);
+        Assert.Equal(1, c.Messages<ChatMsg>().Count(m => m.FromClientId == 0 && m.Text.Contains("installed parts differ")));
+    }
+
+    [Fact]
     public void TwoClientsSeeEachOtherJoinAndLeave()
     {
         var hub = new LoopbackHub();

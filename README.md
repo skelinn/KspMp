@@ -211,9 +211,10 @@ Worth knowing before you play, roughly in the order you would hit them.
   introducer. But both ends were on the same machine, so LiteNetLib paired them on the internal address:
   traversal through two separate home routers is untested, and symmetric NAT or carrier-grade NAT on both ends
   will defeat it however well the rest works.
-- **Both sides need identical GameData.** The handshake checks the protocol version and nothing else - there is
-  no mod manifest - so a single part mod on one side and not the other will fail while loading a vessel rather
-  than telling you why. A stock install on both sides is the safe option.
+- **Both sides need identical GameData.** The handshake carries the number of loaded parts and a hash of their
+  names, and the server tells everyone in chat when two players' differ (and when their KSP versions do), but
+  it cannot say which part is missing where, and a craft using a part the other side lacks still fails while
+  loading on their machine. A stock install on both sides is the safe option.
 - **Docking hands the merged craft to whoever docked, and it stays theirs until someone leaves it.** Only
   the player simulating the merged craft can undock; the piece that comes off is theirs as a new vessel, and
   a piece whose pilot is somebody else goes back to that pilot the moment they are no longer aboard the same

@@ -461,7 +461,11 @@ namespace KspMp.Server
             Touch(client);
             if (_knownPlayers.TryGetValue(client.PlayerId, out var known) && !string.IsNullOrEmpty(known.AvatarKerbalName))
                 client.AvatarKerbalName = known.AvatarKerbalName;
-            _log(client.DisplayName + " joined (KSP " + hello.KspVersion + ", mod " + hello.ModVersion + ")");
+            client.PartCount = hello.PartCount;
+            client.PartsHash = hello.PartsHash ?? "";
+            client.KspVersion = hello.KspVersion ?? "";
+            _log(client.DisplayName + " joined (KSP " + hello.KspVersion + ", mod " + hello.ModVersion + ", " + hello.PartCount + " parts, " + client.PartsHash + ")");
+            WarnAboutDifferentInstalls(client);
 
             Send(client.Peer, MessageId.Welcome, new WelcomeMsg
             {
@@ -506,6 +510,27 @@ namespace KspMp.Server
         }
 
         /// <summary>The client lost its copy of the world (a scene it should not have been in, a dropped sync): send it again.</summary>
+        /// <summary>
+        /// Two installs whose parts differ cannot load each other's craft, and the failure comes later, deep
+        /// inside KSP, without a word about why. Say it now, to everyone, once per newcomer.
+        /// </summary>
+        private void WarnAboutDifferentInstalls(ClientSession newcomer)
+        {
+            if (string.IsNullOrEmpty(newcomer.PartsHash)) return;   // an old or headless client: nothing to compare
+            foreach (var other in HandshakenClients)
+            {
+                if (other == newcomer || string.IsNullOrEmpty(other.PartsHash)) continue;
+                if (other.KspVersion != newcomer.KspVersion)
+                    Chat.ServerNotice(newcomer.PlayerName + " runs KSP " + newcomer.KspVersion + " and " + other.PlayerName + " runs " + other.KspVersion + "; use the same version");
+                if (other.PartsHash == newcomer.PartsHash) continue;
+                var counts = newcomer.PartCount == other.PartCount
+                    ? "the same number of parts, " + newcomer.PartCount + ", but not the same parts"
+                    : newcomer.PartCount + " parts against " + other.PartCount;
+                Chat.ServerNotice(newcomer.PlayerName + "'s installed parts differ from " + other.PlayerName + "'s (" + counts
+                                  + "). A craft using a part the other player does not have will not load on their machine. Same GameData on both sides is safest.");
+            }
+        }
+
         private void HandleSyncRequest(ClientSession client)
         {
             if (!client.IsOnline) return;

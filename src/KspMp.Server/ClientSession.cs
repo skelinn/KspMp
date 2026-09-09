@@ -9,6 +9,10 @@ namespace KspMp.Server
         public int ClientId;
         public Guid PlayerId;
         public string PlayerName;
+        /// <summary>From Hello: the parts this install has, so a mismatch with the others can be said out loud.</summary>
+        public int PartCount;
+        public string PartsHash = "";
+        public string KspVersion = "";
         public bool Handshaken;
         /// <summary>Hello was refused; a disconnect is pending and further messages are ignored.</summary>
         public bool Rejected;

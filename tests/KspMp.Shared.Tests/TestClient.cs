@@ -10,7 +10,7 @@ internal class TestClient
 {
     private readonly NetDataWriter _writer = new();
 
-    public TestClient(LoopbackHub hub, string name, ushort protocolVersion = ProtocolVersion.Current, Guid? playerId = null)
+    public TestClient(LoopbackHub hub, string name, ushort protocolVersion = ProtocolVersion.Current, Guid? playerId = null, int partCount = 0, string partsHash = "")
     {
         Name = name;
         PlayerId = playerId ?? Guid.NewGuid();
@@ -18,7 +18,7 @@ internal class TestClient
         Transport.PeerConnected += _ =>
         {
             ConnectedEvents++;
-            Send(MessageId.Hello, new HelloMsg { ProtocolVersion = protocolVersion, ModVersion = "test", PlayerId = PlayerId, PlayerName = name, KspVersion = "1.12.5" }, Channel.Control);
+            Send(MessageId.Hello, new HelloMsg { ProtocolVersion = protocolVersion, ModVersion = "test", PlayerId = PlayerId, PlayerName = name, KspVersion = "1.12.5", PartCount = partCount, PartsHash = partsHash }, Channel.Control);
         };
         Transport.PeerDisconnected += (_, reason) => { Disconnected = true; DisconnectReason = reason; };
         Transport.Received += OnReceived;
