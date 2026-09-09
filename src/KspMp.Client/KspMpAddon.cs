@@ -1080,14 +1080,24 @@ namespace KspMp
             if (_warpAt >= 0 && Time.realtimeSinceStartup >= _warpAt && HighLogic.LoadedSceneIsFlight)
             {
                 _warpAt = -1f;
-                Log.Info("Auto-warp: requesting warp index " + Launch.WarpIndex);
-                Warp.RequestFromUser(Shared.Protocol.WarpMode.Rails, Launch.WarpIndex);
+                if (Launch.WarpViaKey && TimeWarp.fetch != null)
+                {
+                    // What the "." key does: KSP's private setRate, one step at a time.
+                    Log.Info("Auto-warp: pressing the warp key up to index " + Launch.WarpIndex);
+                    for (var step = 0; step < Launch.WarpIndex; step++) TimeWarp.fetch.setRate(TimeWarp.CurrentRateIndex + 1, false);
+                }
+                else
+                {
+                    Log.Info("Auto-warp: requesting warp index " + Launch.WarpIndex);
+                    Warp.RequestFromUser(Shared.Protocol.WarpMode.Rails, Launch.WarpIndex);
+                }
             }
             if (_warpCancelAt >= 0 && Time.realtimeSinceStartup >= _warpCancelAt && HighLogic.LoadedSceneIsFlight)
             {
                 _warpCancelAt = -1f;
                 Log.Info("Auto-warp: cancelling warp");
-                Warp.RequestFromUser(Shared.Protocol.WarpMode.Rails, 0);
+                if (Launch.WarpViaKey && TimeWarp.fetch != null) TimeWarp.fetch.setRate(0, false);
+                else Warp.RequestFromUser(Shared.Protocol.WarpMode.Rails, 0);
             }
 
             var alt = Input.GetKey(KeyCode.LeftAlt) || Input.GetKey(KeyCode.RightAlt);

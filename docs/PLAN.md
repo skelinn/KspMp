@@ -408,6 +408,23 @@ of the sorted part names; `HelloMsg.PartCount/PartsHash`, protocol 9), and the s
 per newcomer, whose parts differ from whose (and whose KSP version differs). It cannot say which part;
 KSP still fails the load on the machine that lacks it, but now the players know why before they build.
 
+### "Time warp is very buggy" - the actual cause (2026-09-08)
+
+The host's log had "UT snapped to server time (drift was 3.5 s, local warp 4x vs server 1x)" with no
+warp request from the host anywhere near it. KSP's warp keys, altitude clamps and "cannot warp here"
+drops all call the *private instance* `TimeWarp.setRate` directly; only the UI buttons and mods go
+through the public static `SetRate`, which is what the mod patched. So the "." key warped a player's
+game locally with the server none the wiser, their clock ran four times faster than everyone else's, and
+the shared clock snapped their rocket back every few seconds. The patch now targets the instance method,
+and the harness's `-kspmp-warp I:D:S:key` goes through that same path so the keyboard case is covered.
+The call is let through rather than blocked: the instance method is also how KSP keeps its own rate
+bookkeeping (the reset on load, the altitude clamps, the drop when warp becomes impossible), and a first
+attempt that blocked it left the game's clock at 0x. The change is reported as a request; if the server's
+answer differs, `WarpSystem.Update` puts the shared rate back half a second later (not while KSP is
+refusing the shared rate - then the local rate is the cap, and that is reported instead). A local
+decrease is made instant (`ref instantChange`): KSP winds rails warp down over several seconds, and a
+client still at 40x while the server is at 1x ran twenty seconds ahead and was snapped back.
+
 ### Boarding, EVA, death
 - EVA: stock hatch → `FlightEVA.fetch.spawnEVA(...)`; `onCrewOnEva` gives the new EVA vessel (`vessel.isEVA`). Client sends `CrewEva` + the EVA vessel's proto once the EVA FSM is ready (LMP waits for it). Only the avatar's owner may EVA their avatar (`onAttemptEva` handler + `ControlTypes.EVA_INPUT` lock). Presence → `OnEva`; source vessel roles recomputed (pilot EVA → handover).
 - Boarding: postfix `KerbalEVA.proceedAndBoard`/`BoardPart`/`BoardSeat` (LMP `KerbalEVA_proceedAndBoard.cs`, `KerbalEVA_BoardSeat.cs`) → `CrewBoard`; boarding client sends `VesselRemove` for its EVA vessel and applies the crew locally (`part.AddCrewmember`); the owner's next proto confirms; presence → `InFlight`.

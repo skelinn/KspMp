@@ -21,6 +21,8 @@ namespace KspMp.Systems
         private int _desired;
         private WarpMode _desiredMode;
         private int _lastLimiting;
+        private float _localChangeAt = -10f;
+        private float _lastEnforcedAt = -10f;
         private int _reportedCap = int.MinValue;
         private float _nextCapCheckAt;
         private float _sceneLoadedAt;
@@ -72,6 +74,7 @@ namespace KspMp.Systems
         {
             _desired = rateIndex;
             _desiredMode = mode;
+            _localChangeAt = Time.realtimeSinceStartup;
             SendRequest();
             if (rateIndex > 0)
                 ScreenMessages.PostScreenMessage("Warp " + WarpRates.Rate(mode, rateIndex) + "x requested", 2f, ScreenMessageStyle.UPPER_CENTER);
@@ -106,6 +109,16 @@ namespace KspMp.Systems
             {
                 // Try the shared rate again; if KSP takes it now, the cap report below lifts the limit.
                 _kspRefused = false;
+                Apply();
+            }
+            // KSP applied the player's key locally (the setRate patch lets it through); if the server has not
+            // answered with that rate within half a second, its rate goes back. Not while KSP is refusing the
+            // shared rate: then the local rate is the cap, and that is reported instead.
+            if (_hasState && !_kspRefused && HighLogic.LoadedSceneIsGame && TimeWarp.fetch != null
+                && TimeWarp.CurrentRateIndex != _state.RateIndex && now - _localChangeAt > 0.5f && now - _lastEnforcedAt > 0.5f)
+            {
+                _lastEnforcedAt = now;
+                Log.Info("Local warp index " + TimeWarp.CurrentRateIndex + " is not the shared " + _state.RateIndex + "; putting the shared rate back");
                 Apply();
             }
             if (now < _nextCapCheckAt) return;

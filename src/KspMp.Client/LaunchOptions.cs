@@ -124,6 +124,8 @@ namespace KspMp
         public int WarpIndex = -1;
         public float WarpAfterSeconds = 30f;
         public float WarpDurationSeconds = 30f;
+        /// <summary>-kspmp-warp I:D:S:key - go through KSP's own key path (the private setRate) instead of asking the mod directly.</summary>
+        public bool WarpViaKey;
 
         public bool AutoConnect => !string.IsNullOrEmpty(ConnectHost) || SteamHostId != 0 || HostGame;
 
@@ -340,6 +342,7 @@ namespace KspMp
                         if (parts.Length > 0 && int.TryParse(parts[0], out var index)) options.WarpIndex = index;
                         if (parts.Length > 1 && float.TryParse(parts[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var delay)) options.WarpAfterSeconds = delay;
                         if (parts.Length > 2 && float.TryParse(parts[2], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var duration)) options.WarpDurationSeconds = duration;
+                        if (parts.Length > 3 && parts[3] == "key") options.WarpViaKey = true;
                         break;
                     }
                     case "-kspmp-fly" when i + 1 < args.Length:
