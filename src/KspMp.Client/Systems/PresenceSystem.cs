@@ -289,15 +289,17 @@ namespace KspMp.Systems
                 Log.Info("Presence: " + Describe(presence));
             }
 
-            // Our kerbal is aboard a vessel we are not flying: offer to join it.
-            if (avatarVessel != null && !HighLogic.LoadedSceneIsFlight)
+            // Our kerbal is aboard a vessel we are not flying: offer to join it. Not one the server has
+            // removed: the copy of a recovered craft we rode home lingers in the save until it is discarded,
+            // and our Kerbal "aboard" it is not an invitation to fly a craft that no longer exists.
+            if (avatarVessel != null && !HighLogic.LoadedSceneIsFlight && !Addon.Vessels.WasRemoved(avatarVessel.id))
                 Offer(avatarVessel.id, avatarVessel.GetDisplayName(), "");
             else if (avatarVessel == null && _declined.Count > 0)
                 _declined.Clear();   // the Kerbal is home again; a later launch is a new invitation
             if (Invite != null)
             {
                 var id = Invite.VesselId;
-                if (id != Guid.Empty && (_lastEnteredFor == id || (HighLogic.LoadedSceneIsFlight && FlightGlobals.ActiveVessel != null && FlightGlobals.ActiveVessel.id == id)))
+                if (id != Guid.Empty && (_lastEnteredFor == id || Addon.Vessels.WasRemoved(id) || (HighLogic.LoadedSceneIsFlight && FlightGlobals.ActiveVessel != null && FlightGlobals.ActiveVessel.id == id)))
                     DismissInvite();
                 else if (!Addon.Notices.Has(InviteKey)) RaiseInviteNotice();
                 else if (id != Guid.Empty && Invite.AutoAt < 0 && (HighLogic.LoadedScene == GameScenes.SPACECENTER || HighLogic.LoadedScene == GameScenes.TRACKSTATION)) RaiseInviteNotice();
@@ -358,7 +360,7 @@ namespace KspMp.Systems
                         avatarVessel = proto.vesselRef;
                         var protoName = KSP.Localization.Localizer.Format(proto.vesselName);
                         if (avatarVessel == null && proto.situation != Vessel.Situations.LANDED && proto.situation != Vessel.Situations.SPLASHED)
-                            Offer(proto.vesselID, protoName, "");
+                            if (!Addon.Vessels.WasRemoved(proto.vesselID)) Offer(proto.vesselID, protoName, "");
                         return new PresenceMsg
                         {
                             ClientId = Net.ClientId,

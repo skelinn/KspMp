@@ -410,16 +410,20 @@ namespace KspMp.Systems
                 _stillNew.Clear();
                 foreach (var vessel in _newVessels)
                 {
-                    if (vessel == null || vessel.id == Guid.Empty || Registry.IsKnown(vessel.id) || Registry.IsTombstoned(vessel.id)) continue;
+                    if (vessel == null || vessel.id == Guid.Empty || Registry.IsKnown(vessel.id)) continue;
                     if (Registry.WasRemoved(vessel.id))
                     {
                         // A revert reloads the world as it was at launch, which can include vessels that have
-                        // since been removed for everyone (recovered, crashed, withdrawn by their own revert).
-                        // They are not new; claiming them would resurrect them on the server.
-                        Log.Info("Discarding " + vessel.GetDisplayName() + ": it was removed earlier and only came back with a revert");
+                        // since been removed for everyone (recovered, crashed, withdrawn by their own revert);
+                        // and the copy of a recovered craft we rode to the space centre comes back from the
+                        // save the same way. They are not new; claiming them would resurrect them on the
+                        // server, and our Kerbal "aboard" one would invite us to fly it. Before the tombstone
+                        // check: a fresh tombstone used to hide the zombie from this until it expired.
+                        Log.Info("Discarding " + vessel.GetDisplayName() + ": it was removed earlier and only came back with a scene load");
                         VesselLoader.Discard(vessel);
                         continue;
                     }
+                    if (Registry.IsTombstoned(vessel.id)) continue;
                     if (!vessel.loaded) continue;
                     if (SplitOffSomebodyElses(vessel, out var from))
                     {
@@ -668,11 +672,16 @@ namespace KspMp.Systems
         {
             if (vessel == null || !Registry.IsMine(vessel.id)) return;
             Log.Info("Recovery of " + vessel.GetDisplayName() + " requested; telling the server before the scene changes");
+            _recoveringOurs.Add(vessel.id);
             SendRemove(vessel.id, "recovered");
         }
 
+        /// <summary>Our own vessels between the Recover button and KSP's recovery of them at the space centre: not zombies to discard.</summary>
+        private readonly HashSet<Guid> _recoveringOurs = new HashSet<Guid>();
+
         private void OnVesselRecovered(ProtoVessel proto, bool quick)
         {
+            if (proto != null) _recoveringOurs.Remove(proto.vesselID);
             // Ours only: the flight-scene button already said so (the id is no longer known), and another
             // player's vessel is theirs to report.
             if (proto == null || !Registry.IsMine(proto.vesselID)) return;
@@ -701,7 +710,29 @@ namespace KspMp.Systems
         {
             _sceneChanging = false;
             _keepThroughRevert = Guid.Empty;
+            DiscardRemovedZombies();
             ApplyPending();
         }
+
+        /// <summary>
+        /// A scene load brings the save's vessels back, and the save can hold copies of vessels the server has
+        /// since removed: the craft a co-pilot rode home when its pilot recovered it stays in the flight state
+        /// until the space centre loads. Those come back from the save with our Kerbal still "aboard". The
+        /// new-vessel scan only sees flight-scene creations, so this runs on every game scene.
+        /// </summary>
+        private void DiscardRemovedZombies()
+        {
+            if (FlightGlobals.fetch == null || FlightGlobals.Vessels == null) return;
+            var doomed = new List<Vessel>();
+            foreach (var vessel in FlightGlobals.Vessels)
+                if (vessel != null && vessel.id != Guid.Empty && !Registry.IsKnown(vessel.id) && Registry.WasRemoved(vessel.id) && !_recoveringOurs.Contains(vessel.id)) doomed.Add(vessel);
+            for (var i = 0; i < doomed.Count; i++)
+            {
+                Log.Info("Discarding " + doomed[i].GetDisplayName() + ": it was removed earlier and only came back with the " + SceneName(HighLogic.LoadedScene) + " load");
+                VesselLoader.Discard(doomed[i]);
+            }
+        }
+
+        private static string SceneName(GameScenes scene) => scene.ToString().ToLowerInvariant().Replace("spacecenter", "space centre").Replace("trackstation", "tracking station");
     }
 }

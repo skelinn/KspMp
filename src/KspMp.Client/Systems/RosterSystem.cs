@@ -380,6 +380,7 @@ namespace KspMp.Systems
         private bool _askedAgain;
 
         private readonly List<string> _due = new List<string>();
+        private readonly Dictionary<string, string> _reviveWhy = new Dictionary<string, string>();
 
         private void ReviveDue()
         {
@@ -389,7 +390,9 @@ namespace KspMp.Systems
             for (var i = 0; i < _due.Count; i++)
             {
                 _reviveAt.Remove(_due[i]);
-                Revive(_due[i], "did not survive");
+                var why = _reviveWhy.TryGetValue(_due[i], out var recorded) ? recorded : "did not survive";
+                _reviveWhy.Remove(_due[i]);
+                Revive(_due[i], why);
             }
         }
 
@@ -448,6 +451,7 @@ namespace KspMp.Systems
             // KSP tears a dying vessel down over a few frames.
             Log.Info("Our Kerbal " + AvatarName + " was aboard a vessel that is gone (" + why + "); returning them to the astronaut complex");
             _reviveAt[AvatarName] = Time.realtimeSinceStartup + 2f;
+            _reviveWhy[AvatarName] = why == "recovered" ? "was recovered" : why == "terminated" ? "'s flight was ended" : "did not survive";
         }
 
         // ---- local game events ----

@@ -395,6 +395,14 @@ button's handler `VesselRetrieval.onVesselRecoveryRequested`, the tracking stati
 terminate confirmations), the way reverting somebody else's flight is; a co-pilot pressing Recover
 used to recover the rocket on their own machine only and confuse everyone.
 
+The co-pilot's copy of the recovered craft rides to the space centre in the save and comes back when
+that scene loads, with their Kerbal still "aboard" it; the new-vessel scan only saw flight-scene
+creations and skipped anything freshly tombstoned. `DiscardRemovedZombies` now runs on every game-scene
+load, the removed-earlier check precedes the tombstone check, and the presence system never offers a
+flight invite for a vessel the server removed. The pilot's own vessel is exempt between the Recover
+button and KSP's recovery of it at the space centre (`_recoveringOurs`), or KSP would find nothing to
+recover. The returning-Kerbal notice is worded by what happened ("was recovered", not "did not survive").
+
 ### Boarding, EVA, death
 - EVA: stock hatch → `FlightEVA.fetch.spawnEVA(...)`; `onCrewOnEva` gives the new EVA vessel (`vessel.isEVA`). Client sends `CrewEva` + the EVA vessel's proto once the EVA FSM is ready (LMP waits for it). Only the avatar's owner may EVA their avatar (`onAttemptEva` handler + `ControlTypes.EVA_INPUT` lock). Presence → `OnEva`; source vessel roles recomputed (pilot EVA → handover).
 - Boarding: postfix `KerbalEVA.proceedAndBoard`/`BoardPart`/`BoardSeat` (LMP `KerbalEVA_proceedAndBoard.cs`, `KerbalEVA_BoardSeat.cs`) → `CrewBoard`; boarding client sends `VesselRemove` for its EVA vessel and applies the crew locally (`part.AddCrewmember`); the owner's next proto confirms; presence → `InFlight`.
