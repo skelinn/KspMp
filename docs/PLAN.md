@@ -425,6 +425,15 @@ refusing the shared rate - then the local rate is the cap, and that is reported 
 decrease is made instant (`ref instantChange`): KSP winds rails warp down over several seconds, and a
 client still at 40x while the server is at 1x ran twenty seconds ahead and was snapped back.
 
+The same audit of `FlightInputHandler` and the flight UI found two more paths past the patches: the
+buttons beside the navball (`ActionGroupToggleButton.SetToggle`) and the brakes key both call
+`ActionGroupList.SetGroup`, not `ToggleGroup`, so a co-pilot's click on Gear or Brakes changed their copy
+only and the pilot's was never echoed. `SetToggle` is patched with the same gate as `ToggleGroup`; `SetGroup`
+is patched for Brakes only (it is also how the autopilot drops SAS it cannot hold and how contracts arm a
+spawned craft), with a re-entrancy flag so a button click is not echoed twice. Rule for the next audit:
+for every player action, grep the key handler in `FlightInputHandler` and the UI class for what they
+actually call.
+
 ### Boarding, EVA, death
 - EVA: stock hatch → `FlightEVA.fetch.spawnEVA(...)`; `onCrewOnEva` gives the new EVA vessel (`vessel.isEVA`). Client sends `CrewEva` + the EVA vessel's proto once the EVA FSM is ready (LMP waits for it). Only the avatar's owner may EVA their avatar (`onAttemptEva` handler + `ControlTypes.EVA_INPUT` lock). Presence → `OnEva`; source vessel roles recomputed (pilot EVA → handover).
 - Boarding: postfix `KerbalEVA.proceedAndBoard`/`BoardPart`/`BoardSeat` (LMP `KerbalEVA_proceedAndBoard.cs`, `KerbalEVA_BoardSeat.cs`) → `CrewBoard`; boarding client sends `VesselRemove` for its EVA vessel and applies the crew locally (`part.AddCrewmember`); the owner's next proto confirms; presence → `InFlight`.

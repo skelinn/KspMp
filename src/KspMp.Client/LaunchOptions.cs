@@ -85,6 +85,8 @@ namespace KspMp
         public float InputDurationSeconds = 10f;
         public string ToggleGroup;
         public float ToggleAfterSeconds = -1f;
+        /// <summary>-kspmp-toggle G:D:set - set the group on the way the brakes key does (SetGroup), not toggle it.</summary>
+        public bool ToggleViaSet;
         public string PartEventName;
         public float PartEventAfterSeconds = -1f;
         public float UndockAfterSeconds = -1f;
@@ -225,6 +227,7 @@ namespace KspMp
                     case "-kspmp-toggle" when i + 1 < args.Length:
                     {
                         var spec = args[++i];
+                        if (spec.EndsWith(":set")) { options.ToggleViaSet = true; spec = spec.Substring(0, spec.Length - 4); }
                         var colon = spec.LastIndexOf(':');
                         options.ToggleGroup = colon > 0 ? spec.Substring(0, colon) : spec;
                         if (colon > 0 && float.TryParse(spec.Substring(colon + 1), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var toggleAfter)) options.ToggleAfterSeconds = toggleAfter;

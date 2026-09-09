@@ -69,11 +69,21 @@ namespace KspMp.Harmony
         }
     }
 
+    /// <summary>
+    /// SetGroup calls ToggleGroup underneath, and the navball button calls SetGroup: one click would be
+    /// echoed by each patch on the way down. Whichever patch is outermost echoes; the ones inside stand aside.
+    /// </summary>
+    internal static class ActionGroupNesting
+    {
+        public static int Depth;
+    }
+
     [HarmonyPatch(typeof(ActionGroupList), nameof(ActionGroupList.ToggleGroup), typeof(KSPActionGroup))]
     internal static class ActionGroupList_ToggleGroup
     {
         private static bool Prefix(ActionGroupList __instance, KSPActionGroup group)
         {
+            if (ActionGroupNesting.Depth > 0) return true;
             var vessel = __instance.v;
             switch (ControlGate.For(vessel))
             {
@@ -90,6 +100,69 @@ namespace KspMp.Harmony
                     return true;
             }
         }
+    }
+
+    /// <summary>
+    /// The gear / lights / brakes / SAS / RCS / abort buttons beside the navball. They call SetGroup, not
+    /// ToggleGroup, so the ToggleGroup patch never saw a click on them: a co-pilot's click changed their
+    /// copy only, and the pilot's click was never echoed.
+    /// </summary>
+    [HarmonyPatch(typeof(KSP.UI.Screens.Flight.ActionGroupToggleButton), "SetToggle")]
+    internal static class ActionGroupToggleButton_SetToggle
+    {
+        private static bool Prefix(KSP.UI.Screens.Flight.ActionGroupToggleButton __instance, ref bool __state)
+        {
+            var vessel = FlightGlobals.ActiveVessel;
+            if (vessel == null) return true;
+            var group = __instance.group;
+            switch (ControlGate.For(vessel))
+            {
+                case ControlGate.Verdict.Relay:
+                    KspMpAddon.Instance.Control.SendActionGroup(vessel.id, group, false, !vessel.ActionGroups[group]);
+                    return false;
+                case ControlGate.Verdict.Blocked:
+                    ControlGate.Blocked(group.ToString());
+                    return false;
+                default:
+                    if (ControlGate.Echo(vessel)) KspMpAddon.Instance.Control.SendActionGroup(vessel.id, group, false, !vessel.ActionGroups[group]);
+                    ActionGroupNesting.Depth++;
+                    __state = true;
+                    return true;
+            }
+        }
+
+        private static void Postfix(bool __state) { if (__state) ActionGroupNesting.Depth--; }
+    }
+
+    /// <summary>
+    /// The brakes key sets the group rather than toggling it (down = on, up = off), so it went past the
+    /// ToggleGroup patch too. Brakes only: SetGroup is also how the autopilot drops SAS it cannot hold and
+    /// how contracts arm a spawned craft, and those are not a player's doing.
+    /// </summary>
+    [HarmonyPatch(typeof(ActionGroupList), nameof(ActionGroupList.SetGroup), typeof(KSPActionGroup), typeof(bool))]
+    internal static class ActionGroupList_SetGroup
+    {
+        private static bool Prefix(ActionGroupList __instance, KSPActionGroup group, bool active, ref bool __state)
+        {
+            if (ActionGroupNesting.Depth > 0) return true;
+            if (group != KSPActionGroup.Brakes) return true;
+            var vessel = __instance.v;
+            switch (ControlGate.For(vessel))
+            {
+                case ControlGate.Verdict.Relay:
+                    KspMpAddon.Instance.Control.SendActionGroup(vessel.id, group, false, active);
+                    return false;
+                case ControlGate.Verdict.Blocked:
+                    return false;
+                default:
+                    if (ControlGate.Echo(vessel) && vessel.ActionGroups[group] != active) KspMpAddon.Instance.Control.SendActionGroup(vessel.id, group, false, active);
+                    ActionGroupNesting.Depth++;
+                    __state = true;
+                    return true;
+            }
+        }
+
+        private static void Postfix(bool __state) { if (__state) ActionGroupNesting.Depth--; }
     }
 
     [HarmonyPatch(typeof(VesselAutopilot), nameof(VesselAutopilot.SetMode), typeof(VesselAutopilot.AutopilotMode))]

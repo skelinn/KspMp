@@ -401,8 +401,17 @@ namespace KspMp
             try
             {
                 var group = (KSPActionGroup)Enum.Parse(typeof(KSPActionGroup), Launch.ToggleGroup, true);
-                Log.Info("Auto-toggle: " + group + " on " + vessel.GetDisplayName());
-                vessel.ActionGroups.ToggleGroup(group);
+                if (Launch.ToggleViaSet)
+                {
+                    // What the brakes key does: set, not toggle.
+                    Log.Info("Auto-toggle: setting " + group + " on " + vessel.GetDisplayName() + " (SetGroup, as the key does)");
+                    vessel.ActionGroups.SetGroup(group, !vessel.ActionGroups[group]);
+                }
+                else
+                {
+                    Log.Info("Auto-toggle: " + group + " on " + vessel.GetDisplayName());
+                    vessel.ActionGroups.ToggleGroup(group);
+                }
             }
             catch (Exception e)
             {
