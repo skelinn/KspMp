@@ -40,6 +40,7 @@ namespace KspMp
     ///                                clients can be compared for convergence
     ///   -kspmp-editordelete D        D seconds after the editor opens, delete the last non-root part, so a
     ///                                deletion round-trip can be checked from both clients' logs
+    ///   -kspmp-resync D              D seconds after entering the game, press Resync once
     ///   -kspmp-editorjoin D          D seconds after the editor opens, join the other player's workbench
     ///   -kspmp-editorleave D         D seconds after the editor opens, go back to our own workbench
     ///   -kspmp-nametags on|off|all   names over other players' craft and kerbals (all also tags our own, for a
@@ -105,6 +106,8 @@ namespace KspMp
         public float RevertAfterSeconds = -1f;
         public float CrashAfterSeconds = -1f;
         public float RevertToEditorAfterSeconds = -1f;
+        /// <summary>-kspmp-resync D: D seconds after entering the game, press Resync once.</summary>
+        public float ResyncAfterSeconds = -1f;
         /// <summary>null = leave the setting alone.</summary>
         public bool? EvaSyncOverride;
         public bool EvaLiveMode;
@@ -257,6 +260,9 @@ namespace KspMp
                         break;
                     case "-kspmp-editordelete" when i + 1 < args.Length:
                         if (float.TryParse(args[++i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var deleteAfter)) options.EditorDeleteAfterSeconds = deleteAfter;
+                        break;
+                    case "-kspmp-resync" when i + 1 < args.Length:
+                        if (float.TryParse(args[++i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var resyncAfter)) options.ResyncAfterSeconds = resyncAfter;
                         break;
                     case "-kspmp-editorjoin" when i + 1 < args.Length:
                         if (float.TryParse(args[++i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var joinAfter)) options.EditorJoinAfterSeconds = joinAfter;

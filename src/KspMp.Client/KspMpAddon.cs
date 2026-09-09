@@ -186,6 +186,11 @@ namespace KspMp
                 _editorLoadDone = true;
                 StartCoroutine(AutoLoadCraft(Launch.EditorLoadAfterSeconds));
             }
+            if (HighLogic.LoadedSceneIsGame && Launch.ResyncAfterSeconds >= 0 && !_resyncDone)
+            {
+                _resyncDone = true;
+                StartCoroutine(AutoResync(Launch.ResyncAfterSeconds));
+            }
             if (scene == GameScenes.EDITOR && Launch.EditorJoinAfterSeconds >= 0 && !_editorJoinDone)
             {
                 _editorJoinDone = true;
@@ -793,6 +798,15 @@ namespace KspMp
         }
 
         /// <summary>Joins the first other player's workbench, or goes back to our own.</summary>
+        private bool _resyncDone;
+
+        private System.Collections.IEnumerator AutoResync(float delaySeconds)
+        {
+            yield return new WaitForSecondsRealtime(Mathf.Max(delaySeconds, 0f));
+            Log.Info("Auto-resync: pressing Resync");
+            VesselProto?.Resync();
+        }
+
         private System.Collections.IEnumerator AutoEditorSession(float delaySeconds, bool join)
         {
             yield return new WaitForSecondsRealtime(Mathf.Max(delaySeconds, 0f));

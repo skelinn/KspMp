@@ -66,6 +66,14 @@ namespace KspMp.Ui
                             + Theme.Tint(drift.ToString("F0") + " ms", System.Math.Abs(drift) > 250 ? Theme.Warn : Theme.Dim), Theme.Chip);
             GUILayout.Label(Theme.Tint("warp ", Theme.Dim) + _addon.Warp.StatusText, Theme.Chip);
             GUILayout.FlexibleSpace();
+            // For "the game unsynced": the world again, from the server, and every other player's craft rebuilt.
+            var protos = _addon.VesselProto;
+            if (protos != null && HighLogic.LoadedSceneIsGame)
+            {
+                GUI.enabled = protos.ResyncAvailable;
+                if (GUILayout.Button("Resync", GUILayout.Height(Theme.ControlHeight))) _addon.Defer(protos.Resync);
+                GUI.enabled = true;
+            }
             GUILayout.EndHorizontal();
 
             DrawNotices();

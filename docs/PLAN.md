@@ -376,6 +376,11 @@ report for a kerbal already aboard is a no-op. A kerbal seated nowhere on the ow
 the owner's next snapshot removes from the boarder's copy, which is what "I was not in the rocket any
 more" was.
 
+A **Resync** button (`VesselProtoSystem.Resync`, HUD status row, `-kspmp-resync D` in the harness) asks
+the server for the world again and rebuilds every other player's vessel from the snapshots that come
+back (`RemoteVessel.ForceReload` for five seconds), ten-second cooldown. "The game unsyncs a lot" needs
+a way out that is not restarting.
+
 ### Boarding, EVA, death
 - EVA: stock hatch → `FlightEVA.fetch.spawnEVA(...)`; `onCrewOnEva` gives the new EVA vessel (`vessel.isEVA`). Client sends `CrewEva` + the EVA vessel's proto once the EVA FSM is ready (LMP waits for it). Only the avatar's owner may EVA their avatar (`onAttemptEva` handler + `ControlTypes.EVA_INPUT` lock). Presence → `OnEva`; source vessel roles recomputed (pilot EVA → handover).
 - Boarding: postfix `KerbalEVA.proceedAndBoard`/`BoardPart`/`BoardSeat` (LMP `KerbalEVA_proceedAndBoard.cs`, `KerbalEVA_BoardSeat.cs`) → `CrewBoard`; boarding client sends `VesselRemove` for its EVA vessel and applies the crew locally (`part.AddCrewmember`); the owner's next proto confirms; presence → `InFlight`.

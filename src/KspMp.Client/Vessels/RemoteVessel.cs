@@ -20,6 +20,8 @@ namespace KspMp.Vessels
         public bool ProtoDirty;
         /// <summary>The snapshot's own orbit was unusable; take the orbit from the latest state instead.</summary>
         public bool OrbitFromState;
+        /// <summary>Rebuild the loaded copy from the next snapshot even if it looks unchanged (a player asked for a resync).</summary>
+        public bool ForceReload;
         /// <summary>Do not try to apply the snapshot again before this (realtime); 0 = whenever.</summary>
         public float NextApplyAt;
         public bool HasState;

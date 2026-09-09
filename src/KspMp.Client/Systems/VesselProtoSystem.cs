@@ -112,6 +112,7 @@ namespace KspMp.Systems
                 return;
             }
             remote.ProtoDirty = true;
+            if (Time.realtimeSinceStartup < _forceUntil) remote.ForceReload = true;
             if (msg.Reason != ProtoReason.Periodic) Log.Info("Snapshot of " + remote.Label + " from #" + msg.OwnerClientId + " (" + msg.Reason + ", " + (msg.ProtoDeflated != null ? msg.ProtoDeflated.Length : 0) + " bytes)");
             TryApply(remote);
         }
@@ -176,7 +177,9 @@ namespace KspMp.Systems
             }
             if (FlightGlobals.FindVessel(proto.vesselID) == null && TryAdoptPhantom(proto, remote)) return;
             // A vessel we sit in but do not simulate is still refreshed when its parts change - see VesselLoader.
-            var outcome = VesselLoader.Load(proto, false, !Registry.IsMine(remote));
+            var force = remote.ForceReload;
+            remote.ForceReload = false;
+            var outcome = VesselLoader.Load(proto, force, !Registry.IsMine(remote));
             if (outcome == VesselLoader.Outcome.InvalidOrbit)
             {
                 // Born this frame on the owner's machine; its state stream carries a real orbit within a
@@ -500,6 +503,26 @@ namespace KspMp.Systems
         /// the next moment, anything KSP creates locally is discarded instead.
         /// </summary>
         public void ExpectSplitOff(float seconds) => _splitOffUntil = Time.realtimeSinceStartup + seconds;
+
+        private float _forceUntil = -1f;
+        private float _lastResyncAt = -100f;
+        public const float ResyncCooldownSeconds = 10f;
+        public bool ResyncAvailable => Time.realtimeSinceStartup - _lastResyncAt >= ResyncCooldownSeconds;
+
+        /// <summary>
+        /// The player's "something looks wrong" button: asks the server for the whole world again and rebuilds
+        /// every other player's vessel from the snapshots that come back, whether or not they look changed.
+        /// Our own vessels are not touched; the copy we sit in as a co-pilot is rebuilt like any other.
+        /// </summary>
+        public void Resync()
+        {
+            if (!ResyncAvailable || !Net.IsConnected) return;
+            _lastResyncAt = Time.realtimeSinceStartup;
+            _forceUntil = _lastResyncAt + 5f;
+            Net.Send(MessageId.SyncRequest, new SyncRequestMsg(), Channel.Control, Delivery.ReliableOrdered);
+            Log.Info("Resync: asked the server for the world again; the other players' vessels will be rebuilt");
+            Addon.Notices.Post("resync", "Asked the server for the world again; the other players' craft are being rebuilt", Ui.Theme.Ink, ttlSeconds: 8f);
+        }
 
         private void KeepPhantom(Vessel vessel, RemoteVessel from)
         {
