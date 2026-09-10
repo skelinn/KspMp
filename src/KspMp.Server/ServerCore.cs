@@ -353,6 +353,14 @@ namespace KspMp.Server
                     else if (Control.ForwardToOwner(client, pf.VesselId, MessageId.PartField, pf, Channel.Control, Delivery.ReliableOrdered)) _log(client.DisplayName + " set " + pf.FieldName + " = " + pf.Value + " on vessel " + pf.VesselId.ToString().Substring(0, 8));
                     break;
                 }
+                case MessageId.StageSequence:
+                {
+                    var seq = Envelope.Read<StageSequenceMsg>(body);
+                    seq.FromClientId = client.ClientId;
+                    if (Authority.IsOwnedBy(seq.VesselId, client.ClientId)) Control.RelayActionToFlying(client, seq.VesselId, MessageId.StageSequence, seq, Channel.Control, Delivery.ReliableOrdered);
+                    else if (Control.ForwardToOwner(client, seq.VesselId, MessageId.StageSequence, seq, Channel.Control, Delivery.ReliableOrdered)) _log(client.DisplayName + " rearranged the staging of vessel " + seq.VesselId.ToString().Substring(0, 8));
+                    break;
+                }
                 case MessageId.EditorJoin:
                     Editor.HandleJoin(client, Envelope.Read<EditorJoinMsg>(body));
                     break;
@@ -532,10 +540,11 @@ namespace KspMp.Server
                     Chat.ServerNotice(newcomer.PlayerName + " runs KSP " + newcomer.KspVersion + " and " + other.PlayerName + " runs " + other.KspVersion + "; use the same version");
                 if (other.PartsHash == newcomer.PartsHash) continue;
                 var counts = newcomer.PartCount == other.PartCount
-                    ? "the same number of parts, " + newcomer.PartCount + ", but not the same parts"
+                    ? "the same number of parts, " + newcomer.PartCount + ", but not the same parts or the same mods changing them"
                     : newcomer.PartCount + " parts against " + other.PartCount;
                 Chat.ServerNotice(newcomer.PlayerName + "'s installed parts differ from " + other.PlayerName + "'s (" + counts
-                                  + "). A craft using a part the other player does not have will not load on their machine. Same GameData on both sides is safest.");
+                                  + "). A craft using a part the other player does not have will not load on their machine, and a mod on one side only "
+                                  + "can make part-menu buttons and sliders quietly do nothing. Same GameData on both sides is safest.");
             }
         }
 

@@ -451,7 +451,10 @@ namespace KspMp.Systems
             // KSP tears a dying vessel down over a few frames.
             Log.Info("Our Kerbal " + AvatarName + " was aboard a vessel that is gone (" + why + "); returning them to the astronaut complex");
             _reviveAt[AvatarName] = Time.realtimeSinceStartup + 2f;
-            _reviveWhy[AvatarName] = why == "recovered" ? "was recovered" : why == "terminated" ? "'s flight was ended" : "did not survive";
+            _reviveWhy[AvatarName] = why == "recovered" ? "was recovered"
+                : why == "terminated" ? "'s flight was ended"
+                : why.StartsWith("revert", StringComparison.OrdinalIgnoreCase) || why.StartsWith("return", StringComparison.OrdinalIgnoreCase) ? "'s flight was reverted"
+                : "did not survive";
         }
 
         // ---- local game events ----

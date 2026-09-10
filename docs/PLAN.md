@@ -441,6 +441,39 @@ its symmetry twins) and echoes it; the pilot's change is echoed so the co-pilot'
 waiting for a snapshot. Values travel as invariant text and are converted to the field's type on
 arrival. `-kspmp-partfield Module:field:value:D` in the harness.
 
+### Reverting with two people aboard, and the staging column in flight (2026-09-09)
+
+Four things from the second real session.
+
+**The staging column, rearranged in flight, was one player's business only.** Dragging icons changes
+`part.inverseStage` and fires `GameEvents.StageManager.OnGUIStageSequenceModified`, the same event the
+editor uses; nothing sent it. It goes out whole now (`StageSequenceMsg`, id 625, protocol 10) rather than
+as a move, because a move only means anything against a column that already matches and the columns are
+exactly what has gone out of step. The receiver sets each part's stage by flight id and re-sorts the icons
+when it is the active vessel. A co-pilot's rearrangement is relayed to the pilot, whose column decides what
+actually fires, and echoed from there.
+
+**Reverting no longer needs everyone else to get out first.** The refusal when somebody else was aboard is
+gone. On a revert to the editor the vessel is withdrawn, and a player aboard it now walks to the space
+centre instead of watching it explode (`WentQuietly` covers recovered, terminated and both reverts).
+
+A revert *to launch* keeps the vessel rather than removing it, so nothing told the passenger to leave and
+their copy was rebuilt on the pad around them, mid-flight, with no scene change. That is where "it launched
+him into the atmosphere in a weird colour glitch" came from. `VesselLoader` now recognises the case - our
+active vessel, owned by somebody else, whose snapshot says PRELAUNCH while our copy is not - and leaves for
+the space centre. Their Kerbal is aboard the rocket on the pad in the pilot's snapshot, so the ordinary
+invite offers them a seat in the new flight.
+
+**And a player who joined a flight cannot revert it at all.** KSP sets `CanRevertToPostInit` from the
+vessel's situation when a game is resumed from a cached state, which is what `StartAndFocusVessel` does, so
+the button was live for a joiner and reverted them into the moment they arrived. `KspMpAddon.JoinedThisFlight`
+is set by `PresenceSystem.JoinFlight` and cleared by our own launch.
+
+**The parts signature covers the modules on each part**, not only its name. A mod like MechJeb is bolted
+onto every command pod by a ModuleManager patch, so two installs where only one has it hold the same parts
+under the same names - and a relayed part-menu action, which names a module by index, then lands on the
+wrong module or on none at all. Hashing the module names catches that at the handshake.
+
 ### Boarding, EVA, death
 - EVA: stock hatch → `FlightEVA.fetch.spawnEVA(...)`; `onCrewOnEva` gives the new EVA vessel (`vessel.isEVA`). Client sends `CrewEva` + the EVA vessel's proto once the EVA FSM is ready (LMP waits for it). Only the avatar's owner may EVA their avatar (`onAttemptEva` handler + `ControlTypes.EVA_INPUT` lock). Presence → `OnEva`; source vessel roles recomputed (pilot EVA → handover).
 - Boarding: postfix `KerbalEVA.proceedAndBoard`/`BoardPart`/`BoardSeat` (LMP `KerbalEVA_proceedAndBoard.cs`, `KerbalEVA_BoardSeat.cs`) → `CrewBoard`; boarding client sends `VesselRemove` for its EVA vessel and applies the crew locally (`part.AddCrewmember`); the owner's next proto confirms; presence → `InFlight`.

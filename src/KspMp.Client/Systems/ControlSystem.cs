@@ -110,6 +110,8 @@ namespace KspMp.Systems
             Net.RegisterHandler(MessageId.SasMode, OnSasMode);
             Net.RegisterHandler(MessageId.PartEvent, OnPartEvent);
             Net.RegisterHandler(MessageId.PartField, OnPartField);
+            Net.RegisterHandler(MessageId.StageSequence, OnStageSequence);
+            GameEvents.StageManager.OnGUIStageSequenceModified.Add(OnStagingRearranged);
             Net.RegisterHandler(MessageId.ControlRequest, OnControlRequest);
             Net.RegisterHandler(MessageId.ControlDecline, OnControlDecline);
         }
@@ -124,6 +126,8 @@ namespace KspMp.Systems
             Net.UnregisterHandler(MessageId.SasMode, OnSasMode);
             Net.UnregisterHandler(MessageId.PartEvent, OnPartEvent);
             Net.UnregisterHandler(MessageId.PartField, OnPartField);
+            Net.UnregisterHandler(MessageId.StageSequence, OnStageSequence);
+            GameEvents.StageManager.OnGUIStageSequenceModified.Remove(OnStagingRearranged);
             Net.UnregisterHandler(MessageId.ControlRequest, OnControlRequest);
             Net.UnregisterHandler(MessageId.ControlDecline, OnControlDecline);
             Unhook();
@@ -146,6 +150,11 @@ namespace KspMp.Systems
                 Unhook();
                 SetCoPilotLock(false);
                 return;
+            }
+            if (_stagingDirtyAt >= 0 && Time.realtimeSinceStartup - _stagingDirtyAt >= StagingDebounceSeconds)
+            {
+                _stagingDirtyAt = -1f;
+                SendStageSequence(ActiveVesselOrNull);
             }
             var asOwner = Addon.Vessels.IsMine(active.id);
             if (_hooked != active || _hookedAsOwner != asOwner) Hook(active, asOwner);
@@ -463,6 +472,81 @@ namespace KspMp.Systems
         /// just did. In the second case KSP may split pieces off our copy - a spent stage, an escape tower - and
         /// those are discarded rather than announced, because the owner's real ones arrive as snapshots.
         /// </summary>
+        // ---- the staging column, rearranged in flight ----
+
+        private const float StagingDebounceSeconds = 0.35f;
+        private float _stagingDirtyAt = -1f;
+
+        /// <summary>
+        /// Somebody dragged the staging column about. Dragging fires this many times, so the column goes out
+        /// once it settles. Applying a received column fires it too, which is why ApplyingRemoteAction is checked.
+        /// </summary>
+        private void OnStagingRearranged()
+        {
+            if (ApplyingRemoteAction || !HighLogic.LoadedSceneIsFlight) return;
+            _stagingDirtyAt = Time.realtimeSinceStartup;
+        }
+
+        public void SendStageSequence(Vessel vessel)
+        {
+            if (vessel == null || vessel.parts == null || !Net.IsConnected) return;
+            var mine = Addon.Vessels.IsMine(vessel.id);
+            // Ours: only worth sending when somebody else can see it. Theirs: only if we are aboard, and then
+            // it goes to the pilot, whose column is the one that decides what fires.
+            if (mine)
+            {
+                if (!OthersAboard(vessel.id) && !(Addon.Presence != null && Addon.Presence.OthersInFlight())) return;
+            }
+            else if (!Addon.Vessels.IsOwnedByOther(vessel.id) || !IAmAboard(vessel.id)) return;
+
+            var ids = new uint[vessel.parts.Count];
+            var stages = new int[vessel.parts.Count];
+            for (var i = 0; i < vessel.parts.Count; i++)
+            {
+                ids[i] = vessel.parts[i].flightID;
+                stages[i] = vessel.parts[i].inverseStage;
+            }
+            Net.Send(MessageId.StageSequence, new StageSequenceMsg
+            {
+                VesselId = vessel.id,
+                CurrentStage = vessel.currentStage,
+                PartFlightIds = ids,
+                Stages = stages,
+            }, Channel.Control, Delivery.ReliableOrdered);
+            Log.Info("Sent the staging column of " + vessel.GetDisplayName() + " (" + ids.Length + " part(s), stage " + vessel.currentStage + ")");
+        }
+
+        private void OnStageSequence(NetDataReader body)
+        {
+            var msg = Envelope.Read<StageSequenceMsg>(body);
+            var vessel = ActionTarget(msg.VesselId, msg.FromClientId, out var mirrored);
+            if (vessel == null || msg.PartFlightIds == null) return;
+            Apply("the staging column from " + NameOf(msg.FromClientId), () =>
+            {
+                var changed = 0;
+                for (var i = 0; i < msg.PartFlightIds.Length; i++)
+                {
+                    for (var p = 0; p < vessel.parts.Count; p++)
+                    {
+                        var part = vessel.parts[p];
+                        if (part.flightID != msg.PartFlightIds[i]) continue;
+                        if (part.inverseStage != msg.Stages[i]) { part.inverseStage = msg.Stages[i]; changed++; }
+                        break;
+                    }
+                }
+                if (vessel.isActiveVessel)
+                {
+                    vessel.currentStage = msg.CurrentStage;
+                    // Redraw the column from the part values we just set; without this the icons keep the
+                    // old grouping and the next press looks like it fired the wrong stage.
+                    if (KSP.UI.Screens.StageManager.Instance != null) KSP.UI.Screens.StageManager.Instance.SortIcons(true);
+                }
+                Log.Info("Staging column applied to " + vessel.GetDisplayName() + ": " + changed + " part(s) moved");
+            });
+            // The relayed column reached the pilot; everyone else aboard has heard nothing yet.
+            if (!mirrored && Addon.Vessels.IsMine(vessel.id) && OthersAboard(vessel.id)) SendStageSequence(vessel);
+        }
+
         private Vessel ActionTarget(Guid vesselId, int fromClientId, out bool mirrored)
         {
             mirrored = false;

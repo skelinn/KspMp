@@ -98,5 +98,7 @@ namespace KspMp.Shared.Protocol
         PartEvent = 623,
         /// <summary>A part-menu field (slider, toggle, cycle) set by a player: relayed like a part event.</summary>
         PartField = 624,
+        /// <summary>The staging column, rearranged in flight: which stage each part now belongs to.</summary>
+        StageSequence = 625,
     }
 }

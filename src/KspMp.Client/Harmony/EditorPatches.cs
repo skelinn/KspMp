@@ -67,6 +67,7 @@ namespace KspMp.Harmony
         {
             var addon = KspMpAddon.Instance;
             if (addon == null || addon.Network == null || !addon.Network.IsConnected) return true;
+            addon.JoinedThisFlight = false;   // our own launch: reverting has somewhere to go back to
             if (addon.SuppressLaunchAnnounce) return true;   // the harness announced and cleared the pad itself
             if (Vessels.LaunchSiteGuard.IsBlocked(launchSiteName, addon.Vessels, out var reason))
             {

@@ -328,7 +328,11 @@ public class ServerControlTests
         bob.Send(MessageId.PartEvent, new PartEventMsg { VesselId = VesselId, PartFlightId = 10, ModuleIndex = 0, EventName = "Deploy" });
         bob.Send(MessageId.ActionGroup, new ActionGroupMsg { VesselId = VesselId, Group = 1, Toggle = true });
         bob.Send(MessageId.PartField, new PartFieldMsg { VesselId = VesselId, PartFlightId = 10, ModuleIndex = 0, FieldName = "thrustPercentage", Value = "50" });
+        bob.Send(MessageId.StageSequence, new StageSequenceMsg { VesselId = VesselId, CurrentStage = 3, PartFlightIds = new uint[] { 10 }, Stages = new[] { 2 } });
         TestClient.Pump(server, alice, bob, carol);
+        Assert.Equal(2, alice.Last<StageSequenceMsg>()!.Value.Stages[0]);
+        Assert.Equal(3, alice.Last<StageSequenceMsg>()!.Value.CurrentStage);
+        Assert.Empty(carol.Messages<StageSequenceMsg>());
         Assert.Equal(bob.ClientId, alice.Last<StageMsg>()!.Value.FromClientId);
         Assert.Equal("Deploy", alice.Last<PartEventMsg>()!.Value.EventName);
         Assert.Equal("50", alice.Last<PartFieldMsg>()!.Value.Value);

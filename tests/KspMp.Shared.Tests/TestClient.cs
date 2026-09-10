@@ -81,6 +81,7 @@ internal class TestClient
             MessageId.SasMode => Envelope.Read<SasModeMsg>(body),
             MessageId.PartEvent => Envelope.Read<PartEventMsg>(body),
             MessageId.PartField => Envelope.Read<PartFieldMsg>(body),
+            MessageId.StageSequence => Envelope.Read<StageSequenceMsg>(body),
             MessageId.ControlRequest => Envelope.Read<ControlRequestMsg>(body),
             MessageId.ControlDecline => Envelope.Read<ControlDeclineMsg>(body),
             MessageId.DockCommit => Envelope.Read<DockCommitMsg>(body),

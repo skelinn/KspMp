@@ -89,6 +89,8 @@ namespace KspMp
         public bool ToggleViaSet;
         public string PartEventName;
         public float PartEventAfterSeconds = -1f;
+        /// <summary>-kspmp-stageseq D: D seconds into the flight, move a part to another stage as a drag would.</summary>
+        public float StageSequenceAfterSeconds = -1f;
         /// <summary>-kspmp-partfield Module:field:value:D - D seconds into the flight, set a part-menu field the way the menu does.</summary>
         public string PartFieldModule, PartFieldName, PartFieldValue;
         public float PartFieldAfterSeconds = -1f;
@@ -244,6 +246,9 @@ namespace KspMp
                         if (colon > 0 && float.TryParse(spec.Substring(colon + 1), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var eventAfter)) options.PartEventAfterSeconds = eventAfter;
                         break;
                     }
+                    case "-kspmp-stageseq" when i + 1 < args.Length:
+                        if (float.TryParse(args[++i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var stageSeqAfter)) options.StageSequenceAfterSeconds = stageSeqAfter;
+                        break;
                     case "-kspmp-partfield" when i + 1 < args.Length:
                     {
                         var parts = args[++i].Split(':');

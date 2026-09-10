@@ -245,6 +245,50 @@ namespace KspMp.Shared.Protocol
     }
 
     /// <summary>A part right-click button (BaseEvent) pressed by someone aboard who is not the physics owner.</summary>
+    /// <summary>
+    /// The staging column after somebody dragged it about in flight: the stage each part now belongs to.
+    /// Sent whole rather than as a move, because a move is only meaningful against a column that already
+    /// matches, and the two machines' columns are exactly what has gone out of step.
+    /// </summary>
+    public struct StageSequenceMsg : INetSerializable
+    {
+        public Guid VesselId;
+        public int FromClientId;
+        /// <summary>The vessel's stage pointer, so the column reads the same on both screens.</summary>
+        public int CurrentStage;
+        public uint[] PartFlightIds;
+        public int[] Stages;
+
+        public void Serialize(NetDataWriter w)
+        {
+            w.PutGuidRaw(VesselId);
+            w.Put(FromClientId);
+            w.Put(CurrentStage);
+            var count = PartFlightIds != null ? PartFlightIds.Length : 0;
+            w.Put(count);
+            for (var i = 0; i < count; i++)
+            {
+                w.Put(PartFlightIds[i]);
+                w.Put(Stages != null && i < Stages.Length ? Stages[i] : 0);
+            }
+        }
+
+        public void Deserialize(NetDataReader r)
+        {
+            VesselId = r.GetGuidRaw();
+            FromClientId = r.GetInt();
+            CurrentStage = r.GetInt();
+            var count = r.GetInt();
+            PartFlightIds = new uint[count];
+            Stages = new int[count];
+            for (var i = 0; i < count; i++)
+            {
+                PartFlightIds[i] = r.GetUInt();
+                Stages[i] = r.GetInt();
+            }
+        }
+    }
+
     /// <summary>A part-menu field (a thrust limiter slider, a fuel-flow toggle, a cycle) set to a value, as text.</summary>
     public struct PartFieldMsg : INetSerializable
     {

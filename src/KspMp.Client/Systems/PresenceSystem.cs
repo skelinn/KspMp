@@ -233,6 +233,7 @@ namespace KspMp.Systems
                     return false;
                 }
                 Log.Info("Entering flight on vessel " + vesselId.ToString().Substring(0, 8) + " (index " + index + " of " + game.flightState.protoVessels.Count + ")");
+                Addon.JoinedThisFlight = true;   // no launch of ours to revert to; the guard needs to know
                 FlightDriver.StartAndFocusVessel(game, index);
                 // Only after the start took: a throw above must leave the invite standing for another try.
                 _lastEnteredFor = vesselId;

@@ -43,9 +43,16 @@ namespace KspMp.Harmony
             var label = LabelOf(launched);
             if (launched != Guid.Empty && addon.Vessels.IsOwnedByOther(launched))
                 return Refuse(what, "only the pilot of " + label + " can do that");
-            if (launched != Guid.Empty && addon.Control.OthersAboard(launched))
-                return Refuse(what, "somebody else is still aboard " + label);
+            // A player who joined somebody else's flight has no launch of their own to go back to. KSP still
+            // offers the button (it builds a state from the moment they arrived), and taking it dropped them
+            // into a stale cached world - the "launched into the atmosphere" with the colours wrong.
+            if (addon.JoinedThisFlight)
+                return Refuse(what, "you joined this flight rather than launching it; ask whoever launched to revert");
             Log.Info(what + ": allowed" + (launched != Guid.Empty ? " for " + label : ""));
+            // Everyone else aboard loses the craft: it is withdrawn for all of them. Tell them who did it,
+            // rather than letting the vessel vanish out from under them with no explanation.
+            if (launched != Guid.Empty && addon.Control.OthersAboard(launched))
+                Log.Info(what + ": " + label + " has other players aboard; they will be sent to the space centre");
             addon.VesselProto.OnReverting(what, vesselComesBack, launched);
             return true;
         }

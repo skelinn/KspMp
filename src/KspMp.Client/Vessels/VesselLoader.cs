@@ -136,6 +136,19 @@ namespace KspMp.Vessels
                             Log.Info("Keeping the active vessel " + label + " as it is; snapshots of it are ignored while we fly it");
                         return Outcome.Skipped;
                     }
+                    // A revert to launch, from a passenger's seat: their snapshot has the rocket back on the
+                    // pad while our copy of it is still in the air. The rocket is kept rather than removed on
+                    // a revert to launch, so nothing tells us to leave - and rebuilding it around us moves the
+                    // player tens of kilometres with no scene change, which is where the wrong colours and the
+                    // "launched into the atmosphere" came from. Leave for the space centre instead. Our Kerbal
+                    // is aboard the rocket on the pad in their snapshot, so the usual invite offers us a seat
+                    // in the new flight, and the snapshot lands normally once we are out of the flight scene.
+                    if (proto.situation == Vessel.Situations.PRELAUNCH && existing.situation != Vessel.Situations.PRELAUNCH)
+                    {
+                        Log.Info("The vessel we are aboard, " + label + ", is back on the pad: its pilot reverted the flight. Leaving for the space centre");
+                        LeaveFlight("reverted", "The pilot reverted to launch; you are back at the space centre and can join the flight again");
+                        return Outcome.Deferred;
+                    }
                     // Sitting in a vessel somebody else flies: its parts are theirs to change, and a snapshot with a
                     // different set of them - a stage they fired, a fairing they dropped, an escape tower they
                     // jettisoned - is how our copy finds out. The same parts and crew are not worth tearing our own
@@ -275,6 +288,24 @@ namespace KspMp.Vessels
             }
         }
 
+        /// <summary>
+        /// Steps out of the flight scene, with a word about why. Deferred: loading a scene from inside a
+        /// snapshot apply would tear the world down under the rest of this frame.
+        /// </summary>
+        private static void LeaveFlight(string noticeKey, string text)
+        {
+            var addon = KspMpAddon.Instance;
+            if (addon == null) return;
+            addon.Notices?.Post(noticeKey, text, KspMp.Ui.Theme.Ink, ttlSeconds: 12f);
+            addon.Defer(() => { if (HighLogic.LoadedSceneIsFlight) HighLogic.LoadScene(GameScenes.SPACECENTER); });
+        }
+
+        /// <summary>Reasons a vessel went away with nothing exploding, so a player aboard it walks home rather than dying with it.</summary>
+        private static bool WentQuietly(string why) =>
+            why == "recovered" || why == "terminated"
+            || why.StartsWith("revert", StringComparison.OrdinalIgnoreCase)
+            || why.StartsWith("return", StringComparison.OrdinalIgnoreCase);
+
         public static void Remove(Guid vesselId, string why)
         {
             try
@@ -285,23 +316,21 @@ namespace KspMp.Vessels
                 {
                     var roster = KspMpAddon.Instance != null ? KspMpAddon.Instance.Roster : null;
                     var avatarAboard = roster != null && roster.AvatarAboard(vessel);
-                    if (vessel.isActiveVessel && (why == "recovered" || why == "terminated"))
+                    if (vessel.isActiveVessel && WentQuietly(why))
                     {
-                        // Its owner recovered it (or ended the flight from the tracking station): nothing
-                        // exploded anywhere, and our Kerbal walked off it on the owner's machine. Blowing our
-                        // copy up here killed our Kerbal for ten seconds and looked like a crash. Leave for the
-                        // space centre instead; the copy left in the save is discarded on the next load.
+                        // Its owner recovered it, ended its flight, or reverted: nothing exploded anywhere, and
+                        // our Kerbal walked off it on the owner's machine. Blowing our copy up here killed our
+                        // Kerbal for ten seconds and looked like a crash. Leave for the space centre instead;
+                        // the copy left in the save is discarded on the next load. After a revert to launch the
+                        // rocket comes back on the pad with our Kerbal aboard, and the usual invite offers us a seat.
                         Log.Info("The vessel we are aboard, " + vessel.GetDisplayName() + ", was " + why + " by its owner; leaving for the space centre");
                         VesselImmortal.Set(vessel, false);
                         if (roster != null) roster.QuietCrewOf(vessel, 10f);
                         if (avatarAboard) roster.ReturnAvatar(why);
                         flightState?.protoVessels.RemoveAll(p => p == null || p.vesselID == vesselId);
-                        var addon = KspMpAddon.Instance;
-                        if (addon != null)
-                        {
-                            addon.Notices?.Post("recovered", "The craft you were aboard was " + why + " by its pilot; you are back at the space centre", KspMp.Ui.Theme.Ink, ttlSeconds: 12f);
-                            addon.Defer(() => { if (HighLogic.LoadedSceneIsFlight) HighLogic.LoadScene(GameScenes.SPACECENTER); });
-                        }
+                        LeaveFlight("recovered", why.StartsWith("revert", StringComparison.OrdinalIgnoreCase) || why.StartsWith("return", StringComparison.OrdinalIgnoreCase)
+                            ? "The pilot reverted the flight; you are back at the space centre"
+                            : "The craft you were aboard was " + why + " by its pilot; you are back at the space centre");
                         return;
                     }
                     if (vessel.isActiveVessel)

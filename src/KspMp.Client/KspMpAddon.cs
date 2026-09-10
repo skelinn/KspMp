@@ -53,6 +53,7 @@ namespace KspMp
         private float _toggleAt = -1f;
         private float _partEventAt = -1f;
         private float _partFieldAt = -1f;
+        private float _stageSeqAt = -1f;
         private bool _moveNearStarted;
         private float _evaAt = -1f;
         private float _boardAt = -1f;
@@ -116,7 +117,7 @@ namespace KspMp
             Network = new ClientNetwork(Settings);
             Vessels = new VesselRegistry();
             Network.Welcomed += welcome => { Vessels.LocalClientId = welcome.ClientId; RefreshSystems(); };
-            Network.Disconnected += _ => { RefreshSystems(); Vessels.LocalClientId = 0; KspMp.Vessels.LaunchSiteGuard.Reset(); Notices?.Clear(); SyncedOnce = false; };
+            Network.Disconnected += _ => { RefreshSystems(); Vessels.LocalClientId = 0; KspMp.Vessels.LaunchSiteGuard.Reset(); Notices?.Clear(); SyncedOnce = false; JoinedThisFlight = false; };
             Network.Welcomed += OnWelcomedForLaunchOptions;
             // Launch notices are handled here rather than in EditorSystem, which only runs inside the VAB.
             // The player who most needs to hear that a pad is being taken is the one stood in the space
@@ -224,6 +225,8 @@ namespace KspMp
                 _partEventAt = Time.realtimeSinceStartup + Launch.PartEventAfterSeconds;
             if (scene == GameScenes.FLIGHT && Launch.PartFieldAfterSeconds >= 0 && _partFieldAt < 0)
                 _partFieldAt = Time.realtimeSinceStartup + Launch.PartFieldAfterSeconds;
+            if (scene == GameScenes.FLIGHT && Launch.StageSequenceAfterSeconds >= 0 && _stageSeqAt < 0)
+                _stageSeqAt = Time.realtimeSinceStartup + Launch.StageSequenceAfterSeconds;
             if (scene == GameScenes.FLIGHT && Launch.MoveNearAfterSeconds >= 0 && !_moveNearStarted)
             {
                 _moveNearStarted = true;
@@ -430,6 +433,20 @@ namespace KspMp
         /// Sets a part-menu field by module class and field name, taking the same path a slider does: the
         /// value is set here and, depending on who flies the craft, relayed to the pilot or echoed to the others.
         /// </summary>
+        /// <summary>Moves one part to a stage of its own, then fires the event a drag fires.</summary>
+        private void AutoStageSequence()
+        {
+            var vessel = FlightGlobals.ActiveVessel;
+            if (vessel == null || vessel.parts == null || vessel.parts.Count == 0) return;
+            Part moved = null;
+            foreach (var part in vessel.parts)
+                if (part.inverseStage >= 0 && (moved == null || part.inverseStage > moved.inverseStage)) moved = part;
+            if (moved == null) { Log.Warn("Auto-stageseq: nothing on this craft is staged"); return; }
+            moved.inverseStage = moved.inverseStage + 1;
+            Log.Info("Auto-stageseq: " + moved.partInfo.title + " moved to stage " + moved.inverseStage);
+            GameEvents.StageManager.OnGUIStageSequenceModified.Fire();
+        }
+
         private void AutoPartField()
         {
             var vessel = FlightGlobals.ActiveVessel;
@@ -921,6 +938,11 @@ namespace KspMp
 
         /// <summary>The server's world has been received at least once this connection (used to ask for it again).</summary>
         public bool SyncedOnce;
+        /// <summary>
+        /// True when this flight was joined rather than launched by us. Reverting then has nothing sane to go
+        /// back to: KSP's revert state is the moment we arrived, not a launch.
+        /// </summary>
+        public bool JoinedThisFlight;
 
         private readonly Queue<Action> _deferred = new Queue<Action>();
 
@@ -1040,6 +1062,11 @@ namespace KspMp
             {
                 _partFieldAt = -1f;
                 AutoPartField();
+            }
+            if (_stageSeqAt >= 0 && Time.realtimeSinceStartup >= _stageSeqAt && HighLogic.LoadedSceneIsFlight && FlightGlobals.ready)
+            {
+                _stageSeqAt = -1f;
+                AutoStageSequence();
             }
             if (_evaAt >= 0 && Time.realtimeSinceStartup >= _evaAt && HighLogic.LoadedSceneIsFlight && FlightGlobals.ready)
             {
