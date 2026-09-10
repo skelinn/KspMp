@@ -108,9 +108,18 @@ namespace KspMp.Systems
             remote.Name = msg.Name;
             remote.VesselType = msg.VesselType;
             remote.ProtoDeflated = msg.ProtoDeflated;
-            if (Registry.IsMine(remote) || Registry.IsTombstoned(msg.VesselId))
+            if (Registry.IsMine(remote))
             {
                 remote.ProtoDirty = false;
+                return;
+            }
+            if (Registry.IsTombstoned(msg.VesselId))
+            {
+                // Just removed here. Not thrown away: a docking commit, a revert or a re-sync can remove and
+                // re-announce a vessel within the tombstone window, and dropping the snapshot left the vessel
+                // missing from the world until the owner's next periodic one, up to thirty seconds later.
+                remote.ProtoDirty = true;
+                remote.NextApplyAt = Time.realtimeSinceStartup + VesselRegistry.TombstoneSeconds;
                 return;
             }
             remote.ProtoDirty = true;
@@ -424,7 +433,7 @@ namespace KspMp.Systems
                         continue;
                     }
                     if (Registry.IsTombstoned(vessel.id)) continue;
-                    if (!vessel.loaded) continue;
+                    if (!vessel.loaded) { _stillNew.Add(vessel); continue; }   // ask again; dropping it meant nobody ever saw it
                     if (SplitOffSomebodyElses(vessel, out var from))
                     {
                         // Pieces of a vessel someone else simulates are never ours, whenever they came apart: the

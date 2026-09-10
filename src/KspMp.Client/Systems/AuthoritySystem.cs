@@ -82,7 +82,14 @@ namespace KspMp.Systems
 
         public override void Update()
         {
-            if (!HighLogic.LoadedSceneIsFlight || !FlightGlobals.ready) return;
+            if (!HighLogic.LoadedSceneIsFlight || !FlightGlobals.ready)
+            {
+                // Before the early return: a lock taken in flight and left set when the scene changes greys out
+                // the space centre and the editor, because ALL_SHIP_CONTROLS covers their buttons too. That is
+                // what "after reverting to the VAB you cannot click anything" was.
+                SetSpectating(false);
+                return;
+            }
             var now = Time.realtimeSinceStartup;
             if (now < _nextScanAt) return;
             _nextScanAt = now + 1f;
@@ -193,14 +200,19 @@ namespace KspMp.Systems
 
         private void SetSpectating(bool spectating)
         {
-            if (spectating == _spectating) return;
+            // Ask the lock stack rather than trust a cached flag. KSP clears every control lock outright when
+            // the flight UI switches to docking mode with the map open (FlightUIModeController), and a cached
+            // "still spectating" then never put ours back: the spectator quietly got the controls of a vessel
+            // somebody else is flying. The co-pilot lock and the chat lock both learned this already.
+            var has = InputLockManager.GetControlLock(SpectateLockId) != ControlTypes.None;
+            var announce = spectating && !_spectating;
             _spectating = spectating;
-            if (spectating)
+            if (spectating && !has)
             {
                 InputLockManager.SetControlLock(ControlTypes.ALL_SHIP_CONTROLS, SpectateLockId);
-                Log.Info("Spectating: the active vessel is simulated by " + SpectatingOwnerName);
+                if (announce) Log.Info("Spectating: the active vessel is simulated by " + SpectatingOwnerName);
             }
-            else
+            else if (!spectating && has)
             {
                 InputLockManager.RemoveControlLock(SpectateLockId);
             }

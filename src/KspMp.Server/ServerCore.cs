@@ -437,6 +437,14 @@ namespace KspMp.Server
         {
             if (client.Handshaken)
             {
+                // Restarting a session costs a full world sync, so not more than once every few seconds. A
+                // client repeating hello as fast as it can send would otherwise have the server decompressing
+                // and re-sending every vessel it holds, over and over.
+                if ((DateTime.UtcNow - client.LastHelloUtc).TotalSeconds < 5)
+                {
+                    _log(client.DisplayName + " said hello again within five seconds; ignored");
+                    return;
+                }
                 // The same peer says hello again: over Steam a player who restarted KSP comes back as the same
                 // Steam id, and the old session is theirs. Start it over rather than ignore them for good.
                 _log(client.DisplayName + " sent a new hello on a live session; starting it over");
@@ -492,6 +500,7 @@ namespace KspMp.Server
             client.PlayerId = hello.PlayerId;
             client.PlayerName = name;
             client.Handshaken = true;
+            client.LastHelloUtc = DateTime.UtcNow;
             Touch(client);
             if (_knownPlayers.TryGetValue(client.PlayerId, out var known) && !string.IsNullOrEmpty(known.AvatarKerbalName))
                 client.AvatarKerbalName = known.AvatarKerbalName;
@@ -646,6 +655,10 @@ namespace KspMp.Server
             }
             if (!ownsSurvivor)
             {
+                // Whoever's physics did the docking gets the merged vessel, even when the survivor was the
+                // other player's: KSP merged the two on their machine and nobody else's copy shows that yet.
+                // This does mean the server takes the sender's word for it, which is fine among people who
+                // chose to play together and is not a defence against a hostile client. See README, Known gaps.
                 _log(client.DisplayName + " docked its vessel into " + commit.SurvivorVesselId + " (owner #" + Authority.OwnerOf(commit.SurvivorVesselId) + "); the merged vessel is theirs");
                 Authority.Assign(commit.SurvivorVesselId, client.ClientId, AuthorityReason.HandedOver);
             }

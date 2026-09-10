@@ -134,6 +134,7 @@ namespace KspMp.Systems
             SetCoPilotLock(false);
             _roles.Clear();
             _inputs.Clear();
+            _pendingFields.Clear();
         }
 
         public override void Update()
@@ -151,6 +152,7 @@ namespace KspMp.Systems
                 SetCoPilotLock(false);
                 return;
             }
+            SendDueFields();
             if (_stagingDirtyAt >= 0 && Time.realtimeSinceStartup - _stagingDirtyAt >= StagingDebounceSeconds)
             {
                 _stagingDirtyAt = -1f;
@@ -380,6 +382,36 @@ namespace KspMp.Systems
         public void SendSasMode(Guid vesselId, int mode, bool enabled)
         {
             Net.Send(MessageId.SasMode, new SasModeMsg { VesselId = vesselId, Mode = mode, Enabled = enabled }, Channel.Control, Delivery.ReliableOrdered);
+        }
+
+        private struct PendingField { public Guid VesselId; public uint PartFlightId; public int ModuleIndex; public string FieldName; public string Value; public float At; }
+        private readonly Dictionary<string, PendingField> _pendingFields = new Dictionary<string, PendingField>();
+        private const float FieldDebounceSeconds = 0.1f;
+
+        /// <summary>Holds a field change for a moment so a slider drag sends where it landed, not every step.</summary>
+        public void QueuePartField(Guid vesselId, uint partFlightId, int moduleIndex, string fieldName, string value)
+        {
+            _pendingFields[vesselId + "/" + partFlightId + "/" + moduleIndex + "/" + fieldName] = new PendingField
+            {
+                VesselId = vesselId, PartFlightId = partFlightId, ModuleIndex = moduleIndex,
+                FieldName = fieldName, Value = value, At = Time.realtimeSinceStartup,
+            };
+        }
+
+        private readonly List<string> _dueFields = new List<string>();
+
+        private void SendDueFields()
+        {
+            if (_pendingFields.Count == 0) return;
+            var now = Time.realtimeSinceStartup;
+            _dueFields.Clear();
+            foreach (var pair in _pendingFields) if (now - pair.Value.At >= FieldDebounceSeconds) _dueFields.Add(pair.Key);
+            for (var i = 0; i < _dueFields.Count; i++)
+            {
+                var pending = _pendingFields[_dueFields[i]];
+                _pendingFields.Remove(_dueFields[i]);
+                SendPartField(pending.VesselId, pending.PartFlightId, pending.ModuleIndex, pending.FieldName, pending.Value);
+            }
         }
 
         public void SendPartField(Guid vesselId, uint partFlightId, int moduleIndex, string fieldName, string value)

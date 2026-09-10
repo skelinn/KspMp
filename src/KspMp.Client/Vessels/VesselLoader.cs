@@ -353,6 +353,9 @@ namespace KspMp.Vessels
                         return;
                     }
                     Log.Info("Removing vessel " + vessel.GetDisplayName() + " (" + why + ")");
+                    // Before it goes: an id left in the immortal set is an id that skips hardening when it
+                    // comes back - and a revert to launch brings a vessel back under the very same id.
+                    VesselImmortal.Forget(vessel);
                     if (vessel.loaded) vessel.Unload();
                     FlightGlobals.RemoveVessel(vessel);
                     UnityEngine.Object.Destroy(vessel.gameObject);

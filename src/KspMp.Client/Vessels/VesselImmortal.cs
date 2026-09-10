@@ -94,10 +94,20 @@ namespace KspMp.Vessels
             }
             if (immortal) Immortal.Add(vessel.id); else Immortal.Remove(vessel.id);
 
-            var buoyancy = vessel.GetComponent<PartBuoyancy>();
-            if (buoyancy) buoyancy.enabled = !immortal;
-            var collisionEnhancer = vessel.GetComponent<CollisionEnhancer>();
-            if (collisionEnhancer) collisionEnhancer.enabled = !immortal;
+            // On every part, not on the vessel. Both components live on the Part's own GameObject, and the
+            // Vessel shares a GameObject with the root part only - so asking the vessel for them found the
+            // root's pair and quietly missed every other part on the craft.
+            if (vessel.parts != null)
+                foreach (var part in vessel.parts)
+                {
+                    if (part == null) continue;
+                    var partBuoyancy = part.GetComponent<PartBuoyancy>();
+                    if (partBuoyancy) partBuoyancy.enabled = !immortal;
+                    var partCollisionEnhancer = part.GetComponent<CollisionEnhancer>();
+                    if (partCollisionEnhancer) partCollisionEnhancer.enabled = !immortal;
+                }
+            // The integrator is held off by a patch on FlightIntegrator.ShouldBeActive as well: KSP turns it
+            // back on every frame otherwise. This still sets it now rather than a frame later.
             var integrator = vessel.GetComponent<FlightIntegrator>();
             if (integrator) integrator.enabled = !immortal;
             SetKerbalFrozen(vessel, immortal);

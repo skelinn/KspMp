@@ -96,6 +96,8 @@ namespace KspMp.Systems
         /// walking out of the VAB first.</summary>
         public sealed class FlightInvite
         {
+            /// <summary>When the invitation was raised, so one whose craft never arrives can be dropped.</summary>
+            public float OfferedAt;
             public Guid VesselId;
             public string VesselName;
             public string LauncherName;
@@ -125,6 +127,7 @@ namespace KspMp.Systems
         private void Offer(Guid vesselId, string vesselName, string launcherName)
         {
             if (vesselId != Guid.Empty && (_lastEnteredFor == vesselId || _declined.Contains(vesselId))) return;
+            if (Invite == null && Time.realtimeSinceStartup < _declinedUntil) return;   // they just said no
             if (Invite != null)
             {
                 if (Invite.VesselId == vesselId) return;
@@ -134,7 +137,7 @@ namespace KspMp.Systems
                 RaiseInviteNotice();
                 return;
             }
-            Invite = new FlightInvite { VesselId = vesselId, VesselName = vesselName, LauncherName = launcherName };
+            Invite = new FlightInvite { VesselId = vesselId, VesselName = vesselName, LauncherName = launcherName, OfferedAt = Time.realtimeSinceStartup };
             RaiseInviteNotice();
         }
 
@@ -143,9 +146,15 @@ namespace KspMp.Systems
             // "Not now" means not now: without remembering it, the next one-second check found our Kerbal still
             // aboard and raised the same invite again, countdown and all.
             if (Invite != null && Invite.VesselId != Guid.Empty) _declined.Add(Invite.VesselId);
+            // Refused before the craft had even arrived - which is when the notice reads "waiting for the
+            // launch..." and is exactly when people press it. There is no id to remember, so the refusal is
+            // remembered by the clock instead and nothing new is offered for the next half minute.
+            else if (Invite != null) _declinedUntil = Time.realtimeSinceStartup + 30f;
             Invite = null;
             Addon.Notices.Dismiss(InviteKey);
         }
+
+        private float _declinedUntil = -1f;
 
         private const string InviteKey = "flight-invite";
 
@@ -297,6 +306,14 @@ namespace KspMp.Systems
                 Offer(avatarVessel.id, avatarVessel.GetDisplayName(), "");
             else if (avatarVessel == null && _declined.Count > 0)
                 _declined.Clear();   // the Kerbal is home again; a later launch is a new invitation
+            if (Invite != null && Invite.VesselId == Guid.Empty && Invite.OfferedAt > 0 && now - Invite.OfferedAt > 90f)
+            {
+                // Promised a craft that never came: the launch was scrubbed, reverted, or lost on the way.
+                // Without this the "waiting for the launch..." notice sat in the window all session.
+                Log.Info("The launch we were invited to never arrived; dropping the invitation");
+                Invite = null;
+                Addon.Notices.Dismiss(InviteKey);
+            }
             if (Invite != null)
             {
                 var id = Invite.VesselId;

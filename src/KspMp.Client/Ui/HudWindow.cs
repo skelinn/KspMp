@@ -184,7 +184,9 @@ namespace KspMp.Ui
                 GUILayout.Space(18);
                 if (guesting)
                 {
-                    if (GUILayout.Button("Leave", GUILayout.Height(Theme.ControlHeight))) editor.LeaveSession();
+                    // Deferred for the same reason Join is: leaving rebuilds the workbench, and doing that
+                    // inside the window callback tears the editor down under the rest of this frame's OnGUI.
+                    if (GUILayout.Button("Leave", GUILayout.Height(Theme.ControlHeight))) _addon.Defer(editor.LeaveSession);
                 }
                 else if (mine)
                 {

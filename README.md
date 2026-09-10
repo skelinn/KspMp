@@ -200,6 +200,11 @@ Worth knowing before you play, roughly in the order you would hit them.
 - **Hosting from inside the game keeps serving while the host loads a scene** (the server has its own
   thread), but the host's own rocket is not simulated during the load, so the others see it hold still and
   then catch up. A dedicated server (`KspMp.Server.Host`) is still the smoother option for three or more.
+- **The server trusts the players it let in.** It checks that a message comes from the client it claims to,
+  and refuses actions on a vessel somebody else is flying, but it takes a client's word about its own
+  physics: a docking commit hands the merged craft to whoever reports it, and a player id is the only thing
+  proving who you are. Between friends on a password-protected game that is the right trade. It is not a
+  defence against somebody you did not invite.
 - **The introducer trusts registrations.** Two hosts using the same join code overwrite each other; pick a
   code nobody else would.
 - **A host must know a joining player's Steam ID up front.** Steam discards packets from a session nobody
@@ -215,6 +220,8 @@ Worth knowing before you play, roughly in the order you would hit them.
   names, and the server tells everyone in chat when two players' differ (and when their KSP versions do), but
   it cannot say which part is missing where, and a craft using a part the other side lacks still fails while
   loading on their machine. A stock install on both sides is the safe option.
+- **Maneuver nodes are not shared.** A node you plan is yours alone; your friend cannot see it and cannot
+  fly it. Plan burns out loud.
 - **A co-pilot's resource transfers and crew transfers change their copy only.** Staging, action groups,
   SAS, the navball buttons, the brakes key, part-menu buttons (Deploy, Decouple, ...) and part-menu
   sliders and toggles (thrust limiter, fuel flow, ...) reach the pilot; a resource transfer or a crew

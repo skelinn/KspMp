@@ -142,6 +142,10 @@ namespace KspMp.Vessels
                 var part = parts[i];
                 var partRotation = rotation * part.orgRot;
                 var full = part.physicalSignificance == Part.PhysicalSignificance.FULL;
+                // Part.Unpack sets this back to false when a vessel comes off rails, and until the next
+                // one-second sweep put it right the part was a live rigidbody being teleported into whatever
+                // it touched - at exactly the moment a replica comes into range beside you.
+                if (!vessel.packed && part.rb != null && !part.rb.isKinematic) part.rb.isKinematic = true;
                 if (!vessel.packed && part.rb != null && part.rb.isKinematic && full)
                 {
                     // A kinematic body is swept to its new pose rather than teleported, so a live kerbal

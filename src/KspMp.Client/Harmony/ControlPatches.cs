@@ -1,3 +1,4 @@
+using System;
 using HarmonyLib;
 using KSP.UI.Screens;
 using KspMp.Systems;
@@ -76,6 +77,29 @@ namespace KspMp.Harmony
     internal static class ActionGroupNesting
     {
         public static int Depth;
+        /// <summary>Set while KSP's own autopilot is doing its per-frame housekeeping, which is nobody's decision.</summary>
+        public static bool InsideAutopilot;
+    }
+
+    /// <summary>
+    /// Marks KSP's own autopilot housekeeping. VesselAutopilot.Update puts the mode back to Stability Assist
+    /// and drops the SAS action group whenever it cannot hold the mode it is in, every frame, for as long as
+    /// that is true - which on a copy of somebody else's vessel is forever. None of that is a player acting.
+    /// </summary>
+    [HarmonyPatch(typeof(VesselAutopilot), nameof(VesselAutopilot.Update))]
+    internal static class VesselAutopilot_Update
+    {
+        private static void Prefix(out bool __state)
+        {
+            __state = ActionGroupNesting.InsideAutopilot;
+            ActionGroupNesting.InsideAutopilot = true;
+        }
+
+        private static Exception Finalizer(bool __state)
+        {
+            ActionGroupNesting.InsideAutopilot = __state;
+            return null;
+        }
     }
 
     [HarmonyPatch(typeof(ActionGroupList), nameof(ActionGroupList.ToggleGroup), typeof(KSPActionGroup))]
@@ -83,7 +107,11 @@ namespace KspMp.Harmony
     {
         private static bool Prefix(ActionGroupList __instance, KSPActionGroup group)
         {
-            if (ActionGroupNesting.Depth > 0) return true;
+            if (ActionGroupNesting.Depth > 0 || ActionGroupNesting.InsideAutopilot) return true;
+            // The space bar fires the stage and then toggles the Stage group (FlightInputHandler), so relaying
+            // both put two messages on the wire for one press and fired the group's actions a second time on
+            // the other copy, untied from whether the stage itself went off. Staging travels as a stage.
+            if (group == KSPActionGroup.Stage) return true;
             var vessel = __instance.v;
             switch (ControlGate.For(vessel))
             {
@@ -131,7 +159,10 @@ namespace KspMp.Harmony
             }
         }
 
-        private static void Postfix(bool __state) { if (__state) ActionGroupNesting.Depth--; }
+        // A finalizer, not a postfix: Harmony only wraps the original in a try/catch when one exists, and a
+        // part action that throws would otherwise leave the counter up for good - after which every gear,
+        // light and brake press silently stopped crossing the wire for the rest of the session.
+        private static Exception Finalizer(bool __state) { if (__state) ActionGroupNesting.Depth--; return null; }
     }
 
     /// <summary>
@@ -144,8 +175,16 @@ namespace KspMp.Harmony
     {
         private static bool Prefix(ActionGroupList __instance, KSPActionGroup group, bool active, ref bool __state)
         {
-            if (ActionGroupNesting.Depth > 0) return true;
-            if (group != KSPActionGroup.Brakes) return true;
+            if (ActionGroupNesting.Depth > 0 || ActionGroupNesting.InsideAutopilot) return true;
+            if (group != KSPActionGroup.Brakes)
+            {
+                // Not relayed here, but SetGroup calls ToggleGroup underneath, and without marking the nesting
+                // that inner call reads as a player toggling the group. KSP's autopilot dropping SAS it cannot
+                // hold went out as the player's doing, every frame.
+                ActionGroupNesting.Depth++;
+                __state = true;
+                return true;
+            }
             var vessel = __instance.v;
             switch (ControlGate.For(vessel))
             {
@@ -162,7 +201,7 @@ namespace KspMp.Harmony
             }
         }
 
-        private static void Postfix(bool __state) { if (__state) ActionGroupNesting.Depth--; }
+        private static Exception Finalizer(bool __state) { if (__state) ActionGroupNesting.Depth--; return null; }
     }
 
     [HarmonyPatch(typeof(VesselAutopilot), nameof(VesselAutopilot.SetMode), typeof(VesselAutopilot.AutopilotMode))]
@@ -171,6 +210,11 @@ namespace KspMp.Harmony
         private static bool Prefix(VesselAutopilot __instance, VesselAutopilot.AutopilotMode mode, ref bool __result)
         {
             var vessel = __instance.Vessel;
+            // KSP's own autopilot puts itself back to Stability Assist every frame it cannot hold the mode it
+            // is in. On a copy of somebody else's vessel that is permanent - a maneuver node held on their
+            // machine does not exist on ours - so relaying it sent a SAS message sixty times a second and
+            // dragged the pilot off their own hold. That housekeeping is not the player changing the mode.
+            if (ActionGroupNesting.InsideAutopilot) return true;
             switch (ControlGate.For(vessel))
             {
                 case ControlGate.Verdict.Relay:
@@ -206,9 +250,16 @@ namespace KspMp.Harmony
             if (verdict == ControlGate.Verdict.Blocked) { ControlGate.Blocked(field.guiName); return false; }
             if (verdict == ControlGate.Verdict.Relay || ControlGate.Echo(vessel))
             {
+                // Nothing to say when the value is not changing: KSP makes the same test before it writes.
+                object current = null;
+                try { current = field.GetValue(field.host); } catch { }
+                if (current != null && Equals(current, newValue)) return true;
                 var module = __instance.partModule;
                 var index = module != null ? part.Modules.IndexOf(module) : -1;
-                KspMpAddon.Instance.Control.SendPartField(vessel.id, part.flightID, index, field.name, ControlSystem.FieldValueText(newValue));
+                // A slider drag calls this on every step it crosses; the last one within a tenth of a second
+                // is what goes out, so pulling a thrust limiter from nothing to full sends a handful of
+                // messages rather than two hundred reliable ones.
+                KspMpAddon.Instance.Control.QueuePartField(vessel.id, part.flightID, index, field.name, ControlSystem.FieldValueText(newValue));
             }
             return true;
         }

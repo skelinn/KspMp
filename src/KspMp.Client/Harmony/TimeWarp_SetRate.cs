@@ -33,7 +33,13 @@ namespace KspMp.Harmony
             Inside = true;
         }
 
-        private static void Postfix(bool __state) => Inside = __state;
+        // A finalizer, so a throw from inside KSP cannot leave the flag set - which would turn every internal
+        // rate change back into a player's warp wish, the very thing this file exists to stop.
+        private static System.Exception Finalizer(bool __state)
+        {
+            Inside = __state;
+            return null;
+        }
     }
 
     [HarmonyPatch(typeof(TimeWarp), "setRate", typeof(int), typeof(bool), typeof(bool), typeof(bool), typeof(bool))]

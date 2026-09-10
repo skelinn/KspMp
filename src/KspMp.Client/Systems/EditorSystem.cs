@@ -92,6 +92,10 @@ namespace KspMp.Systems
 
         protected override void OnDeactivate()
         {
+            // Walking out of the editor while visiting somebody's bench: the craft we set aside was never
+            // written anywhere, and dropping it here lost a guest's rocket for good with no word about it.
+            // It goes back on our own bench, which is where KSP will look when we come back.
+            if (!OnOwnBench && _stash != null) RestoreStash();
             if (_joined) Net.Send(MessageId.EditorLeave, new EditorLeaveMsg(), Channel.Control, Delivery.ReliableOrdered);
             _joined = false;
             Net.UnregisterHandler(MessageId.EditorSnapshot, OnSnapshot);
@@ -102,8 +106,11 @@ namespace KspMp.Systems
             GameEvents.onEditorRestart.Remove(OnEditorRestart);
             GameEvents.onEditorLoad.Remove(OnEditorLoad);
             _others.Clear();
+            _othersSeenAt.Clear();
             _sessionOwner = 0;
             _stash = null;
+            _dirtyAt = -1f;   // an edit left pending here used to publish the next editor's half-loaded craft
+            _lastSentAt = 0f;
         }
 
         public override void Update()

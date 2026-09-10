@@ -66,7 +66,9 @@ namespace KspMp.Systems
         public string AvatarName { get; private set; } = "";
         public string AvatarTrait { get; private set; } = "Pilot";
         public string ClaimError { get; private set; } = "";
+        /// <summary>A claim is in the post. Cleared by the answer, by a disconnect, and by giving up after ten seconds.</summary>
         public bool ClaimPending { get; private set; }
+        private float _claimSentAt = -1f;
         public bool HasAvatar => !string.IsNullOrEmpty(AvatarName);
 
         public event Action SyncCompleted;
@@ -133,6 +135,7 @@ namespace KspMp.Systems
             name = (name ?? string.Empty).Trim();
             if (name.Length == 0 || !Net.IsConnected) return;
             ClaimPending = true;
+            _claimSentAt = Time.realtimeSinceStartup;
             ClaimError = "";
             AvatarTrait = trait;
             Net.Send(MessageId.AvatarClaim, new AvatarClaimMsg { KerbalName = name, Trait = trait }, Channel.Control, Delivery.ReliableOrdered);
@@ -142,6 +145,7 @@ namespace KspMp.Systems
         {
             var result = Envelope.Read<AvatarClaimResultMsg>(body);
             ClaimPending = false;
+            _claimSentAt = -1f;
             if (!result.Ok)
             {
                 ClaimError = result.Reason;
@@ -365,6 +369,15 @@ namespace KspMp.Systems
 
         public override void Update()
         {
+            // A claim with no answer must not lock the button for the session: the connection can drop between
+            // asking and being told, and the panel greys itself out while one is outstanding.
+            if (ClaimPending && _claimSentAt >= 0 && Time.realtimeSinceStartup - _claimSentAt > 10f)
+            {
+                ClaimPending = false;
+                _claimSentAt = -1f;
+                ClaimError = "No answer from the server; try again.";
+                Log.Warn("The avatar claim went unanswered for ten seconds; you can ask again");
+            }
             if (_reviveAt.Count > 0) ReviveDue();
             // The Welcome comes on one channel and the sync on another; if the sync beat the Welcome its
             // messages were dropped before any handler existed. Ask again rather than wait forever.
