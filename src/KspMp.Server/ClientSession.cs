@@ -9,6 +9,13 @@ namespace KspMp.Server
         public int ClientId;
         public Guid PlayerId;
         public string PlayerName;
+        /// <summary>When this session last said Hello: a second one is a reconnect, a hundred is a client hammering the world sync.</summary>
+        public DateTime LastHelloUtc = DateTime.MinValue;
+
+        /// <summary>How much game time this client managed per real second lately; 1 until it says otherwise.</summary>
+        public float AchievedRate = 1f;
+        public DateTime AchievedRateAtUtc = DateTime.MinValue;
+
         /// <summary>From Hello: the parts this install has, so a mismatch with the others can be said out loud.</summary>
         public int PartCount;
         public string PartsHash = "";

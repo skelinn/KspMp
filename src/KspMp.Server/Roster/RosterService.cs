@@ -62,6 +62,9 @@ namespace KspMp.Server.Roster
 
         public void HandleKerbalProto(ClientSession client, KerbalProtoMsg msg)
         {
+            // The same trim the claim does. Without it " Bob Kerman" was a different kerbal to the roster and
+            // to the ownership check, but the same file on disk, so it overwrote the protected one.
+            msg.Name = (msg.Name ?? string.Empty).Trim();
             if (string.IsNullOrEmpty(msg.Name)) return;
             if (!CanWrite(client, msg.Name))
             {
@@ -83,6 +86,8 @@ namespace KspMp.Server.Roster
 
         public void HandleKerbalRemoved(ClientSession client, KerbalRemovedMsg msg)
         {
+            msg.Name = (msg.Name ?? string.Empty).Trim();
+            if (string.IsNullOrEmpty(msg.Name)) return;
             if (IsAvatar(msg.Name))
             {
                 _server.Log(client.DisplayName + " tried to remove avatar " + msg.Name + "; ignored");

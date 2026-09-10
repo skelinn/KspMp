@@ -239,9 +239,14 @@ namespace KspMp.Shared.Protocol
     public struct TimeSyncReqMsg : INetSerializable
     {
         public long ClientTicks;
+        /// <summary>
+        /// How much game time this client managed per second of real time, lately: 1 when it is keeping up,
+        /// less when its physics cannot. The server runs the shared clock no faster than the slowest of these.
+        /// </summary>
+        public float AchievedRate;
 
-        public void Serialize(NetDataWriter w) => w.Put(ClientTicks);
-        public void Deserialize(NetDataReader r) => ClientTicks = r.GetLong();
+        public void Serialize(NetDataWriter w) { w.Put(ClientTicks); w.Put(AchievedRate); }
+        public void Deserialize(NetDataReader r) { ClientTicks = r.GetLong(); AchievedRate = r.GetFloat(); }
     }
 
     /// <summary>Server clock snapshot. ClientTicks echoes a request (0 when broadcast unsolicited).</summary>
@@ -251,6 +256,11 @@ namespace KspMp.Shared.Protocol
         public long ServerTicks;
         public double UniversalTime;
         public float Rate;
+        /// <summary>
+        /// The shared slow-motion factor: 1 normally, less when somebody's game cannot keep up and everyone
+        /// is being held back to stay on one timeline. Clients run their own clock at this too.
+        /// </summary>
+        public float Throttle;
 
         public void Serialize(NetDataWriter w)
         {
@@ -258,6 +268,7 @@ namespace KspMp.Shared.Protocol
             w.Put(ServerTicks);
             w.Put(UniversalTime);
             w.Put(Rate);
+            w.Put(Throttle);
         }
 
         public void Deserialize(NetDataReader r)
@@ -266,6 +277,7 @@ namespace KspMp.Shared.Protocol
             ServerTicks = r.GetLong();
             UniversalTime = r.GetDouble();
             Rate = r.GetFloat();
+            Throttle = r.GetFloat();
         }
     }
 }

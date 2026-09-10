@@ -80,20 +80,30 @@ namespace KspMp.Server.Vessels
         public void SaveDirty()
         {
             if (!_universe.IsPersistent) return;
-            foreach (var id in _deleted) _universe.DeleteVessel(id);
+            // Each delete on its own: one that throws used to take the whole save round with it, and every
+            // dirty vessel after it stayed unwritten.
+            foreach (var id in _deleted)
+            {
+                try { _universe.DeleteVessel(id); }
+                catch (Exception e) { _log("Could not delete vessel " + id + ": " + e.Message); }
+            }
             _deleted.Clear();
             foreach (var record in _vessels.Values)
             {
                 if (!record.Dirty) continue;
-                record.Dirty = false;   // one bad blob must not be retried every minute and block the rest
                 try
                 {
                     var text = Encoding.UTF8.GetString(DeflateCodec.Decompress(record.ProtoDeflated, 0, record.ProtoDeflated.Length));
                     _universe.SaveVesselText(record.Id, text);
+                    record.Dirty = false;
                 }
                 catch (Exception e)
                 {
-                    _log("Could not save vessel " + record.Id + " (" + record.Name + "): " + e.Message);
+                    // Cleared only on a blob that will never decompress; a disk that was busy is tried again.
+                    // Clearing it first meant a locked file lost that vessel's update for the life of the process.
+                    var hopeless = !(e is IOException) && !(e is UnauthorizedAccessException);
+                    if (hopeless) record.Dirty = false;
+                    _log("Could not save vessel " + record.Id + " (" + record.Name + "): " + e.Message + (hopeless ? "" : "; will try again"));
                 }
             }
         }

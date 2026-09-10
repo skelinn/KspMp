@@ -80,9 +80,23 @@ namespace KspMp.Systems
                 ScreenMessages.PostScreenMessage("Warp " + WarpRates.Rate(mode, rateIndex) + "x requested", 2f, ScreenMessageStyle.UPPER_CENTER);
         }
 
+        private int _sentDesired = int.MinValue;
+        private WarpMode _sentMode;
+        private int _sentCap = int.MinValue;
+        private float _sentAt = -100f;
+
         private void SendRequest()
         {
             var cap = CurrentCap();
+            var now = Time.realtimeSinceStartup;
+            // Say nothing when there is nothing new to say. A repeat is worth sending occasionally in case one
+            // was lost, but not many times a second: a real session put nearly two thousand of these on the
+            // wire in eighteen minutes and the server re-broadcast the warp state for every one of them.
+            if (_desired == _sentDesired && _desiredMode == _sentMode && cap == _sentCap && now - _sentAt < 5f) return;
+            _sentDesired = _desired;
+            _sentMode = _desiredMode;
+            _sentCap = cap;
+            _sentAt = now;
             _reportedCap = cap;
             Net.Send(MessageId.WarpRequest, new WarpRequestMsg { Mode = _desiredMode, DesiredIndex = _desired, MaxRailsIndex = cap }, Channel.Control, Delivery.ReliableOrdered);
         }

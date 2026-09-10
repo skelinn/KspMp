@@ -31,10 +31,19 @@ namespace KspMp.Shared.Protocol
             if (length > 0) w.Put(data, 0, length);
         }
 
+        /// <summary>
+        /// Nothing the mod sends comes near this. The length is read off the wire before anyone has been
+        /// authenticated, so without a ceiling a few hundred bytes claiming a two-gigabyte blob would have the
+        /// host allocating it. A craft that genuinely will not fit is a craft we cannot send anyway.
+        /// </summary>
+        public const int MaxBlobBytes = 32 * 1024 * 1024;
+
         public static byte[] GetBlob(this NetDataReader r)
         {
             var length = r.GetInt();
             if (length <= 0) return Array.Empty<byte>();
+            if (length > MaxBlobBytes) throw new InvalidOperationException("A blob of " + length + " bytes is past the " + MaxBlobBytes + " byte limit");
+            if (length > r.AvailableBytes) throw new InvalidOperationException("A blob of " + length + " bytes was announced but only " + r.AvailableBytes + " arrived");
             var data = new byte[length];
             r.GetBytes(data, length);
             return data;

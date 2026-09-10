@@ -103,6 +103,9 @@ namespace KspMp.Server.Vessels
         {
             _owners.Remove(vesselId);
             _dockingHolds.Remove(vesselId);
+            // Both ends: a separation is written under each vessel, and removing only this one left the
+            // partner's entry behind for good.
+            if (_separated.TryGetValue(vesselId, out var pair)) _separated.Remove(pair.Item1);
             _separated.Remove(vesselId);
             // The sequence is kept on purpose: a client that missed the removal still holds the old number, and
             // a later assignment restarting at 1 would look stale to it for the rest of the session.

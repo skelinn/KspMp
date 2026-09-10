@@ -39,6 +39,10 @@ namespace KspMp.Systems
         public double RttMs => _best.RttMs;
         public float Rate => HasSync ? _best.Rate : 1f;
         public int Corrections { get; private set; }
+        /// <summary>The shared slow-motion factor the server is running: 1 unless somebody cannot keep up.</summary>
+        public float Throttle { get; private set; } = 1f;
+        /// <summary>What our own game managed lately, per second of real time. 1 when it is keeping up.</summary>
+        public float AchievedRate { get; private set; } = 1f;
 
         /// <summary>Best estimate of the server's UT right now.</summary>
         public double ServerUt => HasSync ? _best.UniversalTime + (DateTime.UtcNow.Ticks - _best.LocalTicksAtServerTime) / 1e7 * _best.Rate : 0;
@@ -61,6 +65,9 @@ namespace KspMp.Systems
             Net.UnregisterHandler(MessageId.TimeSync, OnTimeSync);
             HasSync = false;
             _samples.Clear();
+            Throttle = 1f;          // never leave a disconnected game in slow motion
+            AchievedRate = 1f;
+            _rateReal = -1f;
             ResetSkew();
         }
 
@@ -68,13 +75,70 @@ namespace KspMp.Systems
         private float _nextSnapAllowedAt;
         private float _nextSnapLogAt;
 
+        /// <summary>What Time.timeScale should read with no drift correction on top: physics warp owns it, and the shared brake divides it.</summary>
+        private float BaseScale => (TimeWarp.fetch != null && TimeWarp.WarpMode == TimeWarp.Modes.LOW ? TimeWarp.CurrentRate : 1f) * Throttle;
+
         private void ResetSkew()
         {
-            if (!_skewing) return;
-            _skewing = false;
             // Always put the scale back: physics warp owns timeScale (rate x), rails warp and 1x mean 1. Leaving
             // it skewed because a warp began the same frame stranded the client at 0.85x for the whole warp.
-            Time.timeScale = TimeWarp.fetch != null && TimeWarp.WarpMode == TimeWarp.Modes.LOW ? TimeWarp.CurrentRate : 1f;
+            // The shared brake is part of the base, so a game that is keeping up still runs at everyone else's
+            // pace rather than racing ahead and being snapped back.
+            var target = BaseScale;
+            if (!_skewing && Math.Abs(Time.timeScale - target) < 0.001f) return;
+            _skewing = false;
+            Time.timeScale = target;
+        }
+
+        private double _rateUt;
+        private float _rateReal = -1f;
+        private int _rateCorrections;
+
+        /// <summary>
+        /// How much game time this machine managed per second of real time since the last look. A heavy craft
+        /// can drop KSP well under real time, and the shared clock then runs away from it: the drift grew,
+        /// the local UT was snapped forward every few seconds, and every vessel jumped along its orbit each
+        /// time. Reporting it lets the server hold the whole timeline to the slowest game instead.
+        ///
+        /// Measured in flight at 1x only, over at least three seconds, and thrown away if the window contained
+        /// a snap or a scene load - during a loading screen no game time passes at all, which would otherwise
+        /// read as a machine that had stopped. Under warp the clock is not physics-bound and says nothing.
+        /// </summary>
+        private float MeasureAchievedRate(float now)
+        {
+            var warping = TimeWarp.fetch != null && TimeWarp.CurrentRateIndex != 0;
+            var running = HighLogic.LoadedSceneIsFlight && FlightGlobals.ready && Planetarium.fetch != null && HasSync && !warping;
+            if (!running)
+            {
+                _rateReal = -1f;
+                AchievedRate = 1f;
+                return 1f;
+            }
+            var ut = Planetarium.GetUniversalTime();
+            if (_rateReal < 0f)
+            {
+                _rateUt = ut;
+                _rateReal = now;
+                _rateCorrections = Corrections;
+                return AchievedRate;
+            }
+            var real = now - _rateReal;
+            if (real < 3f) return AchievedRate;
+
+            var advanced = ut - _rateUt;
+            // What the game was asked to run at over the window; timeScale is our own skew and the shared brake.
+            var asked = real * (Time.timeScale > 0.01f ? Time.timeScale : 1f);
+            var snapped = Corrections != _rateCorrections;
+            _rateUt = ut;
+            _rateReal = now;
+            _rateCorrections = Corrections;
+            if (snapped || asked <= 0 || advanced < 0) return AchievedRate;
+
+            var achieved = Mathf.Clamp((float)(advanced / asked), 0.05f, 1f);
+            // Down at once, up gently: one good window should not lift the brake off a machine that is still
+            // struggling, but a machine that has stopped struggling should not hold everyone back for long.
+            AchievedRate = achieved < AchievedRate ? achieved : Mathf.Min(1f, AchievedRate + 0.1f);
+            return AchievedRate;
         }
 
         /// <summary>Last round trip actually measured (request -> reply); pushed samples borrow it.</summary>
@@ -97,13 +161,24 @@ namespace KspMp.Systems
             HasSync = true;
         }
 
+        private void OnThrottle(float throttle)
+        {
+            if (throttle <= 0f || throttle > 1f) throttle = 1f;
+            if (Math.Abs(throttle - Throttle) < 0.001f) return;
+            Throttle = throttle;
+            Log.Info(throttle >= 0.99f
+                ? "The shared clock is back to full speed"
+                : "The shared clock is held to " + (int)(throttle * 100) + "% of real time: somebody's game cannot simulate any faster");
+            ResetSkew();
+        }
+
         public override void Update()
         {
             var now = Time.realtimeSinceStartup;
             if (now >= _nextRequestAt)
             {
                 _nextRequestAt = now + 1f;
-                Net.Send(MessageId.TimeSyncReq, new TimeSyncReqMsg { ClientTicks = DateTime.UtcNow.Ticks }, Channel.State, Delivery.Unreliable);
+                Net.Send(MessageId.TimeSyncReq, new TimeSyncReqMsg { ClientTicks = DateTime.UtcNow.Ticks, AchievedRate = MeasureAchievedRate(now) }, Channel.State, Delivery.Unreliable);
             }
 
             if (!HasSync || Planetarium.fetch == null || !HighLogic.LoadedSceneIsGame)
@@ -140,7 +215,7 @@ namespace KspMp.Systems
                 var warping = TimeWarp.fetch != null && TimeWarp.CurrentRate != 1f;
                 if (!warping && Math.Abs(drift) > SkewDeadBandSeconds)
                 {
-                    Time.timeScale = Mathf.Clamp(Mathf.Pow(2f, -(float)drift), 0.85f, 1.2f);
+                    Time.timeScale = BaseScale * Mathf.Clamp(Mathf.Pow(2f, -(float)drift), 0.85f, 1.2f);
                     _skewing = true;
                 }
                 else ResetSkew();
@@ -156,6 +231,7 @@ namespace KspMp.Systems
         private void OnTimeSync(NetDataReader body)
         {
             var msg = Envelope.Read<TimeSyncMsg>(body);
+            OnThrottle(msg.Throttle);
             var now = DateTime.UtcNow.Ticks;
             // A reply to our request carries a measured round trip. The server also pushes samples on its own;
             // those used to claim a round trip of "the transport's ping", which Steam and the loopback report as

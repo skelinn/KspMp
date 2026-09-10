@@ -33,11 +33,12 @@ namespace KspMp.Net
         private Steam.SteamP2PTransport _steam;
         private Thread _thread;
         private volatile bool _stopping;
+        private volatile bool _threadFaulted;
         private readonly object _gate = new object();
 
         public bool Running => _server != null;
-        /// <summary>True when the serving thread died; the main thread then polls in its place.</summary>
-        public bool ThreadFaulted { get; private set; }
+        /// <summary>True when the serving thread died; the main thread then polls in its place. Written by that thread, read by this one.</summary>
+        public bool ThreadFaulted => _threadFaulted;
         /// <summary>The Steam ID friends need to join, or 0 when hosting is UDP-only.</summary>
         public ulong SteamId { get; private set; }
         public int Port { get; private set; }
@@ -91,7 +92,7 @@ namespace KspMp.Net
                 if (udp.LocalPort == 0) throw new InvalidOperationException("UDP port " + config.Port + " could not be opened - is another KspMp server already using it?");
                 Port = udp.LocalPort;
                 _stopping = false;
-                ThreadFaulted = false;
+                _threadFaulted = false;
                 _thread = new Thread(Serve) { IsBackground = true, Name = "KspMp host" };
                 _thread.Start();
 
@@ -133,7 +134,7 @@ namespace KspMp.Net
             {
                 // Not an exception from the server (those are caught above): the thread itself failed. The
                 // main thread takes over polling, so the game goes on, slower during scene loads.
-                ThreadFaulted = true;
+                _threadFaulted = true;
                 Log.Exception("The hosting thread stopped; serving from the main thread instead", e);
             }
         }
@@ -142,11 +143,18 @@ namespace KspMp.Net
         public void Poll()
         {
             if (_server == null) return;
-            if (_steam != null) Steam.SteamP2P.Poll();
-            if (_thread != null && _thread.IsAlive && !ThreadFaulted) return;
             lock (_gate)
             {
                 if (_server == null) return;
+                // Under the same lock as the serving thread's reads and writes: Steam's callback pump and its
+                // packet calls go through one interface pointer, and Valve does not promise that is safe to do
+                // from two threads at once. The lock is held for a callback pump, which is microseconds.
+                if (_steam != null)
+                {
+                    try { Steam.SteamP2P.Poll(); }
+                    catch (Exception e) { Log.Exception("Steam callbacks", e); }
+                }
+                if (_thread != null && _thread.IsAlive && !ThreadFaulted) return;
                 try { _server.Poll(); }
                 catch (Exception e) { Log.Exception("Hosted server", e); }
             }

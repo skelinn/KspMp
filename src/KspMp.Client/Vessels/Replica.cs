@@ -148,6 +148,11 @@ namespace KspMp.Vessels
                     // touching it is carried along instead of crushed.
                     part.rb.MoveRotation(partRotation);
                     part.rb.MovePosition(position + (Vector3d)(rotation * part.orgPos));
+                    // Still give it a velocity. Unity leaves a kinematic body at zero however it is moved, and
+                    // KSP reads the rigidbody to work out how fast a vessel is going and what orbit it is on:
+                    // a passenger's navball flickered between the real speed and nothing, the orbit drawn in
+                    // the map view was nonsense, and the sound went with it.
+                    part.ResumeVelocity();
                     continue;
                 }
                 part.partTransform.rotation = partRotation;

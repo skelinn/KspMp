@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Text;
 using KSP.UI.Screens;
 using KspMp.Shared.Codec;
@@ -271,7 +272,7 @@ namespace KspMp.Systems
                 if (node == null) return;
                 var text = ProtoCodec.ToText(node);
                 var manifestText = ManifestText();
-                var hash = HashOf(text + "\n" + manifestText);
+                var hash = HashOf(Canonical(text) + "\n" + manifestText);
                 if (hash == _lastSentHash)   // nothing actually changed (KSP fires the event generously)
                 {
                     Log.Info("Nothing new to share: the craft reads the same as what was last sent");
@@ -513,6 +514,47 @@ namespace KspMp.Systems
         private static string HashOf(string craftText) =>
             craftText == null ? "" : craftText.Length + ":" + craftText.GetHashCode();
 
+        /// <summary>
+        /// The craft as text, with every number rounded, so that saving the same craft twice gives the same
+        /// answer twice.
+        ///
+        /// ShipConstruct.SaveShip does not: attachment offsets and part positions come back a few millionths
+        /// different each time, so a craft that had just been applied hashed differently from the one that was
+        /// sent, read as a local edit, and went straight back. Two builders on one bench then rebuilt a
+        /// hundred-and-sixty-part craft at each other for as long as they stood there, which is what left the
+        /// editor unclickable with everything greyed out.
+        ///
+        /// A tenth of a millimetre is finer than anything a builder can do with the mouse, so nothing real is
+        /// lost. Only the value side of a "key = value" line is touched, and only when every comma-separated
+        /// part of it is a number, so names, ids and version strings are left alone.
+        /// </summary>
+        private static string Canonical(string craftText)
+        {
+            if (string.IsNullOrEmpty(craftText)) return craftText;
+            var sb = new StringBuilder(craftText.Length);
+            var lines = craftText.Split('\n');
+            for (var i = 0; i < lines.Length; i++)
+            {
+                var line = lines[i];
+                if (i > 0) sb.Append('\n');
+                var eq = line.IndexOf('=');
+                if (eq <= 0 || eq == line.Length - 1) { sb.Append(line); continue; }
+                var value = line.Substring(eq + 1);
+                var fields = value.Split(',');
+                var rounded = new string[fields.Length];
+                var allNumbers = true;
+                for (var f = 0; f < fields.Length && allNumbers; f++)
+                {
+                    var field = fields[f].Trim();
+                    if (field.Length == 0 || !double.TryParse(field, NumberStyles.Float, CultureInfo.InvariantCulture, out var number)) allNumbers = false;
+                    else rounded[f] = Math.Round(number, 4).ToString("0.####", CultureInfo.InvariantCulture);
+                }
+                if (!allNumbers) { sb.Append(line); continue; }
+                sb.Append(line, 0, eq + 1).Append(' ').Append(string.Join(",", rounded));
+            }
+            return sb.ToString();
+        }
+
         /// <summary>The workbench as we would send it, which is the only form worth comparing against.</summary>
         private static string LocalCraftHash()
         {
@@ -521,7 +563,7 @@ namespace KspMp.Systems
             try
             {
                 var node = editor.ship.SaveShip();
-                return node == null ? "" : HashOf(ProtoCodec.ToText(node) + "\n" + ManifestText());
+                return node == null ? "" : HashOf(Canonical(ProtoCodec.ToText(node)) + "\n" + ManifestText());
             }
             catch (Exception e)
             {

@@ -22,6 +22,8 @@ namespace KspMp.Server
         private sealed class PendingDisconnect
         {
             public PeerId Peer;
+            /// <summary>The very session that was rejected. LiteNetLib hands peer ids back out, and a client refused for a bad password drops at once, so the id can belong to somebody else by the time this fires.</summary>
+            public ClientSession Session;
             public string Reason;
             public DateTime DueUtc;
         }
@@ -227,6 +229,22 @@ namespace KspMp.Server
                 case MessageId.TimeSyncReq:
                 {
                     var req = Envelope.Read<TimeSyncReqMsg>(body);
+                    // A claim, not a measurement we can check, so it is clamped and only listened to from a
+                    // client that is actually flying something. Nobody standing in the space centre gets to
+                    // decide how fast the universe runs.
+                    if (req.AchievedRate > 0f && req.AchievedRate <= 1.5f
+                        && (client.Presence.State == PresenceState.InFlight || client.Presence.State == PresenceState.OnEva || client.Presence.State == PresenceState.Spectating))
+                    {
+                        client.AchievedRate = req.AchievedRate < MinimumSharedRate ? MinimumSharedRate : req.AchievedRate > 1f ? 1f : req.AchievedRate;
+                        client.AchievedRateAtUtc = DateTime.UtcNow;
+                        UpdateTimeThrottle();
+                    }
+                    else if (client.AchievedRate < 1f)
+                    {
+                        client.AchievedRate = 1f;   // out of flight it constrains nobody
+                        client.AchievedRateAtUtc = DateTime.UtcNow;
+                        UpdateTimeThrottle();
+                    }
                     Send(client.Peer, MessageId.TimeSync, Time.Snapshot(req.ClientTicks), Channel.State, Delivery.Unreliable);
                     break;
                 }
@@ -548,6 +566,30 @@ namespace KspMp.Server
             }
         }
 
+        /// <summary>Nobody gets to slow the universe below this, however badly their game is doing.</summary>
+        public const float MinimumSharedRate = 0.4f;
+
+        /// <summary>
+        /// The shared clock runs no faster than the slowest game can simulate. A report goes stale after ten
+        /// seconds, so a client that stops sending (loading a scene, gone) stops holding everyone back.
+        /// </summary>
+        private void UpdateTimeThrottle()
+        {
+            var slowest = 1f;
+            var by = 0;
+            var cutoff = DateTime.UtcNow.AddSeconds(-10);
+            foreach (var other in HandshakenClients)
+            {
+                if (other.AchievedRateAtUtc < cutoff || other.AchievedRate >= slowest) continue;
+                slowest = other.AchievedRate;
+                by = other.ClientId;
+            }
+            if (!Time.SetThrottle(slowest)) return;
+            _log(Time.Throttle >= 0.99f
+                ? "The shared clock is back to full speed"
+                : "The shared clock is held to " + (int)(Time.Throttle * 100) + "% of real time: #" + by + "'s game cannot simulate any faster");
+        }
+
         private void HandleSyncRequest(ClientSession client)
         {
             if (!client.IsOnline) return;
@@ -669,7 +711,7 @@ namespace KspMp.Server
             client.Rejected = true;
             _log("Rejecting " + client.DisplayName + ": " + reason);
             Send(client.Peer, MessageId.Reject, new RejectMsg { Reason = reason }, Channel.Control, Delivery.ReliableOrdered);
-            _pendingDisconnects.Add(new PendingDisconnect { Peer = client.Peer, Reason = reason, DueUtc = DateTime.UtcNow.AddMilliseconds(RejectGraceMs) });
+            _pendingDisconnects.Add(new PendingDisconnect { Peer = client.Peer, Session = client, Reason = reason, DueUtc = DateTime.UtcNow.AddMilliseconds(RejectGraceMs) });
         }
 
         private void ProcessPendingDisconnects()
@@ -680,6 +722,8 @@ namespace KspMp.Server
                 var pending = _pendingDisconnects[i];
                 if (pending.DueUtc > now) continue;
                 _pendingDisconnects.RemoveAt(i);
+                // Only if that peer id still belongs to the session we rejected.
+                if (!_clients.TryGetValue(pending.Peer, out var current) || current != pending.Session) continue;
                 Transport.Disconnect(pending.Peer, pending.Reason);
             }
         }
